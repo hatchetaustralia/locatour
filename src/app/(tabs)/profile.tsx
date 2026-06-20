@@ -1,0 +1,1286 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  StyleSheet,
+  View,
+  ScrollView,
+  Image,
+  TextInput,
+  TouchableOpacity,
+  ActivityIndicator,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { BrandText, StampButton } from '@/components/brand';
+import { Brand, BrandFonts, BrandRadius, stampBorder, Spacing } from '@/constants/theme';
+import { storage } from '@/utils/storage';
+import { avatarUri } from '@/utils/avatar';
+import { User, Achievement, CheckIn, ExploreLocation } from '@/types';
+import { INTERESTS } from '@/constants/interests';
+
+// Preset avatars reused from the onboarding "Create Profile" flow for consistency.
+const AVATAR_PRESETS = [
+  'https://api.dicebear.com/7.x/adventurer/png?seed=Felix&backgroundColor=b6e3f4',
+  'https://api.dicebear.com/7.x/adventurer/png?seed=Aneka&backgroundColor=ffdfbf',
+  'https://api.dicebear.com/7.x/adventurer/png?seed=Jack&backgroundColor=c0aede',
+  'https://api.dicebear.com/7.x/adventurer/png?seed=Mia&backgroundColor=d1f4c9',
+];
+
+type ProfileTab = 'overview' | 'gallery' | 'achievements';
+
+// A check-in joined with its resolved location (lifted from the standalone
+// History tab, which this screen now folds in as a "Recent check-ins" section).
+type HistoryEntry = {
+  checkIn: CheckIn;
+  location: ExploreLocation | undefined;
+  pendingSync: boolean;
+};
+
+// "3rd March 2024" style date — reused from history.tsx.
+const formatDate = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const day = d.getDate();
+  const suffix =
+    day % 10 === 1 && day !== 11
+      ? 'st'
+      : day % 10 === 2 && day !== 12
+        ? 'nd'
+        : day % 10 === 3 && day !== 13
+          ? 'rd'
+          : 'th';
+  const month = d.toLocaleString(undefined, { month: 'long' });
+  return `${day}${suffix} ${month} ${d.getFullYear()}`;
+};
+
+const formatTime = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+// RuneScape-style difficulty ordering + colours for the achievement tiers.
+const DIFFICULTY_ORDER: Record<string, number> = {
+  Easy: 0, Medium: 1, Hard: 2, Elite: 3, Master: 4, Grandmaster: 5,
+};
+const DIFFICULTY_COLOR: Record<string, string> = {
+  Easy: '#16a34a', Medium: '#0ea5e9', Hard: '#f59e0b',
+  Elite: '#ef4444', Master: '#9333ea', Grandmaster: '#db2777',
+};
+
+export default function ProfileScreen() {
+  const router = useRouter();
+
+  const [user, setUser] = useState<User | null>(null);
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<ProfileTab>('overview');
+  const [isEditing, setIsEditing] = useState(false);
+
+  // Edit-mode form state
+  const [editDisplayName, setEditDisplayName] = useState('');
+  const [editUsername, setEditUsername] = useState('');
+  const [editBio, setEditBio] = useState('');
+  const [editAvatar, setEditAvatar] = useState('');
+  const [displayNameError, setDisplayNameError] = useState('');
+  const [usernameError, setUsernameError] = useState('');
+  const [editInterests, setEditInterests] = useState<string[]>([]);
+
+  const loadData = useCallback(async () => {
+    try {
+      const currentUser = await storage.getUser();
+      if (!currentUser) {
+        router.replace('/auth/login');
+        return;
+      }
+      setUser(currentUser);
+
+      const list = await storage.getAchievements();
+      setAchievements(list);
+
+      // Mark any newly unlocked achievements as seen now that they're rendered.
+      if (list.some(a => a.isNew)) {
+        await storage.acknowledgeNewAchievements();
+      }
+
+      // Recent check-ins (folded in from the old History tab).
+      const [checkIns, queued] = await Promise.all([
+        storage.getCheckIns(),
+        storage.getQueuedCheckIns(),
+      ]);
+      const combined: HistoryEntry[] = [
+        ...checkIns.map((c) => ({ checkIn: c, pendingSync: false, location: undefined })),
+        ...queued.map((c) => ({ checkIn: c, pendingSync: true, location: undefined })),
+      ];
+      const resolved = await Promise.all(
+        combined.map(async (entry) => ({
+          ...entry,
+          location: await storage.getLocationById(entry.checkIn.locationId),
+        }))
+      );
+      // Newest first.
+      resolved.sort(
+        (a, b) =>
+          new Date(b.checkIn.timestamp).getTime() - new Date(a.checkIn.timestamp).getTime()
+      );
+      setEntries(resolved);
+    } catch (e) {
+      console.error('Failed to load profile data', e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [router]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const enterEditMode = () => {
+    if (!user) return;
+    setEditDisplayName(user.displayName);
+    // Strip the leading @ so the prefix box owns it, matching the create flow.
+    setEditUsername(user.username.startsWith('@') ? user.username.slice(1) : user.username);
+    setEditBio(user.bio);
+    setEditAvatar(avatarUri(user.avatarUrl, user.displayName));
+    setEditInterests(user.interests || []);
+    setDisplayNameError('');
+    setUsernameError('');
+    setIsEditing(true);
+  };
+
+  const handleUsernameChange = (text: string) => {
+    const cleaned = text.replace(/[^a-zA-Z0-9_.]/g, '').toLowerCase();
+    setEditUsername(cleaned);
+    if (usernameError) setUsernameError('');
+  };
+
+  const toggleEditInterest = (id: string) => {
+    setEditInterests((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  };
+
+  const handleSave = async () => {
+    let isValid = true;
+
+    if (!editDisplayName.trim()) {
+      setDisplayNameError('Display name is required');
+      isValid = false;
+    } else {
+      setDisplayNameError('');
+    }
+
+    if (!editUsername.trim()) {
+      setUsernameError('Username is required');
+      isValid = false;
+    } else if (editUsername.length < 3) {
+      setUsernameError('Username must be at least 3 characters');
+      isValid = false;
+    } else {
+      setUsernameError('');
+    }
+
+    if (!isValid) return;
+
+    const updated = await storage.updateProfile(
+      editDisplayName.trim(),
+      editUsername,
+      editBio.trim(),
+      editAvatar,
+      editInterests,
+    );
+
+    if (updated) {
+      setUser(updated);
+    }
+    setIsEditing(false);
+  };
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={Brand.purple} />
+      </SafeAreaView>
+    );
+  }
+
+  if (!user) return null;
+
+  const { stats } = user;
+  const xpProgress =
+    stats.xpNeededForNextLevel > 0
+      ? Math.min(stats.currentXPInLevel / stats.xpNeededForNextLevel, 1)
+      : 0;
+
+  // Achievements sorted by difficulty tier (Easy → Grandmaster), then threshold.
+  const sortedAchievements = [...achievements].sort(
+    (a, b) =>
+      (DIFFICULTY_ORDER[a.difficulty] ?? 9) - (DIFFICULTY_ORDER[b.difficulty] ?? 9) ||
+      a.threshold - b.threshold,
+  );
+  const unlockedCount = achievements.filter((a) => a.isUnlocked).length;
+
+  // ---------------------------------------------------------------------------
+  // EDIT MODE
+  // ---------------------------------------------------------------------------
+  if (isEditing) {
+    return (
+      <SafeAreaView style={styles.screen} edges={['top']}>
+        <View style={styles.editHeader}>
+          <TouchableOpacity
+            style={[styles.iconSquare, stampBorder]}
+            onPress={() => setIsEditing(false)}
+          >
+            <Ionicons name="arrow-back-outline" size={20} color={Brand.ink} />
+          </TouchableOpacity>
+          <BrandText weight="semibold" style={styles.editHeaderTitle}>Edit Profile</BrandText>
+          <View style={styles.iconSquarePlaceholder} />
+        </View>
+
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Avatar + presets */}
+          <View style={styles.editAvatarRow}>
+            <View style={[styles.editAvatarCircle, stampBorder, styles.roundedFull]}>
+              <Image source={{ uri: editAvatar }} style={styles.editAvatarImage} />
+            </View>
+            <View style={styles.editAvatarMeta}>
+              <BrandText weight="medium" style={styles.label}>Choose avatar</BrandText>
+              <View style={styles.presetsRow}>
+                {AVATAR_PRESETS.map((preset) => {
+                  const selected = editAvatar === preset;
+                  return (
+                    <TouchableOpacity
+                      key={preset}
+                      activeOpacity={0.85}
+                      style={[
+                        styles.presetItem,
+                        stampBorder,
+                        styles.roundedFull,
+                        selected && styles.presetItemSelected,
+                      ]}
+                      onPress={() => setEditAvatar(preset)}
+                    >
+                      <Image source={{ uri: preset }} style={styles.presetImage} />
+                      {selected && (
+                        <View style={styles.checkmarkBadge}>
+                          <Ionicons name="checkmark" size={10} color={Brand.surface} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          </View>
+
+          {/* Display name */}
+          <View style={styles.fieldGroup}>
+            <BrandText weight="medium" style={styles.label}>Display name</BrandText>
+            <View
+              style={[
+                styles.inputRow,
+                stampBorder,
+                displayNameError ? styles.inputRowError : null,
+              ]}
+            >
+              <TextInput
+                style={styles.inputField}
+                placeholder="e.g. Brandon Watson"
+                placeholderTextColor={Brand.inkSubtle}
+                value={editDisplayName}
+                onChangeText={(text) => {
+                  setEditDisplayName(text);
+                  if (displayNameError) setDisplayNameError('');
+                }}
+              />
+            </View>
+            {displayNameError ? (
+              <BrandText weight="medium" style={styles.errorText}>{displayNameError}</BrandText>
+            ) : null}
+          </View>
+
+          {/* Username */}
+          <View style={styles.fieldGroup}>
+            <BrandText weight="medium" style={styles.label}>Username</BrandText>
+            <View
+              style={[
+                styles.inputRow,
+                stampBorder,
+                usernameError ? styles.inputRowError : null,
+              ]}
+            >
+              <BrandText weight="medium" style={styles.atPrefix}>@</BrandText>
+              <TextInput
+                style={styles.inputField}
+                placeholder="brandon.hatchet"
+                placeholderTextColor={Brand.inkSubtle}
+                value={editUsername}
+                onChangeText={handleUsernameChange}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+            {usernameError ? (
+              <BrandText weight="medium" style={styles.errorText}>{usernameError}</BrandText>
+            ) : null}
+          </View>
+
+          {/* Bio */}
+          <View style={styles.fieldGroup}>
+            <View style={styles.bioLabelRow}>
+              <BrandText weight="medium" style={styles.label}>Bio</BrandText>
+              <BrandText weight="medium" style={styles.charCounter}>{editBio.length}/150</BrandText>
+            </View>
+            <View style={[styles.inputRow, styles.bioInputRow, stampBorder]}>
+              <TextInput
+                style={[styles.inputField, styles.bioInputField]}
+                placeholder="I love hiking and skating 🏄..."
+                placeholderTextColor={Brand.inkSubtle}
+                value={editBio}
+                onChangeText={(text) => text.length <= 150 && setEditBio(text)}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+              />
+            </View>
+          </View>
+
+          {/* Interests — refine the categories you care about */}
+          <View style={styles.fieldGroup}>
+            <BrandText weight="medium" style={styles.label}>Interests</BrandText>
+            <View style={styles.interestGrid}>
+              {INTERESTS.map((interest) => {
+                const selected = editInterests.includes(interest.id);
+                return (
+                  <TouchableOpacity
+                    key={interest.id}
+                    activeOpacity={0.85}
+                    style={[styles.interestCard, stampBorder, selected && styles.interestCardSelected]}
+                    onPress={() => toggleEditInterest(interest.id)}
+                  >
+                    <Ionicons name={interest.icon} size={22} color={Brand.ink} />
+                    <BrandText weight="medium" color={Brand.ink} style={styles.interestCardText}>
+                      {interest.name}
+                    </BrandText>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          <StampButton
+            variant="primary"
+            label="SAVE CHANGES"
+            onPress={handleSave}
+            style={styles.saveButton}
+          />
+
+          <TouchableOpacity style={styles.cancelButton} onPress={() => setIsEditing(false)}>
+            <BrandText weight="semibold" color={Brand.inkSecondary} style={styles.cancelButtonText}>
+              Cancel
+            </BrandText>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // VIEW MODE
+  // ---------------------------------------------------------------------------
+  return (
+    <SafeAreaView style={styles.screen} edges={['top']}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* Settings gear top-right */}
+        <View style={styles.topBar}>
+          <TouchableOpacity style={[styles.iconSquare, stampBorder]} onPress={enterEditMode}>
+            <Ionicons name="settings-outline" size={20} color={Brand.ink} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Avatar with hexagon level badge */}
+        <View style={styles.avatarHeader}>
+          <View style={styles.avatarWrapper}>
+            <View style={[styles.avatarRing, stampBorder, styles.roundedFull]}>
+              <Image
+                source={{ uri: avatarUri(user.avatarUrl, user.displayName) }}
+                style={styles.avatarLarge}
+              />
+            </View>
+            {/* Solid pink level badge (Ionicons has no "hexagon" glyph, which
+                rendered as a "?" — use a styled badge instead). */}
+            <View style={[styles.levelHex, stampBorder]}>
+              <BrandText weight="bold" color={Brand.bg} style={styles.levelHexText}>
+                {stats.currentLevel}
+              </BrandText>
+            </View>
+          </View>
+
+          <BrandText weight="semibold" style={styles.displayName}>{user.displayName}</BrandText>
+          <BrandText weight="medium" style={styles.username}>{user.username}</BrandText>
+          {user.homeSuburb ? (
+            <View style={styles.suburbRow}>
+              <Ionicons name="location" size={14} color={Brand.purple} />
+              <BrandText weight="medium" color={Brand.inkSecondary} style={styles.suburbText}>
+                {user.homeSuburb}
+              </BrandText>
+            </View>
+          ) : null}
+        </View>
+
+        {/* Tabs */}
+        <View style={styles.tabsRow}>
+          {(['overview', 'gallery', 'achievements'] as ProfileTab[]).map((tab) => {
+            const isActive = activeTab === tab;
+            return (
+              <TouchableOpacity
+                key={tab}
+                style={[styles.tab, isActive && styles.tabActive]}
+                onPress={() => setActiveTab(tab)}
+              >
+                <BrandText
+                  weight={isActive ? 'semibold' : 'medium'}
+                  color={isActive ? Brand.purple : Brand.ink}
+                  style={styles.tabText}
+                >
+                  {tab === 'overview' ? 'Overview' : tab === 'gallery' ? 'Gallery' : 'Achievements'}
+                </BrandText>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {activeTab === 'overview' ? (
+          <View style={styles.tabContent}>
+            {/* Bio */}
+            <View style={styles.overviewBlock}>
+              <BrandText weight="medium" style={styles.blockTitle}>Bio</BrandText>
+              <BrandText weight="medium" style={styles.bioText}>
+                {user.bio ? user.bio : 'No bio yet. Tap the settings icon to add one.'}
+              </BrandText>
+            </View>
+
+            {/* Level XP progress */}
+            <View style={styles.overviewBlock}>
+              <BrandText weight="medium" style={styles.blockTitle}>Level</BrandText>
+              <View style={styles.xpRow}>
+                <View style={[styles.levelBadge, styles.roundedFull, { backgroundColor: Brand.sticker.pink }]}>
+                  <BrandText weight="bold" color={Brand.bg} style={styles.levelBadgeText}>
+                    {stats.currentLevel}
+                  </BrandText>
+                </View>
+                <View style={styles.progressColumn}>
+                  <View style={styles.progressBarBackground}>
+                    <View style={[styles.progressBarActive, { width: `${xpProgress * 100}%` }]} />
+                  </View>
+                  <BrandText weight="medium" style={styles.xpCounter}>
+                    {stats.currentXPInLevel}/{stats.xpNeededForNextLevel}
+                  </BrandText>
+                </View>
+                <View style={[styles.levelBadge, styles.roundedFull, { backgroundColor: Brand.purple }]}>
+                  <BrandText weight="bold" color={Brand.bg} style={styles.levelBadgeText}>
+                    {stats.currentLevel + 1}
+                  </BrandText>
+                </View>
+              </View>
+            </View>
+
+            {/* Stats grid 2x2 */}
+            <View style={styles.statsGrid}>
+              <StatCard icon="flame" color={Brand.sticker.pink} value={stats.dayStreak} label="Day streak" />
+              <StatCard icon="flash" color={Brand.sticker.gold} value={stats.totalXP} label="Total XP" />
+              <StatCard icon="location" color={Brand.purple} value={stats.uniqueLocations} label="Unique locations" />
+              <StatCard icon="map" color={Brand.sticker.green} value={stats.totalCheckIns} label="Total check-ins" />
+            </View>
+
+            {/* Interests */}
+            {user.interests.length > 0 && (
+              <View style={styles.overviewBlock}>
+                <BrandText weight="medium" style={styles.blockTitle}>Interests</BrandText>
+                <View style={styles.chipsRow}>
+                  {user.interests.map((interest) => (
+                    <View key={interest} style={[styles.chip, stampBorder]}>
+                      <BrandText weight="semibold" color={Brand.purple} style={styles.chipText}>
+                        {interest}
+                      </BrandText>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            {/* Recent check-ins (folded in from History) */}
+            <View style={styles.overviewBlock}>
+              <BrandText weight="medium" style={styles.blockTitle}>Recent check-ins</BrandText>
+              {entries.length === 0 ? (
+                <View style={[styles.emptyCard, stampBorder]}>
+                  <Ionicons name="map-outline" size={28} color={Brand.purple} />
+                  <BrandText weight="medium" color={Brand.inkSecondary} style={styles.emptyText}>
+                    No check-ins yet. Explore the map and check in to start your journey.
+                  </BrandText>
+                </View>
+              ) : (
+                <View style={styles.checkInList}>
+                  {entries.map((entry) => {
+                    const loc = entry.location;
+                    return (
+                      <View key={entry.checkIn.id} style={[styles.checkInCard, stampBorder]}>
+                        <Image
+                          source={{ uri: entry.checkIn.photoUrl || loc?.imageUrls[0] }}
+                          style={styles.checkInImage}
+                        />
+                        <View style={styles.checkInInfo}>
+                          <BrandText weight="semibold" style={styles.checkInName} numberOfLines={1}>
+                            {loc?.name ?? 'Unknown location'}
+                          </BrandText>
+                          <View style={styles.checkInMetaRow}>
+                            <View style={styles.checkInMetaItem}>
+                              <Ionicons name="calendar-outline" size={12} color={Brand.inkSubtle} />
+                              <BrandText weight="medium" color={Brand.inkSecondary} style={styles.checkInMetaText}>
+                                {formatDate(entry.checkIn.timestamp)}
+                              </BrandText>
+                            </View>
+                            <View style={styles.checkInMetaItem}>
+                              <Ionicons name="time-outline" size={12} color={Brand.inkSubtle} />
+                              <BrandText weight="medium" color={Brand.inkSecondary} style={styles.checkInMetaText}>
+                                {formatTime(entry.checkIn.timestamp)}
+                              </BrandText>
+                            </View>
+                          </View>
+                          <View style={styles.checkInBadges}>
+                            <View style={[styles.pointsBadge, stampBorder]}>
+                              <Ionicons name="trophy" size={11} color={Brand.sticker.gold} />
+                              <BrandText weight="semibold" color={Brand.sticker.gold} style={styles.pointsText}>
+                                {entry.checkIn.pointsEarned} pts
+                              </BrandText>
+                            </View>
+                            {entry.pendingSync && (
+                              <View style={[styles.pendingBadge, stampBorder]}>
+                                <Ionicons name="cloud-upload-outline" size={11} color={Brand.sticker.pink} />
+                                <BrandText weight="semibold" color={Brand.sticker.pink} style={styles.pendingText}>
+                                  Pending sync
+                                </BrandText>
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          </View>
+        ) : activeTab === 'gallery' ? (
+          <View style={styles.tabContent}>
+            {entries.length === 0 ? (
+              <View style={[styles.emptyCard, stampBorder]}>
+                <Ionicons name="images-outline" size={28} color={Brand.purple} />
+                <BrandText weight="medium" color={Brand.inkSecondary} style={styles.emptyText}>
+                  No photos yet. Check in at a location to start your gallery.
+                </BrandText>
+              </View>
+            ) : (
+              <View style={styles.galleryGrid}>
+                {entries.map((entry) => (
+                  <View key={entry.checkIn.id} style={[styles.galleryItem, stampBorder]}>
+                    <Image
+                      source={{ uri: entry.checkIn.photoUrl || entry.location?.imageUrls[0] }}
+                      style={styles.galleryImage}
+                    />
+                    <View style={styles.galleryCaption}>
+                      <BrandText weight="semibold" color={Brand.bg} style={styles.galleryName} numberOfLines={1}>
+                        {entry.location?.name ?? 'Unknown'}
+                      </BrandText>
+                      <BrandText weight="medium" color={Brand.bg} style={styles.galleryDate} numberOfLines={1}>
+                        {formatDate(entry.checkIn.timestamp)}
+                      </BrandText>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        ) : (
+          <View style={styles.tabContent}>
+            <View style={styles.achievementsHeader}>
+              <BrandText weight="semibold" style={styles.blockTitle}>Achievements</BrandText>
+              <View style={styles.achievementsCountPill}>
+                <Ionicons name="trophy" size={12} color={Brand.sticker.gold} />
+                <BrandText weight="bold" style={styles.achievementsCountText}>
+                  {unlockedCount}/{achievements.length}
+                </BrandText>
+              </View>
+            </View>
+            <View style={styles.achievementsGrid}>
+              {sortedAchievements.map((ach) => {
+                const diffColor = DIFFICULTY_COLOR[ach.difficulty] ?? Brand.inkSubtle;
+                return (
+                  <View
+                    key={ach.id}
+                    style={[
+                      styles.achievementCard,
+                      stampBorder,
+                      !ach.isUnlocked && styles.achievementLocked,
+                    ]}
+                  >
+                    {ach.isNew && (
+                      <View style={[styles.newBadge, styles.roundedFull]}>
+                        <BrandText weight="bold" color={Brand.bg} style={styles.newBadgeText}>NEW</BrandText>
+                      </View>
+                    )}
+                    {!ach.isUnlocked && (
+                      <View style={styles.lockBadge}>
+                        <Ionicons name="lock-closed" size={12} color={Brand.inkSubtle} />
+                      </View>
+                    )}
+
+                    <Ionicons
+                      name={ach.iconName as keyof typeof Ionicons.glyphMap}
+                      size={30}
+                      color={ach.isUnlocked ? diffColor : Brand.inkSubtle}
+                      style={styles.achievementIcon}
+                    />
+                    <View style={[styles.difficultyChip, { backgroundColor: diffColor }]}>
+                      <BrandText weight="bold" color={Brand.bg} style={styles.difficultyChipText}>
+                        {ach.difficulty}
+                      </BrandText>
+                    </View>
+                    <BrandText weight="semibold" style={styles.achievementTitle} numberOfLines={1}>
+                      {ach.title}
+                    </BrandText>
+                    <BrandText weight="medium" color={Brand.inkSecondary} style={styles.achievementDesc} numberOfLines={2}>
+                      {ach.description}
+                    </BrandText>
+                    <View style={styles.achievementPoints}>
+                      <Ionicons name="trophy" size={12} color={Brand.sticker.gold} />
+                      <BrandText weight="semibold" color={Brand.sticker.gold} style={styles.achievementPointsText}>
+                        {ach.points}
+                      </BrandText>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+interface StatCardProps {
+  icon: keyof typeof Ionicons.glyphMap;
+  color: string;
+  value: number;
+  label: string;
+}
+
+function StatCard({ icon, color, value, label }: StatCardProps) {
+  return (
+    <View style={[styles.statCard, stampBorder]}>
+      <Ionicons name={icon} size={24} color={color} />
+      <View style={styles.statTextWrap}>
+        <BrandText weight="semibold" style={styles.statValue}>{value}</BrandText>
+        <BrandText weight="medium" color={Brand.inkSecondary} style={styles.statLabel} numberOfLines={1}>
+          {label}
+        </BrandText>
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: Brand.bg,
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: Brand.bg,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scrollContent: {
+    paddingHorizontal: Spacing.three,
+    paddingBottom: 80,
+  },
+  roundedFull: {
+    borderRadius: BrandRadius.pill,
+  },
+
+  // Top bar
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingTop: Spacing.two,
+  },
+  iconSquare: {
+    width: 38,
+    height: 38,
+    borderBottomWidth: 3,
+    backgroundColor: Brand.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  iconSquarePlaceholder: {
+    width: 38,
+    height: 38,
+  },
+
+  // Avatar header
+  avatarHeader: {
+    alignItems: 'center',
+    marginBottom: Spacing.three,
+  },
+  avatarWrapper: {
+    position: 'relative',
+    marginBottom: Spacing.three,
+  },
+  avatarRing: {
+    width: 170,
+    height: 170,
+    borderBottomWidth: 2,
+    overflow: 'hidden',
+    backgroundColor: Brand.surface,
+  },
+  avatarLarge: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: Brand.surface,
+  },
+  avatarFallback: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  levelHex: {
+    position: 'absolute',
+    top: 4,
+    right: -4,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: Brand.sticker.pink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  levelHexText: {
+    fontSize: 16,
+  },
+  displayName: {
+    fontSize: 18,
+    color: Brand.ink,
+  },
+  username: {
+    fontSize: 16,
+    color: 'rgba(42,36,33,0.5)',
+  },
+  suburbRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: Spacing.one,
+  },
+  suburbText: {
+    fontSize: 13,
+  },
+
+  // Tabs
+  tabsRow: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(42,36,33,0.1)',
+    borderBottomWidth: 2,
+    borderBottomColor: 'rgba(42,36,33,0.1)',
+    marginBottom: Spacing.three,
+  },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: Spacing.three,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+    marginBottom: -2,
+  },
+  tabActive: {
+    borderBottomColor: Brand.purple,
+  },
+  tabText: {
+    fontSize: 14,
+  },
+  tabContent: {
+    gap: Spacing.four,
+  },
+
+  // Overview blocks
+  overviewBlock: {
+    gap: Spacing.two,
+  },
+  blockTitle: {
+    fontSize: 16,
+    color: Brand.ink,
+  },
+  bioText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: Brand.ink,
+  },
+
+  // Level XP
+  xpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+  },
+  levelBadge: {
+    width: 44,
+    height: 44,
+    borderWidth: 2,
+    borderColor: Brand.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  levelBadgeText: {
+    fontSize: 20,
+  },
+  progressColumn: {
+    flex: 1,
+    gap: 4,
+  },
+  progressBarBackground: {
+    height: 16,
+    borderRadius: BrandRadius.pill,
+    borderWidth: 1,
+    borderColor: Brand.ink,
+    backgroundColor: Brand.surface,
+    overflow: 'hidden',
+  },
+  progressBarActive: {
+    height: '100%',
+    borderRadius: BrandRadius.pill,
+    backgroundColor: Brand.purple,
+  },
+  xpCounter: {
+    fontSize: 10,
+    color: 'rgba(42,36,33,0.4)',
+    alignSelf: 'flex-end',
+    marginRight: 4,
+  },
+
+  // Stats grid
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.three,
+  },
+  statCard: {
+    width: '47%',
+    flexGrow: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: Brand.bg,
+    borderColor: 'rgba(42,36,33,0.2)',
+  },
+  statTextWrap: {
+    flex: 1,
+    gap: 4,
+  },
+  statValue: {
+    fontSize: 18,
+    color: Brand.ink,
+  },
+  statLabel: {
+    fontSize: 13,
+  },
+
+  // Interests chips
+  chipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+  },
+  chip: {
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one + 2,
+    borderRadius: BrandRadius.pill,
+    backgroundColor: Brand.surface,
+  },
+  chipText: {
+    fontSize: 13,
+    textTransform: 'capitalize',
+  },
+
+  // Recent check-ins
+  checkInList: {
+    gap: Spacing.two,
+  },
+  emptyCard: {
+    backgroundColor: Brand.surface,
+    alignItems: 'center',
+    gap: Spacing.two,
+    padding: Spacing.four,
+  },
+  emptyText: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  checkInCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.two,
+    gap: Spacing.three,
+    backgroundColor: Brand.surface,
+  },
+  checkInImage: {
+    width: 60,
+    height: 72,
+    borderRadius: BrandRadius.control,
+    backgroundColor: Brand.bg,
+  },
+  checkInInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  checkInName: {
+    fontSize: 15,
+    color: Brand.ink,
+  },
+  checkInMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  checkInMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  checkInMetaText: {
+    fontSize: 12,
+  },
+  checkInBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: Spacing.one,
+    marginTop: 2,
+  },
+  pointsBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: '#FDF3DA',
+  },
+  pointsText: {
+    fontSize: 11,
+  },
+  pendingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: '#FBE4EC',
+  },
+  pendingText: {
+    fontSize: 10,
+  },
+
+  // Gallery
+  galleryGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+  },
+  galleryItem: {
+    width: '31.7%',
+    aspectRatio: 0.82,
+    borderRadius: BrandRadius.control,
+    overflow: 'hidden',
+    backgroundColor: Brand.surface,
+    position: 'relative',
+  },
+  galleryImage: {
+    width: '100%',
+    height: '100%',
+  },
+  galleryCaption: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(42,36,33,0.6)',
+    paddingHorizontal: 5,
+    paddingVertical: 4,
+  },
+  galleryName: {
+    fontSize: 10,
+  },
+  galleryDate: {
+    fontSize: 8,
+    opacity: 0.85,
+  },
+
+  // Achievements grid
+  achievementsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.one,
+  },
+  achievementsCountPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FDF3DA',
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 2,
+    borderRadius: BrandRadius.pill,
+  },
+  achievementsCountText: {
+    fontSize: 13,
+    color: '#b46c00',
+  },
+  difficultyChip: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: BrandRadius.pill,
+    marginBottom: 2,
+  },
+  difficultyChipText: {
+    fontSize: 9,
+    letterSpacing: 0.3,
+  },
+  achievementsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.three,
+  },
+  achievementCard: {
+    width: '47%',
+    flexGrow: 1,
+    padding: Spacing.three,
+    alignItems: 'center',
+    gap: Spacing.one,
+    position: 'relative',
+    backgroundColor: Brand.surface,
+  },
+  achievementLocked: {
+    opacity: 0.55,
+    backgroundColor: Brand.bg,
+  },
+  achievementIcon: {
+    marginTop: Spacing.one,
+    marginBottom: Spacing.one,
+  },
+  achievementTitle: {
+    fontSize: 14,
+    color: Brand.ink,
+    textAlign: 'center',
+  },
+  achievementDesc: {
+    fontSize: 12,
+    textAlign: 'center',
+    minHeight: 32,
+  },
+  achievementPoints: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: Spacing.one,
+  },
+  achievementPointsText: {
+    fontSize: 12,
+  },
+  newBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: Brand.sticker.pink,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 2,
+    zIndex: 1,
+  },
+  newBadgeText: {
+    fontSize: 9,
+  },
+  lockBadge: {
+    position: 'absolute',
+    top: Spacing.two,
+    right: Spacing.two,
+    zIndex: 1,
+  },
+
+  // ---- Edit mode ----
+  editHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+  },
+  editHeaderTitle: {
+    fontSize: 18,
+    color: Brand.ink,
+  },
+  editAvatarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    marginBottom: Spacing.four,
+    marginTop: Spacing.two,
+  },
+  editAvatarCircle: {
+    width: 80,
+    height: 80,
+    borderBottomWidth: 2,
+    overflow: 'hidden',
+    backgroundColor: Brand.surface,
+  },
+  editAvatarImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: Brand.surface,
+  },
+  editAvatarMeta: {
+    flex: 1,
+    gap: Spacing.two,
+  },
+  presetsRow: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+  },
+  presetItem: {
+    width: 44,
+    height: 44,
+    borderBottomWidth: 2,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: Brand.surface,
+  },
+  presetItemSelected: {
+    borderColor: Brand.purple,
+  },
+  presetImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: Brand.surface,
+  },
+  checkmarkBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: Brand.purple,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Brand.surface,
+  },
+
+  fieldGroup: {
+    marginBottom: Spacing.three,
+    gap: 3,
+  },
+  interestGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginTop: 6,
+  },
+  interestCard: {
+    width: '31.5%',
+    paddingVertical: Spacing.three,
+    marginBottom: Spacing.two,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: Brand.surface,
+  },
+  interestCardSelected: {
+    backgroundColor: Brand.teal,
+  },
+  interestCardText: {
+    fontSize: 12,
+  },
+  label: {
+    fontSize: 14,
+    color: Brand.ink,
+  },
+  bioLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  charCounter: {
+    fontSize: 12,
+    color: Brand.inkSubtle,
+  },
+  errorText: {
+    color: '#d1453b',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 48,
+    paddingHorizontal: 12,
+    gap: 6,
+    backgroundColor: Brand.surface,
+  },
+  inputRowError: {
+    borderColor: '#d1453b',
+  },
+  inputField: {
+    flex: 1,
+    height: '100%',
+    fontFamily: BrandFonts.medium,
+    fontSize: 14,
+    color: Brand.ink,
+  },
+  atPrefix: {
+    fontSize: 14,
+    color: Brand.inkSubtle,
+  },
+  bioInputRow: {
+    height: 100,
+    alignItems: 'flex-start',
+    paddingVertical: 8,
+  },
+  bioInputField: {
+    height: undefined,
+    flex: 1,
+    alignSelf: 'stretch',
+    textAlignVertical: 'top',
+  },
+  saveButton: {
+    width: '100%',
+    marginTop: Spacing.two,
+  },
+  cancelButton: {
+    alignItems: 'center',
+    paddingVertical: Spacing.three,
+    marginTop: Spacing.one,
+  },
+  cancelButtonText: {
+    fontSize: 14,
+  },
+});
