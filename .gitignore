@@ -41,3 +41,17 @@ app-example
 # generated native folders
 /ios
 /android
+
+# local env (committed config lives in .env.example)
+.env
+
+# build artifacts
+*.apk
+*.aab
+
+# dev/debug screenshots (kept on disk, out of git)
+/*.png
+
+# tooling state
+.omc/
+.playwright-mcp/
