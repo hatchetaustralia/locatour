@@ -10,6 +10,15 @@ use Illuminate\Http\Request;
 class LocationController extends Controller
 {
     /**
+     * Reveal-by-proximity radius (metres) for spots ABOVE the user's teaser cap.
+     * Deliberately tight (2 km, NOT the app's 10 km map vicinity): this is a public,
+     * unauthenticated endpoint, so a wide radius would let someone cheaply scrape /
+     * "drive around" and harvest the protected high-tier spots. You must be genuinely
+     * close to surface one. (Real defence = auth + rate-limit + coord-fuzzing later.)
+     */
+    private const REVEAL_RADIUS_M = 2000;
+
+    /**
      * GET /api/locations
      * Returns active + APPROVED locations only (the mobile app shows
      * approved spots), in the app's ExploreLocation shape.
@@ -35,11 +44,14 @@ class LocationController extends Controller
     public function index(Request $request)
     {
         $hasLevel = $request->filled('level');
-        // Return up to unlockedTier+3 so the app has everything it needs in one
-        // slice: unlocked spots (≤ unlockedTier), the +1/+2 "locked teaser" band
-        // surfaced in the home lists, and the +3 hidden-discoverable band the
-        // camera uses. The app does the per-screen display/lock gating; anything
-        // beyond +3 stays secret (never sent).
+        $hasGeo = $request->filled('lat') && $request->filled('lng');
+
+        // The unlockedTier+3 "teaser cap" only applies to FAR spots. When we know
+        // where the user is, anything within VICINITY_M is revealed regardless of
+        // tier (proximity beats level-gating — a place you're standing next to
+        // shouldn't be invisible because you're low level), with the cap re-applied
+        // per-distance in the Haversine pass below. Without coordinates we can't
+        // reveal-by-proximity, so fall back to a pure tier gate on the query here.
         $maxTier = $hasLevel
             ? min(10, self::unlockedTier((int) $request->integer('level')) + 3)
             : null;
@@ -53,16 +65,13 @@ class LocationController extends Controller
                 fn ($q) => $q->where('tier', '<=', (int) $request->integer('maxTier')),
             )
             ->when(
-                $maxTier !== null,
-                // Tier-gate by level, but major destinations are bucket-list
-                // landmarks that are ALWAYS shown regardless of the gate.
+                $maxTier !== null && ! $hasGeo,
+                // No-geo fallback: tier-gate by level, majors always shown.
                 fn ($q) => $q->where(function ($inner) use ($maxTier) {
                     $inner->where('tier', '<=', $maxTier)
                         ->orWhere('is_major_destination', true);
                 }),
             );
-
-        $hasGeo = $request->filled('lat') && $request->filled('lng');
 
         if ($hasGeo) {
             $lat = (float) $request->input('lat');
@@ -94,10 +103,26 @@ class LocationController extends Controller
             $lng = (float) $request->input('lng');
             $radius = $request->filled('radius') ? (int) $request->integer('radius') : 200000;
 
-            $locations = $locations->filter(
-                fn (Location $location): bool => (bool) $location->is_major_destination
-                    || self::haversineMetres($lat, $lng, (float) $location->latitude, (float) $location->longitude) <= $radius,
-            )->values();
+            $locations = $locations->filter(function (Location $location) use ($lat, $lng, $radius, $maxTier): bool {
+                // Major destinations are always included, at any distance.
+                if ($location->is_major_destination) {
+                    return true;
+                }
+
+                $distance = self::haversineMetres($lat, $lng, (float) $location->latitude, (float) $location->longitude);
+
+                if ($distance > $radius) {
+                    return false;
+                }
+
+                // Within the reveal radius: surfaced regardless of tier (proximity wins).
+                if ($distance <= self::REVEAL_RADIUS_M) {
+                    return true;
+                }
+
+                // Farther out: keep the teaser cap so far high-tier spots don't flood.
+                return $maxTier === null || $location->tier <= $maxTier;
+            })->values();
         }
 
         return LocationResource::collection($locations);
