@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class Location extends Model
 {
@@ -147,6 +148,12 @@ class Location extends Model
     {
         static::saving(function (self $location): void {
             $location->tier = self::tierForPoints((int) $location->points);
+
+            // Auto-derive a slug from the name when none was provided, so the
+            // NOT NULL slug column is always satisfied (some bulk seeders omit it).
+            if (empty($location->slug) && ! empty($location->name)) {
+                $location->slug = Str::slug($location->name, '_');
+            }
 
             // Stamp when Google data was first attached (cheap re-sync marker).
             if ($location->place_id && empty($location->place_synced_at)) {

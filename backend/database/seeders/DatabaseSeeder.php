@@ -28,6 +28,7 @@ class DatabaseSeeder extends Seeder
             [
                 'name' => 'Admin',
                 'password' => Hash::make('password'),
+                'is_super_admin' => true,
             ]
         );
         $admin->syncRoles(['admin']);
@@ -46,6 +47,21 @@ class DatabaseSeeder extends Seeder
         $this->call([
             CategorySeeder::class,
             LocationSeeder::class,
+            // Bulk real WA locations, by region — each idempotent on `name`, so a
+            // re-seed / migrate:fresh restores the full ~1,100-spot catalogue
+            // (previously these were run by hand and a migrate:fresh wiped them).
+            WaLocationsSeeder::class,
+            YanchepLocationsSeeder::class,
+            WaBulkPerthMetroSeeder::class,
+            WaBulkPeelSeeder::class,
+            WaBulkSouthWestSeeder::class,
+            WaBulkGreatSouthernSeeder::class,
+            WaBulkWheatbeltSeeder::class,
+            WaBulkGoldfieldsEsperanceSeeder::class,
+            WaBulkMidWestSeeder::class,
+            WaBulkGascoyneSeeder::class,
+            WaBulkPilbaraSeeder::class,
+            WaBulkKimberleySeeder::class,
             WaLegendarySeeder::class,
         ]);
     }
