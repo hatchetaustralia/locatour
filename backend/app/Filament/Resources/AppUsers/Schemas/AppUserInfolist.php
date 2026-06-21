@@ -74,6 +74,40 @@ class AppUserInfolist
                         ]),
                     ]),
 
+                // Shown only when the account has at least one unresolved flag.
+                // Admins resolve flags via the "Resolve flags" action in the page header.
+                Section::make('Flags')
+                    ->icon('heroicon-o-flag')
+                    ->iconColor('danger')
+                    ->description('Unresolved flags raised by automated monitors or admins.')
+                    ->schema([
+                        RepeatableEntry::make('activeFlags')
+                            ->hiddenLabel()
+                            ->schema([
+                                TextEntry::make('type')
+                                    ->label('Type')
+                                    ->badge()
+                                    ->color('danger'),
+                                TextEntry::make('created_at')
+                                    ->label('Raised at')
+                                    ->dateTime(),
+                                TextEntry::make('reason')
+                                    ->label('Reason')
+                                    ->columnSpanFull(),
+                                TextEntry::make('details')
+                                    ->label('Details')
+                                    ->state(fn ($record): string => $record->details
+                                        ? collect($record->details)
+                                            ->map(fn ($v, $k) => "$k: $v")
+                                            ->implode(', ')
+                                        : '—'
+                                    )
+                                    ->columnSpanFull(),
+                            ])
+                            ->columns(2),
+                    ])
+                    ->visible(fn (AppUser $record): bool => $record->isFlagged()),
+
                 // C/D fix: the original 4-column RepeatableEntry with a fixed
                 // height(160) image caused horizontal overflow on narrow viewports
                 // (the 4 fixed-width columns exceeded the page width, pushing the

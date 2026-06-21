@@ -28,8 +28,17 @@ Route::middleware(['auth:sanctum', EnsureAppUserNotBlocked::class])->group(funct
 // Public read-only Locations API (no auth for the prototype).
 // Shaped to match the Expo app's ExploreLocation type — a drop-in
 // replacement for storage.getLocations().
-Route::get('/locations', [LocationController::class, 'index']);
-Route::get('/locations/{id}', [LocationController::class, 'show']);
+//
+// These routes are intentionally PUBLIC (no auth:sanctum). To require auth
+// later, move both Route::get lines into the auth:sanctum group above.
+//
+// The 'throttle:locations' limiter (40 req/min, keyed by user ID or IP) and
+// 'monitor.location.queries' middleware (optional per-account attribution +
+// scraping detection) are applied here without breaking public access.
+Route::middleware(['throttle:locations', 'monitor.location.queries'])->group(function () {
+    Route::get('/locations', [LocationController::class, 'index']);
+    Route::get('/locations/{id}', [LocationController::class, 'show']);
+});
 
 // Public read-only Achievements catalogue (the app evaluates them locally).
 Route::get('/achievements', [AchievementController::class, 'index']);

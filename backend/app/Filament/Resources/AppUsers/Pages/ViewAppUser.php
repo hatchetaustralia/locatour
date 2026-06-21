@@ -44,9 +44,55 @@ class ViewAppUser extends ViewRecord
         ];
     }
 
+    /** Whether the signed-in admin may resolve flags (super admins only). */
+    protected function canResolveFlags(): bool
+    {
+        return (bool) (Auth::user()?->is_super_admin);
+    }
+
     protected function getHeaderActions(): array
     {
         return [
+            // Resolve all unresolved flags on this account and unblock it.
+            // Use this when an account was falsely flagged by the automated monitor
+            // or when the issue has been reviewed and the account reinstated.
+            Action::make('resolveFlags')
+                ->label('Resolve flags')
+                ->icon('heroicon-o-flag')
+                ->color('warning')
+                ->visible(fn (): bool => $this->record->isFlagged() && $this->canResolveFlags())
+                ->requiresConfirmation()
+                ->modalHeading('Resolve all flags')
+                ->modalDescription('This will mark every unresolved flag as resolved and unblock the account so the user can log in again. The query monitor will continue tracking but won\'t re-flag unless the threshold is reached again.')
+                ->modalSubmitActionLabel('Resolve flags')
+                ->action(function (): void {
+                    abort_unless($this->canResolveFlags(), 403);
+
+                    /** @var AppUser $record */
+                    $record = $this->record;
+
+                    // Mark every unresolved flag resolved by this admin.
+                    $record->activeFlags()->update([
+                        'resolved_at' => now(),
+                        'resolved_by_id' => Auth::id(),
+                    ]);
+
+                    // Unblock AND reset the scrape-detection window so a reinstated
+                    // user starts clean — otherwise a counter still at the threshold
+                    // would auto-re-block them on their very next location query.
+                    $record->update([
+                        'status' => AppUser::STATUS_ACTIVE,
+                        'suspicious_query_count' => 0,
+                        'last_location_query_at' => null,
+                    ]);
+
+                    Notification::make()
+                        ->title('Flags resolved')
+                        ->body(sprintf('%s has been unflagged and unblocked. The query monitor will continue from the next location query.', $record->display_name))
+                        ->success()
+                        ->send();
+                }),
+
             // Super-admin-only: manually grant (or deduct) points. The modal shows
             // a LIVE preview of the level the user will land on, so the admin can
             // see the effect of a points change before applying it (the OSRS curve

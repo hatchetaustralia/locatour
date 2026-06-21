@@ -8,10 +8,13 @@ use Filament\Actions\BulkAction;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\ViewAction;
 use Filament\Notifications\Notification;
+use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 
 class AppUsersTable
@@ -59,6 +62,17 @@ class AppUsersTable
                         AppUser::STATUS_BLOCKED => 'danger',
                         default => 'gray',
                     }),
+                // Shows a danger flag icon when the account has unresolved flags.
+                // Tooltip is omitted here (flag details live on the view page).
+                IconColumn::make('is_flagged')
+                    ->label('Flagged')
+                    ->boolean()
+                    ->state(fn (AppUser $record): bool => $record->isFlagged())
+                    ->trueIcon('heroicon-o-flag')
+                    ->falseIcon('heroicon-o-minus')
+                    ->trueColor('danger')
+                    ->falseColor('gray')
+                    ->toggleable(),
                 TextColumn::make('created_at')
                     ->label('Joined')
                     ->dateTime()
@@ -71,6 +85,11 @@ class AppUsersTable
                         AppUser::STATUS_ACTIVE => 'Active',
                         AppUser::STATUS_BLOCKED => 'Blocked',
                     ]),
+                // Narrows the list to accounts with at least one unresolved flag.
+                Filter::make('flagged')
+                    ->label('Flagged accounts only')
+                    ->query(fn (Builder $query): Builder => $query->flagged())
+                    ->toggle(),
             ])
             ->recordActions([
                 ViewAction::make(),
