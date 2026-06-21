@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AchievementController;
+use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\CheckInController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\PlacesController;
@@ -32,6 +33,10 @@ Route::get('/locations/{id}', [LocationController::class, 'show']);
 
 // Public read-only Achievements catalogue (the app evaluates them locally).
 Route::get('/achievements', [AchievementController::class, 'index']);
+
+// Public read-only: the single live announcement banner (or null). The app
+// polls this and shows the banner until dismissed. Managed in the admin panel.
+Route::get('/announcement', [AnnouncementController::class, 'current']);
 
 // Server-side Google Places (New) suburb autocomplete proxy for onboarding —
 // keeps the Maps key off the client. Returns { suggestions: [{description, placeId}] }.

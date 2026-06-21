@@ -93,6 +93,7 @@ class AdminPanelProvider extends PanelProvider
             ->navigationGroups([
                 'Content',
                 'Gamification',
+                'Engagement',
                 'Management',
                 'Filament Shield',
             ])
