@@ -79,4 +79,14 @@ class LocationsOverviewMap extends Widget
     {
         return config('services.google_maps_key');
     }
+
+    /**
+     * The Locations create-page URL. The map JS appends prefill query params
+     * (name/address/lat/lng/place_id) when an admin clicks a Google POI to add it
+     * as a new location — CreateLocation reads them to pre-fill the form.
+     */
+    public function getCreateUrl(): string
+    {
+        return \App\Filament\Resources\Locations\LocationResource::getUrl('create');
+    }
 }

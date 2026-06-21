@@ -13,6 +13,30 @@ class CreateLocation extends CreateRecord
     protected static string $resource = LocationResource::class;
 
     /**
+     * Pre-fill the form from query params when an admin clicks a Google place on
+     * the overview map ("Add as location"). Only whitelisted fields, only when
+     * present — the admin still reviews + sets tier/points before saving.
+     */
+    public function mount(): void
+    {
+        parent::mount();
+
+        foreach (['name', 'address', 'place_id'] as $field) {
+            $value = request()->query($field);
+            if (filled($value)) {
+                $this->data[$field] = $value;
+            }
+        }
+
+        foreach (['latitude', 'longitude'] as $field) {
+            $value = request()->query($field);
+            if (is_numeric($value)) {
+                $this->data[$field] = (float) $value;
+            }
+        }
+    }
+
+    /**
      * Force submission metadata before the record is created.
      *
      * Contributors:

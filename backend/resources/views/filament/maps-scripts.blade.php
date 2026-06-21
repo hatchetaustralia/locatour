@@ -122,11 +122,13 @@
 
         Alpine.data('locationsOverviewMap', (config) => ({
             popupUrlBase: '',
+            createUrl: '',
             map: null,
             info: null,
             markers: [],
             async init() {
                 this.popupUrlBase = config.popupUrlBase || '';
+                this.createUrl = config.createUrl || '';
                 locatourInjectInfoWindowStyles();
                 await window.__locatourLoadGoogleMaps(config.apiKey);
                 const { Map, InfoWindow } = await google.maps.importLibrary('maps');
@@ -157,9 +159,16 @@
                 });
                 this.info = new InfoWindow({ maxWidth: 320 });
 
-                // Close-on-map-click (replaces the removed X): a click anywhere on
-                // the map that ISN'T the open popup dismisses it.
-                this.map.addListener('click', () => this.info.close());
+                // A plain map click dismisses the open popup. Clicking a Google POI
+                // (a park, attraction, etc. — the noisy categories are hidden) offers
+                // to add it as a new location instead of Google's default info window.
+                this.map.addListener('click', (e) => {
+                    this.info.close();
+                    if (e.placeId) {
+                        e.stop(); // suppress Google's built-in POI info window
+                        this.offerAddPoi(e.placeId, e.latLng);
+                    }
+                });
 
                 // Plot the current pins, then re-plot whenever the filters above the
                 // table change (the hidden #pins element re-renders with new JSON).
@@ -210,6 +219,40 @@
                     this.map.setCenter(bounds.getCenter());
                     this.map.setZoom(13);
                 }
+            },
+            // A clicked Google POI → fetch its details, then show a small card
+            // offering to add it as a new Locatour location. The "Add" link opens
+            // the create form prefilled (name/address/coords/place_id) for review.
+            async offerAddPoi(placeId, latLng) {
+                if (!this.createUrl) return;
+                try {
+                    const { Place } = await google.maps.importLibrary('places');
+                    const place = new Place({ id: placeId });
+                    await place.fetchFields({ fields: ['displayName', 'formattedAddress', 'location'] });
+                    const lat = place.location ? place.location.lat() : (latLng ? latLng.lat() : '');
+                    const lng = place.location ? place.location.lng() : (latLng ? latLng.lng() : '');
+                    const params = new URLSearchParams({
+                        name: place.displayName || '',
+                        address: place.formattedAddress || '',
+                        latitude: lat,
+                        longitude: lng,
+                        place_id: placeId,
+                    });
+                    this.info.setContent(this.addPoiCard(place.displayName || '', place.formattedAddress || '', this.createUrl + '?' + params.toString()));
+                    this.info.setPosition(latLng);
+                    this.info.open(this.map);
+                } catch (err) {
+                    console.warn('POI lookup failed', err);
+                }
+            },
+            addPoiCard(name, address, href) {
+                return (
+                    `<div style="width:240px;font-family:inherit;font-size:13px;color:#2a2421;padding:6px 4px">
+                        <div style="font-weight:700;font-size:14px;margin-bottom:2px">${this.escape(name) || 'This place'}</div>
+                        ${address ? `<div style="color:#8a8076;font-size:12px;margin-bottom:10px">${this.escape(address)}</div>` : '<div style="margin-bottom:10px"></div>'}
+                        <a href="${this.escape(href)}" style="display:inline-block;background:#b45309;color:#fff;font-weight:600;text-decoration:none;font-size:13px;padding:7px 13px;border-radius:8px">+ Add as location</a>
+                    </div>`
+                );
             },
             // Fetch the per-location popup JSON (lazy, on marker click). Returns
             // null on any failure so the caller can show an error card.

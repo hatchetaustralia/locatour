@@ -6,7 +6,7 @@
 <x-filament-widgets::widget>
     <x-filament::section>
         <x-slot name="heading">Locations overview</x-slot>
-        <x-slot name="description">Every location on the map — click a pin to jump to its editor. Markers follow the status &amp; tier filters above the table.</x-slot>
+        <x-slot name="description">Click a pin to jump to its editor, or click a Google place (park, attraction…) to add it as a new location. Markers follow the status &amp; tier filters above the table.</x-slot>
 
         @unless ($apiKey)
             <div class="rounded-lg border border-warning-300 bg-warning-50 p-4 text-sm text-warning-700 dark:border-warning-700 dark:bg-warning-900/20 dark:text-warning-300">
@@ -18,6 +18,7 @@
                 x-data="locationsOverviewMap({
                     apiKey: @js($apiKey),
                     popupUrlBase: @js($this->getPopupUrlBase()),
+                    createUrl: @js($this->getCreateUrl()),
                 })"
             >
                 {{-- Pin data is fed via a hidden element that DOES re-render on every
