@@ -40,20 +40,21 @@ class MonitorLocationQueries
 
     /**
      * Queries within a window above which the account is FLAGGED for review.
-     * The app calls /api/locations only a handful of times per session (once per
-     * screen-mount / first GPS fix — NOT per map pan or GPS tick), so even a very
-     * active human stays in the low tens per hour. 100 leaves comfortable headroom
-     * while catching sustained automated pulls early. Flagging is non-destructive
-     * (admin review only), so it can sit fairly tight.
+     * Only the located re-syncs hit the network — one when the home screen gets
+     * its GPS fix, one when the map first centres — so an app open is ~2 calls
+     * (3-4 if screens re-mount). Even someone reopening the app every few minutes
+     * tops out around 10-40/hour. 50 sits just above the heaviest plausible human;
+     * flagging is non-destructive (admin review only) so it can sit tight.
      */
-    public const FLAG_THRESHOLD = 100;
+    public const FLAG_THRESHOLD = 50;
 
     /**
      * Queries within a window above which the account is also AUTO-BLOCKED.
-     * Auto-block is destructive, so this keeps a wide margin (~5x) over the
-     * heaviest plausible human use — only an automated client sustains this rate.
+     * Auto-block is destructive, so this keeps a ~3-6x margin over the heaviest
+     * plausible human use — only an automated client sustains this rate (a scraper
+     * capped at the 40/min route limit still trips it in ~3 minutes).
      */
-    public const BLOCK_THRESHOLD = 300;
+    public const BLOCK_THRESHOLD = 120;
 
     public function handle(Request $request, Closure $next): Response
     {
