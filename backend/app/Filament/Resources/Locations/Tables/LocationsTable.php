@@ -7,6 +7,7 @@ use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
+use Filament\Actions\ViewAction;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ToggleColumn;
@@ -45,12 +46,24 @@ class LocationsTable
                 TextColumn::make('points')
                     ->numeric()
                     ->sortable(),
+                TextColumn::make('check_ins_count')
+                    ->label('Check-ins')
+                    ->counts('checkIns')
+                    ->numeric()
+                    ->sortable(),
                 TextColumn::make('geofence_radius_m')
                     ->label('Radius (m)')
                     ->numeric()
                     ->toggleable(isToggledHiddenByDefault: true),
                 ToggleColumn::make('active'),
             ])
+            // The status + tier SelectFilters provide the modifyQueryUsing logic
+            // that actually scopes the query when tableFilters is set.  The UI for
+            // these filters is rendered above the map via the page-level select bar
+            // on ListLocations::headerWidgets() — NOT inside the table — so the
+            // layout is: page heading → filters → map → table rows.
+            // FiltersLayout default (Dropdown) keeps the filter trigger hidden; the
+            // page-level wire:model.live selects drive tableFilters directly.
             ->filters([
                 SelectFilter::make('status')
                     ->options([
@@ -58,6 +71,13 @@ class LocationsTable
                         Location::STATUS_APPROVED => 'Approved',
                         Location::STATUS_REJECTED => 'Rejected',
                     ]),
+                SelectFilter::make('tier')
+                    ->options(
+                        collect(Location::TIER_DESCRIPTIONS)
+                            ->keys()
+                            ->mapWithKeys(fn (int $tier): array => [$tier => "Tier {$tier}"])
+                            ->all(),
+                    ),
             ])
             ->recordActions([
                 // Moderators/admins approve a pending submission.
@@ -82,12 +102,18 @@ class LocationsTable
                         $record->update(['status' => Location::STATUS_REJECTED]);
                         Notification::make()->title('Location rejected')->danger()->send();
                     }),
+                ViewAction::make(),
                 EditAction::make(),
             ])
             ->toolbarActions([
                 BulkActionGroup::make([
                     DeleteBulkAction::make(),
                 ]),
-            ]);
+            ])
+            // Disable the default right-side global search bar. A custom search
+            // field is injected at TOOLBAR_START (left side) via the
+            // AdminPanelProvider render hook so the toolbar reads:
+            //   [search]  ←left          right→  [column toggle]
+            ->searchable(false);
     }
 }

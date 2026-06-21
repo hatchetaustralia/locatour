@@ -2,8 +2,9 @@
 
 namespace App\Filament\Resources\Locations\Widgets;
 
-use App\Filament\Resources\Locations\LocationResource;
+use App\Filament\Resources\Locations\Pages\ListLocations;
 use App\Models\Location;
+use Filament\Widgets\Concerns\InteractsWithPageTable;
 use Filament\Widgets\Widget;
 
 /**
@@ -13,35 +14,65 @@ use Filament\Widgets\Widget;
  *
  * Custom widget (Blade + the Google Maps JavaScript API) — see spec 06 §5 and
  * the LocationMapPicker note on plugin compatibility.
+ *
+ * UNIFIED FILTER: this widget pulls its pins from the SAME query the list
+ * table uses (via InteractsWithPageTable::getPageTableQuery), so the status +
+ * tier SelectFilters above the table drive the map markers and the table rows
+ * at the same time. The trait exposes #[Reactive] $tableFilters, so when an
+ * admin changes a filter the widget re-renders and the markers reduce to match.
  */
 class LocationsOverviewMap extends Widget
 {
+    use InteractsWithPageTable;
+
     protected string $view = 'filament.resources.locations.widgets.locations-overview-map';
 
     protected int|string|array $columnSpan = 'full';
 
     /**
-     * Pin data for the map: every location's coordinates, name, tier, status
-     * and a deep link to its edit page.
+     * The list page whose table filters/search/sort this widget mirrors.
+     */
+    protected function getTablePage(): string
+    {
+        return ListLocations::class;
+    }
+
+    /**
+     * Lightweight pin data for the map — JUST what's needed to plot a marker
+     * and shape its icon: id, coordinates, tier, category and status. The rich
+     * popup content (image, points, check-in count, address, edit link) is
+     * fetched lazily per-marker on click via getPopupUrlBase(), so this array
+     * stays small even with ~1000 locations.
+     *
+     * Reads the list table's FILTERED query so the status/tier filters above
+     * the table reduce the map markers in lock-step with the table rows.
      *
      * @return array<int, array<string, mixed>>
      */
     public function getPins(): array
     {
-        return Location::query()
-            ->select(['id', 'slug', 'name', 'latitude', 'longitude', 'tier', 'points', 'status', 'category'])
+        return $this->getPageTableQuery()
+            ->select(['id', 'latitude', 'longitude', 'tier', 'status', 'category'])
+            ->reorder()
             ->get()
             ->map(fn (Location $location): array => [
-                'name' => $location->name,
+                'id' => $location->id,
                 'lat' => (float) $location->latitude,
                 'lng' => (float) $location->longitude,
                 'tier' => (int) $location->tier,
-                'points' => (int) $location->points,
                 'status' => $location->status,
                 'category' => $location->category,
-                'editUrl' => LocationResource::getUrl('edit', ['record' => $location]),
             ])
             ->all();
+    }
+
+    /**
+     * Base URL for the per-location popup endpoint. The map JS appends the pin's
+     * id and a "/popup" suffix (see the "__ID__" placeholder it replaces).
+     */
+    public function getPopupUrlBase(): string
+    {
+        return url('/admin/locations/__ID__/popup');
     }
 
     public function getApiKey(): ?string

@@ -151,6 +151,10 @@ class LocationForm
                             ->rows(2)
                             ->placeholder('e.g. "Huge state attraction with full facilities — can take crowds" or "Fragile, no facilities, unpublicised — protect it".')
                             ->columnSpanFull(),
+                        Toggle::make('is_major_destination')
+                            ->label('Major destination')
+                            ->columnSpanFull()
+                            ->helperText('Always visible to all players, regardless of distance (use only for marquee landmarks).'),
                     ]),
 
                 Section::make('Accessibility & amenities')
