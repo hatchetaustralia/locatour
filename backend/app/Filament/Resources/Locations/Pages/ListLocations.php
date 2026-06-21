@@ -58,8 +58,14 @@ class ListLocations extends ListRecords
             Location::STATUS_REJECTED => 'Rejected',
         ];
 
-        $tierOptions = collect(Location::TIER_DESCRIPTIONS)
-            ->keys()
+        // Only offer tiers that actually have locations, so the filter never
+        // shows an option (e.g. Tier 7–10) that would empty the map/table and
+        // look broken. Tiers 1–6 are what the WA seed data currently produces.
+        $tierOptions = Location::query()
+            ->select('tier')
+            ->distinct()
+            ->orderBy('tier')
+            ->pluck('tier')
             ->mapWithKeys(fn (int $tier): array => [$tier => "Tier {$tier}"])
             ->all();
 
@@ -89,7 +95,14 @@ class ListLocations extends ListRecords
         // here). Inline styles always apply. `fi-input-wrp`/`fi-select-input` are
         // Filament's own component classes (always present in the theme) so each
         // box still matches the native SelectFilter dropdowns.
-        $selectStyle = 'width:100%;border:none;background:transparent;padding:0.5rem 0.75rem;font-size:0.875rem;color:inherit;outline:none;cursor:pointer';
+        // A native <select> with appearance:none (inherited from fi-select-input)
+        // has no dropdown arrow, so it reads as a plain text box. Draw a chevron as
+        // a right-aligned background SVG and reserve room for it with extra right
+        // padding. Built via rawurlencode so the data URI needs no quote juggling
+        // inside the HTML style attribute.
+        $chevron = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="#6b7280"><path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"/></svg>';
+        $chevronUri = 'data:image/svg+xml,'.rawurlencode($chevron);
+        $selectStyle = "width:100%;border:none;background-color:transparent;background-image:url('{$chevronUri}');background-repeat:no-repeat;background-position:right 0.6rem center;background-size:1.1rem;padding:0.5rem 2.25rem 0.5rem 0.75rem;font-size:0.875rem;color:inherit;outline:none;cursor:pointer;-webkit-appearance:none;appearance:none";
         $boxStyle = 'display:flex;flex:0 1 14rem;min-width:11rem;border-radius:0.5rem';
 
         $filterBar = <<<HTML
