@@ -31,6 +31,7 @@ class LocationResource extends JsonResource
             'name' => $this->name,
             'category' => $this->category,
             'tier' => (int) $this->tier,
+            'isMajorDestination' => (bool) $this->is_major_destination,
             'coordinates' => [
                 'latitude' => (float) $this->latitude,
                 'longitude' => (float) $this->longitude,

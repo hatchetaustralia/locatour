@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Location extends Model
 {
@@ -136,6 +137,7 @@ class Location extends Model
         'address',
         'points',
         'tier',
+        'is_major_destination',
         'tier_rationale',
         'description',
         'image_urls',
@@ -171,6 +173,7 @@ class Location extends Model
         'longitude' => 'decimal:7',
         'points' => 'integer',
         'tier' => 'integer',
+        'is_major_destination' => 'boolean',
         'image_urls' => 'array',
         'verification_tags' => 'array',
         'geofence_radius_m' => 'integer',
@@ -204,6 +207,19 @@ class Location extends Model
     public function tags(): BelongsToMany
     {
         return $this->belongsToMany(Tag::class);
+    }
+
+    /**
+     * Mobile-app check-ins recorded at this location.
+     *
+     * AppCheckIn.location_id stores the app's string location id, which is the
+     * value the public API exposes as the location's `id` — i.e. this row's
+     * `slug` (e.g. "mueller_park"), NOT the numeric primary key. So the join is
+     * keyed on slug rather than the default `id`.
+     */
+    public function checkIns(): HasMany
+    {
+        return $this->hasMany(AppCheckIn::class, 'location_id', 'slug');
     }
 
     /**
