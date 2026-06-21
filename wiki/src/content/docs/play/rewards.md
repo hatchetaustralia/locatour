@@ -15,7 +15,7 @@ progression](/play/progression/).
 
 ## The Nearby alerts bonus
 
-Switching on [Nearby alerts](/play/nearby-alerts/) earns you a permanent **+50%
+Switching on [Nearby alerts](/play/nearby-alerts/) earns you a permanent **+20%
 points bonus on every check-in** — and it stacks with the first-find discovery
 bonus. It's the single most effective way to boost your points over time, on top
 of the ambient discovery the alerts themselves bring.

@@ -63,7 +63,7 @@ head:
             "name": "What are Nearby alerts?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Nearby alerts are an optional, opt-in feature that gives you a gentle notification when you wander near a Locatour spot, even with the app closed. Turning it on also earns you a permanent +50% points bonus on every check-in. It is off by default, uses low-power background location, is strictly throttled so it never spams you, and can be turned off at any time."
+              "text": "Nearby alerts are an optional, opt-in feature that gives you a gentle notification when you wander near a Locatour spot, even with the app closed. Turning it on also earns you a permanent +20% points bonus on every check-in. It is off by default, uses low-power background location, is strictly throttled so it never spams you, and can be turned off at any time."
             }
           },
           {
@@ -133,7 +133,7 @@ shared.
 
 An optional, opt-in feature that gives you a gentle notification when you wander
 near a Locatour spot — even with the app closed — and earns you a permanent
-**+50% points bonus** on every check-in. It's off by default, sips battery, is
+**+20% points bonus** on every check-in. It's off by default, sips battery, is
 strictly throttled so it never spams you, and can be switched off any time. See
 [Nearby alerts](/play/nearby-alerts/).
 

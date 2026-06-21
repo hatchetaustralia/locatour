@@ -24,7 +24,7 @@ formulas, thresholds) are intentionally not documented.
 - [Finding & unlocking locations](https://docs.locatour.com/play/locations/): How locations work and how you unlock more of them.
 - [Hidden locations](https://docs.locatour.com/play/hidden-locations/): Fragile, unpublicised places reserved for invested explorers.
 - [Photo check-ins](https://docs.locatour.com/play/photo-checkins/): How checking in with a photo works and why.
-- [Nearby alerts](https://docs.locatour.com/play/nearby-alerts/): Optional, opt-in background-location notifications when you wander near a spot, with a +50% points bonus. Off by default and private by design.
+- [Nearby alerts](https://docs.locatour.com/play/nearby-alerts/): Optional, opt-in background-location notifications when you wander near a spot, with a +20% points bonus. Off by default and private by design.
 - [Levels, tiers & progression](https://docs.locatour.com/play/progression/): How levelling and location tiers fit together.
 - [Rewards & recognition](https://docs.locatour.com/play/rewards/): Streaks, achievements, and how progress is recognised.
 - [Becoming a contributor](https://docs.locatour.com/play/contributors/): How trusted players help curate locations.

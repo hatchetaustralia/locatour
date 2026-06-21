@@ -35,10 +35,10 @@ primary stickiness / anti-churn mechanism.
 
 ## 3. Incentive
 
-- While enabled, **+50% points multiplier on every check-in**
-  (`NEARBY_ALERTS_POINT_MULTIPLIER = 1.5` in `src/utils/leveling.ts`).
+- While enabled, **+20% points multiplier on every check-in**
+  (`NEARBY_ALERTS_POINT_MULTIPLIER = 1.2` in `src/utils/leveling.ts`).
 - **Stacks** with the **3× first-find discovery bonus**.
-- Surfaced as a **"+50% pts" pill** on the toggle.
+- Surfaced as a **"+20% pts" pill** on the toggle.
 
 ## 4. Throttling (rare delight, not spam)
 

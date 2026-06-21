@@ -1,6 +1,6 @@
 ---
 title: Nearby alerts
-description: An optional, opt-in feature that gives you a gentle heads-up when you wander near a Locatour spot — even with the app closed — plus a permanent +50% points bonus. Off by default, easy to turn off, and private by design.
+description: An optional, opt-in feature that gives you a gentle heads-up when you wander near a Locatour spot — even with the app closed — plus a permanent +20% points bonus. Off by default, easy to turn off, and private by design.
 ---
 
 **Nearby alerts** turn everyday life into passive treasure-hunting. With it
@@ -25,11 +25,11 @@ Tap the notification and Locatour opens right to the place, so you can decide to
 make the detour and check in. The whole idea is **ambient discovery** — finding
 places you'd never have gone looking for, simply because you happened to pass by.
 
-## The bonus: +50% points, always on
+## The bonus: +20% points, always on
 
-While nearby alerts are switched on, you earn a permanent **+50% points bonus on
+While nearby alerts are switched on, you earn a permanent **+20% points bonus on
 every single check-in** — not just the ones you discover through an alert. It
-shows up as a **"+50% pts"** badge on the toggle.
+shows up as a **"+20% pts"** badge on the toggle.
 
 Even better, it **stacks** with the big **first-find discovery bonus** you get
 for being among the first to reach a spot. Keeping nearby alerts on is the single
@@ -73,7 +73,7 @@ battery, not gulp it.
 ## Turning it on (and off)
 
 1. Go to **Profile → Overview** and find the **Nearby alerts** toggle (with its
-   "+50% pts" badge).
+   "+20% pts" badge).
 2. Tap it on. Locatour first shows you a **plain-language explanation** of what
    background location does, the points bonus, and the privacy promises above —
    so you can make an informed choice **before** any system permission appears.
@@ -92,7 +92,7 @@ your build may not support it yet.
 
 ## In short
 
-Switch it on for a steady **+50% points** and the occasional happy surprise of
+Switch it on for a steady **+20% points** and the occasional happy surprise of
 stumbling onto a new place. Leave it off and Locatour only ever uses your
 location when you actively check in. Either way, the choice is yours — and you
 can change your mind whenever you like.
