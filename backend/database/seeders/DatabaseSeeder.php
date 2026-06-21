@@ -64,5 +64,13 @@ class DatabaseSeeder extends Seeder
             WaBulkKimberleySeeder::class,
             WaLegendarySeeder::class,
         ]);
+
+        // Locatour is about public land, not food venues — but the bulk Places
+        // import pulled in cafes/restaurants (category "food"). Strip them after
+        // seeding. A few real places were mis-categorised as food upstream, so
+        // rescue those by name first, then delete what's left.
+        \App\Models\Location::where('name', 'Hammond Park')->where('category', 'food')->update(['category' => 'parks']);
+        \App\Models\Location::whereIn('name', ['Margaret River', 'Margaret River Farmers Market'])->where('category', 'food')->update(['category' => 'scenic']);
+        \App\Models\Location::where('category', 'food')->delete();
     }
 }

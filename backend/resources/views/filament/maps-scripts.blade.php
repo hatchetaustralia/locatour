@@ -259,10 +259,11 @@
                     </div>`
                 );
             },
-            // Map a Google primaryType to a Locatour category (parks / scenic / food).
+            // Map a Google primaryType to a Locatour category (parks / scenic).
+            // Locatour is public-land only — there is no "food" category, so cafes
+            // etc. fall through to scenic (the admin reviews before saving anyway).
             categoryForType(type) {
                 const t = (type || '').toLowerCase();
-                if (/restaurant|cafe|bar|food|bakery|meal|coffee|pub|winery|brewery/.test(t)) return 'food';
                 if (/park|garden|campground|hiking|trail|forest|nature_reserve|playground/.test(t)) return 'parks';
                 return 'scenic'; // landmarks, attractions, beaches, viewpoints, museums, etc.
             },
@@ -325,7 +326,7 @@
                 return ['Common', 'Uncommon', 'Rare', 'Prized', 'Epic', 'Iconic', 'Legendary', 'Mythic', 'Ancient', 'Apex'][Math.min(9, Math.max(0, (tier || 1) - 1))];
             },
             categoryColor(category) {
-                return ({ parks: '#7DCE96', scenic: '#7DE3E7', food: '#F0B730' })[category] || '#8141DC';
+                return ({ parks: '#7DCE96', scenic: '#7DE3E7' })[category] || '#8141DC';
             },
             statusColor(status) {
                 return ({ approved: '#16a34a', pending: '#f59e0b', rejected: '#dc2626' })[status] || '#6b7280';

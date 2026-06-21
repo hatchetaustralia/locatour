@@ -115,7 +115,6 @@ class LocationForm
                             ->options([
                                 'parks' => 'Parks',
                                 'scenic' => 'Scenic',
-                                'food' => 'Food',
                             ]),
                         TextInput::make('address')
                             ->required()
