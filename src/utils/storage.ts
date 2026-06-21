@@ -1080,13 +1080,21 @@ class StorageManager {
   // Try each candidate API base URL in turn (LAN IP for a phone, 10.0.2.2 for the
   // Android emulator); return the first JSON body, or null if none respond.
   private async fetchFromApi(path: string): Promise<any | null> {
+    // Attach the account's bearer token when we have one so the server can
+    // attribute the request (rate-limit + scrape-detection are per-account).
+    // The locations API is still publicly readable for now, so a missing token
+    // is fine — it just can't be attributed.
+    const token = this.getToken();
     for (const base of API_URLS) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
       try {
         const res = await fetch(`${base}${path}`, {
           signal: controller.signal,
-          headers: { Accept: 'application/json' },
+          headers: {
+            Accept: 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
         });
         if (res.ok) return await res.json();
       } catch (e) {
