@@ -1,0 +1,20 @@
+{
+  "name": "locatour-wiki",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Locatour — public game guide, trust & legal wiki (Astro + Starlight).",
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/sitemap": "^3.2.1",
+    "@astrojs/starlight": "^0.34.3",
+    "astro": "^5.6.1",
+    "sharp": "^0.33.5"
+  }
+}

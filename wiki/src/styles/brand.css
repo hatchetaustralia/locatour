@@ -1,0 +1,64 @@
+/* Locatour brand theme for Starlight.
+ * Palette extracted from the app (app.json + src):
+ *   primary red   #d1453b
+ *   accent pink   #EA739C
+ *   gold/amber    #b46c00 / #ffcc00
+ *   warm creams   #FDF3DA / #FCF0E8 / #FFFDFB
+ *   splash blue   #208AEF
+ * Starlight is driven by --sl-color-* custom properties; we remap the accent
+ * ramp to Locatour red and warm the grays toward cream.
+ */
+
+:root {
+  /* Accent ramp (Locatour red) */
+  --sl-color-accent-low: #4a1512;
+  --sl-color-accent: #d1453b;
+  --sl-color-accent-high: #f0a59f;
+
+  /* Brand tokens reused below */
+  --loca-red: #d1453b;
+  --loca-pink: #ea739c;
+  --loca-gold: #b46c00;
+  --loca-amber: #ffcc00;
+  --loca-cream: #fdf3da;
+  --loca-blue: #208aef;
+}
+
+/* Light mode: warm cream surfaces instead of cold white. */
+:root[data-theme='light'] {
+  --sl-color-accent-low: #f7d9d5;
+  --sl-color-accent: #c43a30;
+  --sl-color-accent-high: #6e1a14;
+
+  --sl-color-white: #2a1a14;
+  --sl-color-gray-1: #3a261d;
+  --sl-color-gray-7: #f3e6d2;
+  --sl-color-bg: #fffdfb;
+  --sl-color-bg-nav: #fcf0e8;
+  --sl-color-bg-sidebar: #fcf0e8;
+}
+
+/* Hero on the splash page: warm gradient wash. */
+.hero {
+  --sl-color-bg: transparent;
+}
+
+.hero h1 {
+  background: linear-gradient(95deg, var(--loca-red), var(--loca-pink) 60%, var(--loca-gold));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Tagline gets the gold accent. */
+.hero .tagline {
+  color: var(--loca-gold);
+  font-weight: 600;
+}
+
+/* Primary call-to-action buttons in Locatour red. */
+.sl-link-button.primary {
+  --sl-color-text-accent: #fff;
+  background: var(--loca-red);
+  border-color: var(--loca-red);
+}

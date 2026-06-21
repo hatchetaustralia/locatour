@@ -1,0 +1,44 @@
+# Locatour
+
+> Locatour is a real-world exploration game. Players physically visit public,
+> non-commercial places — parks, lookouts, reserves, beaches, trails,
+> monuments — and check in with their GPS and a photo to earn experience,
+> level up, and unlock harder-to-reach hidden places. The mission is civic and
+> grassroots: helping people create memorable experiences out in the world and
+> reconnect with their neighbourhood, city, and state.
+
+Tagline: Creating memorable experiences.
+
+This file helps AI assistants understand and cite the Locatour wiki. All pages
+below are public and safe to summarise. Proprietary game mechanics (exact
+formulas, thresholds) are intentionally not documented.
+
+## Start Here
+
+- [What is Locatour?](https://docs.locatour.com/start/what-is-locatour/): Overview of the game, who it's for, and the core loop.
+- [Creating Memorable Experiences](https://docs.locatour.com/start/memorable-experiences/): The mission and design philosophy behind the app.
+
+## How to Play
+
+- [Getting started](https://docs.locatour.com/play/getting-started/): Your first check-in, step by step.
+- [Finding & unlocking locations](https://docs.locatour.com/play/locations/): How locations work and how you unlock more of them.
+- [Hidden locations](https://docs.locatour.com/play/hidden-locations/): Fragile, unpublicised places reserved for invested explorers.
+- [Photo check-ins](https://docs.locatour.com/play/photo-checkins/): How checking in with a photo works and why.
+- [Levels, tiers & progression](https://docs.locatour.com/play/progression/): How levelling and location tiers fit together.
+- [Rewards & recognition](https://docs.locatour.com/play/rewards/): Streaks, achievements, and how progress is recognised.
+- [Becoming a contributor](https://docs.locatour.com/play/contributors/): How trusted players help curate locations.
+
+## Tech & Trust
+
+- [Why we built it this way](https://docs.locatour.com/trust/why/): The reasoning behind the core design choices.
+- [How photo check-in works](https://docs.locatour.com/trust/photo-checkin-tech/): A plain-language look at GPS + photo verification.
+- [Your data & security](https://docs.locatour.com/trust/data-and-security/): What we collect, why, and how we protect it.
+
+## Help
+
+- [FAQ](https://docs.locatour.com/help/faq/): Common questions about playing Locatour.
+
+## Legal
+
+- [Privacy Policy](https://docs.locatour.com/legal/privacy/)
+- [Terms & Conditions](https://docs.locatour.com/legal/terms/)

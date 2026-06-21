@@ -1,0 +1,44 @@
+---
+title: Locatour
+description: Locatour is a real-world exploration game — visit public parks, lookouts, beaches and hidden places, check in with a photo, and level up. The official guide to how it works.
+template: splash
+hero:
+  tagline: Creating memorable experiences.
+  image:
+    file: ../../assets/logo.svg
+  actions:
+    - text: What is Locatour?
+      link: /start/what-is-locatour/
+      icon: right-arrow
+      variant: primary
+    - text: How to play
+      link: /play/getting-started/
+      icon: open-book
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+Locatour turns getting outdoors into a game. Visit real public places, check in
+with a photo, earn experience, and unlock harder-to-reach hidden gems. This is
+the official guide — how to play, why we built it the way we did, and how we
+look after your privacy.
+
+<CardGrid stagger>
+  <Card title="How to play" icon="open-book">
+    Learn the core loop — find a place, go there, check in, level up.
+    [Getting started →](/play/getting-started/)
+  </Card>
+  <Card title="Hidden locations" icon="star">
+    The fragile, unpublicised places that only invested explorers reach.
+    [Read more →](/play/hidden-locations/)
+  </Card>
+  <Card title="Your data & security" icon="approve-check">
+    What we collect, why, and how we protect it — in plain language.
+    [Trust & privacy →](/trust/data-and-security/)
+  </Card>
+  <Card title="Questions?" icon="question">
+    Common questions about playing Locatour, answered.
+    [Read the FAQ →](/help/faq/)
+  </Card>
+</CardGrid>
