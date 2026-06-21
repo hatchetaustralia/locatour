@@ -15,7 +15,7 @@ import * as Location from 'expo-location';
 import { BrandAssets, BrandText } from '@/components/brand';
 import { Brand, BrandRadius, Spacing, stampBorder } from '@/constants/theme';
 import { storage } from '@/utils/storage';
-import { unlockedTier, levelForTier, VICINITY_RADIUS_M, REACH_RADIUS_M, LOCK_TEASER_RANGE } from '@/utils/leveling';
+import { unlockedTier, levelForTier, rarityForTier, VICINITY_RADIUS_M, REACH_RADIUS_M, LOCK_TEASER_RANGE } from '@/utils/leveling';
 import { refreshGeofencesOnFocus } from '@/utils/geofencing';
 import { User, ExploreLocation } from '@/types';
 
@@ -152,25 +152,38 @@ export default function HomeScreen() {
       distanceMeters(userCoords, loc.coordinates) <= REACH_RADIUS_M
   );
 
-  // Top picks = high-value spots within reach (incl. aspirational locked ones);
-  // nearest-few fallback so the section is never empty. Curated, not a flood.
-  const highValue = reachLocations.filter((loc) => loc.points >= 300);
+  // Split reachable spots into what you can VISIT NOW (accessible at your tier)
+  // vs aspirational LOCKED teasers (surfaced +1/+2 spots that need a level-up).
+  // The lists are built accessible-FIRST with a hard cap on locked teasers, so a
+  // new low-level player sees mostly things they can actually go and do — not a
+  // wall of locks (the old `points >= 300` top-pick rule only ever matched
+  // Tier 3+, which are all locked for a beginner).
   const byDistance = (a: ExploreLocation, b: ExploreLocation) =>
     userCoords
       ? distanceMeters(userCoords, a.coordinates) - distanceMeters(userCoords, b.coordinates)
       : 0;
-  const topPicks = (highValue.length > 0 ? [...highValue].sort(byDistance) : [...reachLocations].sort(byDistance)).slice(0, 6);
+  const byValue = (a: ExploreLocation, b: ExploreLocation) => b.points - a.points;
+  const byNearestThenValue = (a: ExploreLocation, b: ExploreLocation) => byDistance(a, b) || byValue(a, b);
+  const byValueThenNearest = (a: ExploreLocation, b: ExploreLocation) => byValue(a, b) || byDistance(a, b);
+
+  const accessible = reachLocations.filter((loc) => !isLocked(loc));
+  const lockedTeasers = reachLocations.filter((loc) => isLocked(loc));
+
+  // Top picks: the best spots you can visit now (most rewarding, then nearest)
+  // plus AT MOST one aspirational locked teaser — never a wall of locks (~5).
+  const topPicks = [
+    ...[...accessible].sort(byValueThenNearest).slice(0, 4),
+    ...[...lockedTeasers].sort(byValueThenNearest).slice(0, 1),
+  ];
   const topPickIds = new Set(topPicks.map((l) => l.id));
 
-  // This month's challenges = the rest within reach; completed (this month) sink
-  // to the bottom in a done state. Curated to a realistic monthly count.
-  const sortedChallenges = reachLocations
-    .filter((loc) => !topPickIds.has(loc.id))
-    .sort(
-      (a, b) =>
-        Number(completedIds.has(a.id)) - Number(completedIds.has(b.id)) || byDistance(a, b)
-    )
-    .slice(0, 12);
+  // This month's challenges: nearest accessible spots, plus AT MOST three locked
+  // teasers to aspire to; completed (this month) sink to the bottom. The stable
+  // sort preserves the accessible-before-locked ordering otherwise.
+  const sortedChallenges = [
+    ...accessible.filter((loc) => !topPickIds.has(loc.id)).sort(byNearestThenValue).slice(0, 9),
+    ...lockedTeasers.filter((loc) => !topPickIds.has(loc.id)).sort(byValueThenNearest).slice(0, 3),
+  ].sort((a, b) => Number(completedIds.has(a.id)) - Number(completedIds.has(b.id)));
   const now = new Date();
   const daysToReset = Math.max(
     1,
@@ -281,7 +294,7 @@ export default function HomeScreen() {
                         </BrandText>
                       </View>
                       <View style={styles.tierBadge}>
-                        <BrandText weight="bold" style={styles.tierBadgeText}>Tier {item.tier}</BrandText>
+                        <BrandText weight="bold" style={styles.tierBadgeText}>{rarityForTier(item.tier)}</BrandText>
                       </View>
                       <BrandText weight="semibold" style={styles.challengeXp}>
                         +{item.points} XP
@@ -356,7 +369,7 @@ export default function HomeScreen() {
                         </BrandText>
                       </View>
                       <View style={styles.tierBadge}>
-                        <BrandText weight="bold" style={styles.tierBadgeText}>Tier {item.tier}</BrandText>
+                        <BrandText weight="bold" style={styles.tierBadgeText}>{rarityForTier(item.tier)}</BrandText>
                       </View>
                       {locked && (
                         <View style={styles.lockBadge}>

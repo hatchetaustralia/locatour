@@ -32,5 +32,7 @@ export const API_URLS: string[] = Array.from(
   new Set([API_URL, 'http://10.0.2.2:8000'].filter(Boolean)),
 );
 
-/** How long (ms) to wait on each API base before trying the next / falling back. */
-export const API_TIMEOUT_MS = 4000;
+/** How long (ms) to wait on each API base before trying the next / falling back.
+ *  8s tolerates a slightly slow first response over LAN / the dev server without
+ *  prematurely falling through. Multipart uploads use their own longer timeout. */
+export const API_TIMEOUT_MS = 8000;

@@ -169,6 +169,32 @@ export function defaultPointsForTier(tier: number): number {
 }
 
 /**
+ * Human-facing RARITY name for each tier (1..10), shown to players instead of a
+ * bare "Tier N" number — numbers read ambiguously ("is 1 or 10 the best?"),
+ * whereas an ascending rarity scale reads naturally and suits a discovery game.
+ * Index by tier 1..10. The numeric tier remains the internal source of truth
+ * (gating, sorting); this is purely the label.
+ */
+export const TIER_RARITY = [
+  'Common', // 1
+  'Uncommon', // 2
+  'Rare', // 3
+  'Prized', // 4
+  'Epic', // 5
+  'Iconic', // 6
+  'Legendary', // 7
+  'Mythic', // 8
+  'Ancient', // 9
+  'Apex', // 10
+] as const;
+
+/** The rarity label for a tier (1..10). Out-of-range tiers clamp into range. */
+export function rarityForTier(tier: number): string {
+  const t = Math.max(1, Math.min(Math.floor(tier) || 1, MAX_TIER));
+  return TIER_RARITY[t - 1];
+}
+
+/**
  * Derive the User.stats level fields from cumulative totalXP. Keeping this in
  * one place means storage/profile/check-in all agree on what a given totalXP
  * means. Returns the four computed fields the UI reads.

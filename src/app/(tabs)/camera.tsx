@@ -318,7 +318,11 @@ export default function CameraScreen() {
       return;
     }
     try {
-      const photo = await cameraRef.current.takePictureAsync();
+      // Compress at capture: a full-resolution phone photo is several MB, which
+      // is slow/unreliable to upload over the dev server (and can blow the
+      // server's 10MB image limit). quality 0.5 keeps a clear verification photo
+      // at a fraction of the size, so the multipart upload completes reliably.
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
       // Move the capture out of the clearable cache into permanent storage so the
       // local thumbnail + upload-retry survive app restarts (Android can purge
       // the camera cache uri at any time).

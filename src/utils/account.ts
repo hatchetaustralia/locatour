@@ -20,6 +20,12 @@ import { API_URLS, API_TIMEOUT_MS } from '../constants/config';
 import { storage } from './storage';
 import { User } from '../types';
 
+// Multipart check-in uploads carry a photo (hundreds of KB), so the quick
+// JSON-request timeout (API_TIMEOUT_MS) is far too short for them over a phone /
+// dev server — a slow upload would abort, requeue, and never land. Give uploads
+// their own generous timeout.
+const UPLOAD_TIMEOUT_MS = 30000;
+
 // Track whether we've already surfaced the "account blocked" state so we only
 // warn once per session rather than on every failed request.
 let blockedNotified = false;
@@ -86,10 +92,11 @@ function profilePayload(user: User): Record<string, unknown> {
 async function fetchWithFallback(
   path: string,
   init: RequestInit,
+  timeoutMs: number = API_TIMEOUT_MS,
 ): Promise<Response | null> {
   for (const base of API_URLS) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const res = await fetch(`${base}${path}`, { ...init, signal: controller.signal });
       return res;
@@ -227,7 +234,7 @@ async function uploadCheckIn(item: PendingUpload, token: string): Promise<boolea
         // NOTE: do NOT set Content-Type — fetch sets the multipart boundary.
       },
       body: form,
-    });
+    }, UPLOAD_TIMEOUT_MS);
     if (!res) return false;
     if (noteBlockedIf403(res)) return false;
     return res.ok;
