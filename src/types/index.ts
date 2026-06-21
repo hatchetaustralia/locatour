@@ -49,6 +49,9 @@ export interface ExploreLocation {
   tags?: string[];
   categories?: string[];
   geofenceRadius?: number;
+  // Major destinations are always shown regardless of distance (they anchor the
+  // map); other spots are only surfaced once the user is within VICINITY_RADIUS_M.
+  isMajorDestination?: boolean;
 }
 
 export interface CheckIn {

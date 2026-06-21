@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
+  ActivityIndicator,
   Image,
   ScrollView,
   StyleSheet,
@@ -15,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BrandAssets, BrandText, StampButton } from '@/components/brand';
 import { Brand, BrandFonts, BrandRadius, stampBorder } from '@/constants/theme';
 import { storage } from '@/utils/storage';
+import { checkUsernameAvailable, UsernameStatus } from '@/utils/account';
 
 // ---------------------------------------------------------------------------
 // Avatar presets — dicebear adventurer illustrations.
@@ -49,6 +51,7 @@ export default function ProfileScreen() {
   const [bio, setBio] = useState('');
   const [displayNameError, setDisplayNameError] = useState('');
   const [usernameError, setUsernameError] = useState('');
+  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus | 'checking' | null>(null);
 
   const handleUsernameChange = (text: string) => {
     // Strip special characters and spaces, keep lowercase.
@@ -56,6 +59,24 @@ export default function ProfileScreen() {
     setUsername(cleaned);
     if (usernameError) setUsernameError('');
   };
+
+  // Debounced live availability check — username is the unique public handle.
+  const usernameReqId = useRef(0);
+  useEffect(() => {
+    const u = username.trim();
+    if (u.length < 3) {
+      setUsernameStatus(u.length === 0 ? null : 'too_short');
+      return;
+    }
+    setUsernameStatus('checking');
+    const reqId = ++usernameReqId.current;
+    const handle = setTimeout(async () => {
+      const status = await checkUsernameAvailable(u);
+      if (reqId !== usernameReqId.current) return; // a newer keystroke won
+      setUsernameStatus(status);
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [username]);
 
   const handleNext = async () => {
     let isValid = true;
@@ -72,6 +93,9 @@ export default function ProfileScreen() {
       isValid = false;
     } else if (username.length < 3) {
       setUsernameError('Username must be at least 3 characters');
+      isValid = false;
+    } else if (usernameStatus === 'taken') {
+      setUsernameError('That username is taken');
       isValid = false;
     } else {
       setUsernameError('');
@@ -199,9 +223,20 @@ export default function ProfileScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
               />
+              {usernameStatus === 'checking' ? (
+                <ActivityIndicator size="small" color={Brand.inkSubtle} />
+              ) : usernameStatus === 'available' ? (
+                <Ionicons name="checkmark-circle" size={18} color={Brand.sticker.green} />
+              ) : usernameStatus === 'taken' ? (
+                <Ionicons name="close-circle" size={18} color="#d1453b" />
+              ) : null}
             </View>
             {usernameError ? (
               <BrandText weight="medium" style={styles.errorText}>{usernameError}</BrandText>
+            ) : usernameStatus === 'available' ? (
+              <BrandText weight="medium" style={styles.availableText}>Nice — that one&apos;s free</BrandText>
+            ) : usernameStatus === 'taken' ? (
+              <BrandText weight="medium" style={styles.errorText}>That username is taken</BrandText>
             ) : null}
           </View>
 
@@ -337,6 +372,11 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: '#d1453b',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  availableText: {
+    color: Brand.sticker.green,
     fontSize: 12,
     marginTop: 2,
   },

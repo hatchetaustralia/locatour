@@ -9,36 +9,74 @@ import {
   Dimensions,
   Animated,
   Easing,
+  ScrollView,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions, type CameraType, type FlashMode } from 'expo-camera';
 import * as Location from 'expo-location';
 import * as Haptics from 'expo-haptics';
 import NetInfo from '@react-native-community/netinfo';
+import { File, Directory, Paths } from 'expo-file-system';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandText } from '@/components/brand';
 import { Brand, BrandFonts, BrandRadius, stampBorder, Spacing } from '@/constants/theme';
 import { storage } from '@/utils/storage';
-import { unlockedTier, maxDiscoverableTier, DISCOVERY_MULTIPLIER, WARM_RADIUS_M } from '@/utils/leveling';
-import { ExploreLocation, CheckIn, User, Coordinates } from '@/types';
+import { uploadCheckInNow, uploadPendingCheckIns } from '@/utils/account';
+import {
+  unlockedTier,
+  maxDiscoverableTier,
+  DISCOVERY_MULTIPLIER,
+  WARM_RADIUS_M,
+  LOCK_TEASER_RANGE,
+  levelForTier,
+} from '@/utils/leveling';
+import { formatDistance } from '@/utils/geo';
+import { ExploreLocation, CheckIn, User, Coordinates, Achievement } from '@/types';
 
 // --- Tuning flags ---
-// Real-world proximity threshold for a valid check-in.
+// Real-world proximity FLOOR for a valid check-in. A location's own
+// geofenceRadius is used when larger; this is the minimum tolerance.
 const CHECK_IN_RADIUS_M = 50;
-// Dev/simulator override: mock Perth coordinates rarely land within 50m of a seeded
-// location, so fall back to "nearest location regardless" to keep the demo working.
-const DEV_IGNORE_RADIUS = true;
+// Fallback geofence radius (metres) for locations that don't define their own.
+const DEFAULT_GEOFENCE_RADIUS_M = 150;
 // Mock verification duration (later this becomes a real server call).
 const VERIFY_DURATION_MS = 1800;
+
+// The effective check-in radius for a location: its own geofence (when present),
+// floored at CHECK_IN_RADIUS_M so the tolerance is never unreasonably tight.
+const effectiveRadius = (loc: ExploreLocation) =>
+  Math.max(CHECK_IN_RADIUS_M, loc.geofenceRadius ?? DEFAULT_GEOFENCE_RADIUS_M);
+
+// Copy a freshly-captured photo out of the (clearable) cache directory into the
+// permanent document directory so the local thumbnail + the upload-retry both
+// survive an app restart. Returns the new file:// uri, or the original uri on
+// any failure / on web (where there's no native FS to copy into). Fail-soft:
+// a permanence failure must never break the check-in flow.
+function persistPhoto(cacheUri: string): string {
+  if (Platform.OS === 'web') return cacheUri;
+  try {
+    const dir = new Directory(Paths.document, 'checkins');
+    dir.create({ intermediates: true, idempotent: true });
+    const ext = cacheUri.split('.').pop()?.split('?')[0] || 'jpg';
+    const name = `checkin_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const src = new File(cacheUri);
+    const dest = new File(dir, name);
+    src.copy(dest);
+    return dest.uri;
+  } catch (e) {
+    console.warn('Failed to persist photo to document dir, keeping cache uri', e);
+    return cacheUri;
+  }
+}
 
 // On web the tab bar floats (position: absolute) over screen content; on native
 // NativeTabs reserves that space. Lift the camera's bottom controls above it on web.
 const WEB_TABBAR_CLEARANCE = Platform.OS === 'web' ? 96 : 0;
 
 // State machine for the check-in flow.
-type FlowState = 'capture' | 'preview' | 'verifying' | 'verified' | 'error';
+type FlowState = 'capture' | 'preview' | 'verifying' | 'verified' | 'toofar' | 'locked' | 'error';
 
 const SCREEN_W = Dimensions.get('window').width;
 const SCREEN_H = Dimensions.get('window').height;
@@ -113,6 +151,11 @@ function Confetti() {
 
 export default function CameraScreen() {
   const router = useRouter();
+  // The location the user tapped CHECK IN on (explore detail sheet). The
+  // verification step targets THIS spot; on-site hidden-spot discovery is still
+  // detected separately.
+  const params = useLocalSearchParams<{ locationId?: string; points?: string }>();
+  const targetLocationId = typeof params.locationId === 'string' ? params.locationId : undefined;
   const isWeb = Platform.OS === 'web';
   const insets = useSafeAreaInsets();
   // Lift bottom controls clear of the floating pill nav (and the home indicator).
@@ -138,6 +181,18 @@ export default function CameraScreen() {
   const [pointsEarned, setPointsEarned] = useState(0);
   const [isDiscovery, setIsDiscovery] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  // Reward reveal: any achievements unlocked by this check-in, plus the level the
+  // user was on BEFORE it (used to detect a level-up on the verified screen).
+  const [newAchievements, setNewAchievements] = useState<Achievement[]>([]);
+  const [prevLevel, setPrevLevel] = useState(1);
+  // "You're not close enough" data: how far the user actually is + the radius.
+  const [tooFar, setTooFar] = useState<{ name: string; distance: number; radius: number } | null>(null);
+  // Hard-locked spot (tier in U+1..U+2): the user must LEVEL UP to unlock it —
+  // it cannot be discovered. Holds the spot name + the level required to unlock.
+  const [locked, setLocked] = useState<{ name: string; levelRequired: number } | null>(null);
+
+  // Guards a second tap while a capture/verification is already in flight.
+  const processingRef = useRef(false);
 
   // Request camera permission on mount (native only; web CameraView handles its own prompt).
   useEffect(() => {
@@ -223,12 +278,16 @@ export default function CameraScreen() {
   });
 
   const resetToCapture = useCallback(() => {
+    processingRef.current = false;
     setPhotoUri(null);
     setMatchedLocation(null);
     setUpdatedUser(null);
     setPointsEarned(0);
     setIsDiscovery(false);
     setErrorMessage('');
+    setNewAchievements([]);
+    setTooFar(null);
+    setLocked(null);
     setFlow('capture');
   }, []);
 
@@ -260,7 +319,11 @@ export default function CameraScreen() {
     }
     try {
       const photo = await cameraRef.current.takePictureAsync();
-      setPhotoUri(photo?.uri ?? null);
+      // Move the capture out of the clearable cache into permanent storage so the
+      // local thumbnail + upload-retry survive app restarts (Android can purge
+      // the camera cache uri at any time).
+      const permanentUri = photo?.uri ? persistPhoto(photo.uri) : null;
+      setPhotoUri(permanentUri);
       setFlow('preview');
     } catch (e) {
       console.warn('Failed to capture photo', e);
@@ -272,37 +335,38 @@ export default function CameraScreen() {
   const toggleFlash = () => setFlash((f) => (f === 'off' ? 'on' : 'off'));
   const flipCamera = () => setFacing((f) => (f === 'back' ? 'front' : 'back'));
 
-  // Run the (mocked) proximity verification + persist the check-in.
+  // Run the real proximity verification + persist the check-in.
   const runVerification = async () => {
+    // #3: guard duplicate taps — a second press while a check-in is in flight
+    // does nothing. The flag is cleared on every terminal state (reset/back).
+    if (processingRef.current) return;
+    processingRef.current = true;
+
+    // #3: switch to the verifying UI IMMEDIATELY, before any async work, so the
+    // user gets instant feedback instead of a silent delay.
     setFlow('verifying');
 
-    // 1. Get current position. Skip on web (the browser permission prompt can
-    // block indefinitely in headless/embedded contexts and coords aren't needed
-    // for the mock). On native, race the whole permission+fix against a timeout
-    // so a slow/never-resolving GPS can't stall the check-in (falls back to null).
+    // 1. Get the device's LIVE position. The geofence MUST be enforced from real
+    // GPS, so if we can't get a fix we cannot record the check-in. Race the
+    // permission+fix against a timeout so a stuck GPS can't stall forever.
     let coords: Coordinates | null = null;
-    if (!isWeb) {
-      try {
-        coords = await Promise.race<Coordinates | null>([
-          (async () => {
-            const { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== 'granted') return null;
-            const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-            return { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-          })(),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
-        ]);
-      } catch (e) {
-        console.warn('Failed to get location for verification', e);
-      }
+    try {
+      coords = await Promise.race<Coordinates | null>([
+        (async () => {
+          const { status } = await Location.requestForegroundPermissionsAsync();
+          if (status !== 'granted') return null;
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          return { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+        })(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+      ]);
+    } catch (e) {
+      console.warn('Failed to get location for verification', e);
     }
 
-    // 2. Mock server delay.
+    // 2. Mock server delay (verification spinner).
     await new Promise((r) => setTimeout(r, VERIFY_DURATION_MS));
 
-    // 3. Find the nearest DISCOVERABLE location (unlocked OR within the hidden
-    // range). Secret tiers (beyond the range) are never matched, so they're never
-    // leaked — a first check-in at a hidden spot becomes a discovery (step 4).
     const locations = await storage.getLocations();
     if (locations.length === 0) {
       setErrorMessage('No locations available to check in.');
@@ -314,32 +378,81 @@ export default function CameraScreen() {
     const level = verifyUser?.stats.currentLevel ?? 1;
     const maxTier = unlockedTier(level);
     const maxDisc = maxDiscoverableTier(level);
-    const matchable = locations.filter((loc) => loc.tier <= maxDisc);
+    // Floor tier ABOVE which a spot becomes hidden-discoverable (the rainbow band).
+    // tier <= maxTier: normal · maxTier < tier <= discoveryFloor: HARD-LOCKED (level
+    // up, no discovery) · discoveryFloor < tier <= maxDisc: discoverable (currently
+    // exactly maxTier+3) · tier > maxDisc: secret.
+    const discoveryFloor = maxTier + LOCK_TEASER_RANGE;
 
-    let target: ExploreLocation | null = null;
-    if (coords) {
-      let nearestDist = Infinity;
-      for (const loc of matchable) {
-        const d = getDistance(coords, loc.coordinates);
-        const inRange = d <= (loc.geofenceRadius ?? CHECK_IN_RADIUS_M) || DEV_IGNORE_RADIUS;
-        if (inRange && d < nearestDist) {
-          nearestDist = d;
-          target = loc;
-        }
-      }
-    } else if (DEV_IGNORE_RADIUS) {
-      target = matchable[0] ?? null;
+    // No live GPS → we cannot prove the user is on-site, so we cannot check in.
+    if (!coords) {
+      setErrorMessage(
+        "We couldn't get your location. Enable location access and try again from the spot."
+      );
+      setFlow('error');
+      return;
     }
 
-    if (!target) {
+    // 3. Resolve the TARGET location. Prefer the spot the user tapped CHECK IN on
+    // (passed from explore). The user must be physically inside its geofence.
+    const tapped = targetLocationId
+      ? locations.find((loc) => loc.id === targetLocationId && loc.tier <= maxDisc) ?? null
+      : null;
+
+    // Separately, the nearest UNDISCOVERED hidden spot the user is standing on —
+    // discovery only happens on-site (within range).
+    let onsiteHidden: ExploreLocation | null = null;
+    let onsiteHiddenDist = Infinity;
+    const priorCheckIns = await storage.getCheckIns();
+    const visited = new Set(priorCheckIns.map((c) => c.locationId));
+    for (const loc of locations) {
+      if (loc.tier > maxDisc) continue; // secret — never surfaced
+      // Only the band ABOVE the hard-lock teasers (currently exactly maxTier+3) is
+      // discoverable; tiers in maxTier+1..maxTier+LOCK_TEASER_RANGE are hard-locked.
+      const undiscoveredHidden = loc.tier > discoveryFloor && !visited.has(loc.id);
+      if (!undiscoveredHidden) continue;
+      const d = getDistance(coords, loc.coordinates);
+      if (d <= effectiveRadius(loc) && d < onsiteHiddenDist) {
+        onsiteHiddenDist = d;
+        onsiteHidden = loc;
+      }
+    }
+
+    // A discovery on-site takes precedence (the rainbow first-find moment).
+    // Otherwise check in to the tapped target. Either way, GPS must be in range.
+    let target: ExploreLocation | null = null;
+    let inRange = false;
+    if (onsiteHidden) {
+      target = onsiteHidden;
+      inRange = true; // already filtered to within radius above
+    } else if (tapped) {
+      // HARD-LOCKED band (tier in maxTier+1 .. maxTier+LOCK_TEASER_RANGE): the user
+      // must LEVEL UP — this spot cannot be checked in or discovered. Do NOT record
+      // anything; show the branded "level up to unlock" state. Proximity is
+      // irrelevant here, so this gate comes before the geofence check.
+      if (tapped.tier > maxTier && tapped.tier <= discoveryFloor) {
+        setLocked({ name: tapped.name, levelRequired: levelForTier(tapped.tier) });
+        setFlow('locked');
+        return;
+      }
+      const d = getDistance(coords, tapped.coordinates);
+      inRange = d <= effectiveRadius(tapped);
+      if (!inRange) {
+        // #8: too far — do NOT record. Show a clear, branded distance state.
+        setTooFar({ name: tapped.name, distance: d, radius: effectiveRadius(tapped) });
+        setFlow('toofar');
+        return;
+      }
+      target = tapped;
+    }
+
+    if (!target || !inRange) {
       setErrorMessage("You're not close enough to any check-in spot.");
       setFlow('error');
       return;
     }
 
-    // 3b. Enforce the 24h per-location re-check-in cooldown (spec 06). If the
-    // user checked in here less than CHECKIN_COOLDOWN_H ago, block with a
-    // "available again in Xh" message.
+    // 3b. Enforce the 24h per-location re-check-in cooldown (spec 06).
     const readyAt = storage.nextCheckInAt(target.id);
     if (readyAt) {
       const hoursLeft = Math.max(1, Math.ceil((readyAt.getTime() - Date.now()) / (60 * 60 * 1000)));
@@ -350,14 +463,16 @@ export default function CameraScreen() {
       return;
     }
 
-    // 4. Discovery? A first-ever check-in at a hidden (locked-tier) spot earns the
-    // one-time discovery bonus (DISCOVERY_MULTIPLIER) and the rainbow treatment.
-    const priorCheckIns = await storage.getCheckIns();
-    const discovered = target.tier > maxTier && !priorCheckIns.some((c) => c.locationId === target.id);
+    // 4. Discovery? A first-ever check-in at a hidden spot in the discoverable band
+    // (tier > discoveryFloor, i.e. above the hard-locked teasers) earns the one-time
+    // discovery bonus (DISCOVERY_MULTIPLIER) and the rainbow treatment.
+    const discovered = target.tier > discoveryFloor && !visited.has(target.id);
     const earned = discovered ? target.points * DISCOVERY_MULTIPLIER : target.points;
 
+    // #9: capture the level BEFORE the check-in so we can detect a level-up.
+    const levelBefore = verifyUser?.stats.currentLevel ?? 1;
+
     // 5. Build + persist the check-in.
-    const checkInCoords: Coordinates = coords ?? target.coordinates;
     const checkIn: CheckIn = {
       id: 'checkin_' + Math.random().toString(36).slice(2, 11),
       userId: verifyUser?.uid ?? 'anonymous',
@@ -365,7 +480,7 @@ export default function CameraScreen() {
       photoUrl: photoUri ?? target.imageUrls[0],
       pointsEarned: earned,
       timestamp: new Date().toISOString(),
-      coordinatesChecked: checkInCoords,
+      coordinatesChecked: coords,
       verifiedOffline: false,
     };
 
@@ -380,9 +495,26 @@ export default function CameraScreen() {
     try {
       if (isOnline) {
         await storage.addCheckIn(checkIn);
+        // Best-effort immediate upload to the server (multipart + photo). On
+        // failure we queue it so uploadPendingCheckIns() retries on next launch
+        // / after the next check-in — the LOCAL record above already stands.
+        const uploaded = await uploadCheckInNow({
+          locationId: target.id,
+          locationName: target.name,
+          photoUri: checkIn.photoUrl,
+          pointsEarned: earned,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          verifiedOffline: false,
+          checkedInAt: checkIn.timestamp,
+        });
+        if (!uploaded) {
+          await storage.queueOfflineCheckIn(target.id, checkIn.photoUrl, coords, earned);
+        }
       } else {
         checkIn.verifiedOffline = true;
-        await storage.queueOfflineCheckIn(target.id, checkIn.photoUrl, checkInCoords, earned);
+        await storage.addCheckIn(checkIn);
+        await storage.queueOfflineCheckIn(target.id, checkIn.photoUrl, coords, earned);
       }
     } catch (e) {
       // Backstop (e.g. the storage tier-gate) — surface instead of hanging.
@@ -391,13 +523,29 @@ export default function CameraScreen() {
       return;
     }
 
-    // 5. Re-fetch user for fresh XP/level stats.
+    // Flush any previously-queued uploads now that we (likely) have connectivity.
+    // Fire-and-forget: must not delay the reward reveal.
+    void uploadPendingCheckIns();
+
+    // 6. Re-fetch user for fresh XP/level stats, and collect any achievements the
+    // engine just unlocked (storage.addCheckIn ran evaluateAchievements). We read
+    // them, then acknowledge so they don't re-appear on the next reveal.
     const fresh = await storage.getUser();
+    let unlockedNow: Achievement[] = [];
+    try {
+      const all = await storage.getAchievements();
+      unlockedNow = all.filter((a) => a.isUnlocked && a.isNew);
+      if (unlockedNow.length > 0) await storage.acknowledgeNewAchievements();
+    } catch (e) {
+      console.warn('Failed to read new achievements', e);
+    }
 
     setMatchedLocation(target);
     setUpdatedUser(fresh);
     setPointsEarned(earned);
     setIsDiscovery(discovered);
+    setNewAchievements(unlockedNow);
+    setPrevLevel(levelBefore);
 
     try {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -534,7 +682,12 @@ export default function CameraScreen() {
           </TouchableOpacity>
         </SafeAreaView>
         <View style={[styles.bottomBar, { paddingBottom: bottomPad }]} pointerEvents="box-none">
-          <TouchableOpacity style={[styles.pillCheckIn, stampBorder]} onPress={runVerification} activeOpacity={0.85}>
+          <TouchableOpacity
+            style={[styles.pillCheckIn, stampBorder]}
+            onPress={runVerification}
+            disabled={processingRef.current}
+            activeOpacity={0.85}
+          >
             <Ionicons name="camera" size={20} color={Brand.ink} />
             <BrandText weight="bold" color={Brand.ink} style={styles.pillText}>CHECK IN</BrandText>
           </TouchableOpacity>
@@ -543,18 +696,89 @@ export default function CameraScreen() {
     );
   }
 
-  // Verifying state.
+  // Verifying state — instant feedback while GPS + storage run.
   if (flow === 'verifying') {
     return (
       <View style={styles.fullScreen}>
         <FrozenPhoto />
         <View style={styles.dimOverlay} />
+        <View style={styles.verifyingCenter} pointerEvents="none">
+          <ActivityIndicator size="large" color="#fff" />
+          <BrandText weight="bold" color="#fff" style={styles.verifyingText}>
+            Verifying you&apos;re here…
+          </BrandText>
+        </View>
         <View style={[styles.bottomBar, { paddingBottom: bottomPad }]} pointerEvents="box-none">
           <View style={[styles.pillCheckIn, styles.pillVerifying, stampBorder]}>
             <ActivityIndicator size="small" color={Brand.ink} />
             <BrandText weight="bold" color={Brand.ink} style={styles.pillText}>VERIFYING</BrandText>
           </View>
         </View>
+      </View>
+    );
+  }
+
+  // Too-far state (#8): live GPS placed the user outside the geofence — no
+  // check-in was recorded. Show how far they are + the required radius.
+  if (flow === 'toofar') {
+    return (
+      <View style={styles.fullScreen}>
+        <FrozenPhoto />
+        <View style={styles.dimOverlay} />
+        <SafeAreaView style={styles.centerSheetWrap} edges={['bottom']}>
+          <View style={[styles.errorCard, stampBorder]}>
+            <Ionicons name="walk-outline" size={48} color={Brand.purple} />
+            <BrandText weight="bold" color={DARK_BROWN} style={styles.cardTitle}>
+              You&apos;re not close enough
+            </BrandText>
+            <BrandText weight="medium" color={DARK_BROWN_SECONDARY} style={styles.errorBody}>
+              {tooFar
+                ? `You're ${formatDistance(tooFar.distance)} from ${tooFar.name}. Get within ${formatDistance(
+                    tooFar.radius
+                  )} to check in.`
+                : "Move closer to the spot to check in."}
+            </BrandText>
+            <TouchableOpacity
+              style={[styles.purpleButton, stampBorder]}
+              onPress={() => router.push('/explore')}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="map-outline" size={18} color={Brand.bg} />
+              <BrandText weight="bold" color={Brand.bg} style={styles.purpleButtonText}>BACK TO MAP</BrandText>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Hard-locked state: the tapped spot is in the level-up band (tier in
+  // maxTier+1..maxTier+LOCK_TEASER_RANGE). It is NOT discoverable — the user must
+  // level up. Nothing was recorded; show the branded "level up to unlock" state.
+  if (flow === 'locked') {
+    return (
+      <View style={styles.fullScreen}>
+        <FrozenPhoto />
+        <View style={styles.dimOverlay} />
+        <SafeAreaView style={styles.centerSheetWrap} edges={['bottom']}>
+          <View style={[styles.errorCard, stampBorder]}>
+            <Ionicons name="lock-closed" size={48} color={Brand.purple} />
+            <BrandText weight="bold" color={DARK_BROWN} style={styles.cardTitle}>
+              {locked ? `Reach level ${locked.levelRequired} to unlock ${locked.name}` : 'Level up to unlock this spot'}
+            </BrandText>
+            <BrandText weight="medium" color={DARK_BROWN_SECONDARY} style={styles.errorBody}>
+              This spot is locked. Keep checking in to level up — you can&apos;t discover it early.
+            </BrandText>
+            <TouchableOpacity
+              style={[styles.purpleButton, stampBorder]}
+              onPress={() => router.push('/explore')}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="map-outline" size={18} color={Brand.bg} />
+              <BrandText weight="bold" color={Brand.bg} style={styles.purpleButtonText}>BACK TO MAP</BrandText>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
       </View>
     );
   }
@@ -588,6 +812,8 @@ export default function CameraScreen() {
     stats && stats.xpNeededForNextLevel > 0
       ? Math.min(100, (stats.currentXPInLevel / stats.xpNeededForNextLevel) * 100)
       : 0;
+  // #9: did this check-in push the user up a level (or more)?
+  const leveledUp = !!stats && stats.currentLevel > prevLevel;
 
   return (
     <View style={styles.fullScreen}>
@@ -608,6 +834,11 @@ export default function CameraScreen() {
           <View style={[styles.verifiedSheetWrap, { bottom: isWeb ? WEB_TABBAR_CLEARANCE : insets.bottom + 80 }]}>
             <Animated.View style={isDiscovery ? [styles.discoveryGlow, { borderColor: rainbowColor }] : undefined}>
             <View style={styles.verifiedCard}>
+              <ScrollView
+                style={styles.verifiedScroll}
+                contentContainerStyle={styles.verifiedScrollContent}
+                showsVerticalScrollIndicator={false}
+              >
               {/* Header section: drag handle + title */}
               <View style={styles.sheetSection}>
                 <View style={styles.dragHandle} />
@@ -618,6 +849,14 @@ export default function CameraScreen() {
                   <BrandText weight="bold" color={Brand.purple} style={styles.discoveryBonus}>
                     {DISCOVERY_MULTIPLIER}× first-find bonus!
                   </BrandText>
+                )}
+                {leveledUp && stats && (
+                  <View style={styles.levelUpPill}>
+                    <Ionicons name="arrow-up-circle" size={16} color={Brand.bg} />
+                    <BrandText weight="bold" color={Brand.bg} style={styles.levelUpText}>
+                      Level up! You reached level {stats.currentLevel}
+                    </BrandText>
+                  </View>
                 )}
               </View>
 
@@ -645,6 +884,47 @@ export default function CameraScreen() {
                   <BrandText weight="medium" style={styles.progressCountText}>
                     {stats.currentXPInLevel}/{stats.xpNeededForNextLevel}
                   </BrandText>
+                </View>
+              )}
+
+              {/* Newly unlocked achievements (#9) — sourced from the achievement
+                  engine via storage.getAchievements() filtered by isUnlocked && isNew. */}
+              {newAchievements.length > 0 && (
+                <View style={styles.sheetSection}>
+                  <BrandText weight="bold" color={DARK_BROWN} style={styles.achHeading}>
+                    {newAchievements.length === 1
+                      ? 'Achievement unlocked! 🏅'
+                      : `${newAchievements.length} achievements unlocked! 🏅`}
+                  </BrandText>
+                  {newAchievements.map((ach) => (
+                    <View key={ach.id} style={[styles.achCard, stampBorder]}>
+                      <View style={styles.achIconWrap}>
+                        <Ionicons
+                          name={(ach.iconName as keyof typeof Ionicons.glyphMap) ?? 'trophy-outline'}
+                          size={22}
+                          color={Brand.bg}
+                        />
+                      </View>
+                      <View style={styles.achInfo}>
+                        <BrandText weight="bold" color={DARK_BROWN} style={styles.achTitle} numberOfLines={1}>
+                          {ach.title}
+                        </BrandText>
+                        <BrandText
+                          weight="medium"
+                          color={DARK_BROWN_SECONDARY}
+                          style={styles.achDesc}
+                          numberOfLines={2}
+                        >
+                          {ach.description}
+                        </BrandText>
+                      </View>
+                      <View style={styles.achDifficultyBadge}>
+                        <BrandText weight="bold" color={Brand.bg} style={styles.achDifficultyText}>
+                          {ach.difficulty}
+                        </BrandText>
+                      </View>
+                    </View>
+                  ))}
                 </View>
               )}
 
@@ -677,7 +957,10 @@ export default function CameraScreen() {
                 </View>
               )}
 
-              {/* BACK TO MAP — purple stamp button, right-aligned */}
+              </ScrollView>
+
+              {/* BACK TO MAP — purple stamp button, right-aligned. Pinned below
+                  the scrollable reveal so it's always reachable. */}
               <View style={styles.sheetActionSection}>
                 <TouchableOpacity style={[styles.purpleButton, stampBorder]} onPress={() => router.push('/explore')} activeOpacity={0.85}>
                   <Ionicons name="map-outline" size={18} color={Brand.bg} />
@@ -924,6 +1207,13 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderColor: Brand.ink,
     overflow: 'hidden',
+    maxHeight: SCREEN_H * 0.78,
+  },
+  verifiedScroll: {
+    flexShrink: 1,
+  },
+  verifiedScrollContent: {
+    paddingBottom: 0,
   },
   // Animated rainbow glow around the sheet when a hidden spot is discovered.
   discoveryGlow: {
@@ -936,6 +1226,72 @@ const styles = StyleSheet.create({
   discoveryBonus: {
     fontSize: 12,
     marginTop: 2,
+  },
+  // Centered spinner + copy shown the instant the photo is captured (#3).
+  verifyingCenter: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+  },
+  verifyingText: {
+    fontSize: 15,
+    letterSpacing: 0.3,
+  },
+  // Level-up callout pill in the verified header (#9).
+  levelUpPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one + 2,
+    backgroundColor: Brand.purple,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one + 2,
+    borderRadius: BrandRadius.pill,
+    marginTop: 2,
+  },
+  levelUpText: {
+    fontSize: 12,
+  },
+  // Newly unlocked achievement reveal (#9).
+  achHeading: {
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  achCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFDFB',
+    padding: Spacing.three,
+    gap: Spacing.three,
+    width: '100%',
+  },
+  achIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Brand.sticker.gold,
+  },
+  achInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  achTitle: {
+    fontSize: 14,
+  },
+  achDesc: {
+    fontSize: 12,
+    lineHeight: 15,
+  },
+  achDifficultyBadge: {
+    backgroundColor: Brand.purple,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 2,
+    borderRadius: BrandRadius.pill,
+  },
+  achDifficultyText: {
+    fontSize: 10,
   },
   // Each stacked block in the cream sheet, divided by a faint hairline.
   sheetSection: {

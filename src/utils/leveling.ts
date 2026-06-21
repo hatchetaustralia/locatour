@@ -1,9 +1,9 @@
 /**
- * leveling.ts — the single source of truth for Locatour's RuneScape-inspired
+ * leveling.ts — the single source of truth for Locatour's classic-RPG-style
  * progression system (see docs/locatour/06-rich-locations-and-leveling-spec.md).
  *
  * Everything that touches levels, XP, tiers or per-tier point defaults must come
- * through here so the curve stays faithful to the authentic Old School RuneScape
+ * through here so the curve stays faithful to the authentic Old School-style
  * experience formula and is never "tuned" in two places.
  */
 
@@ -26,8 +26,31 @@ export const HIDDEN_TIER_RANGE = 3;
 /** First-find XP multiplier when you DISCOVER a hidden (locked) location. */
 export const DISCOVERY_MULTIPLIER = 3;
 
+/**
+ * Tiers ABOVE your unlocked tier that are SURFACED in the home lists as LOCKED
+ * teasers (lock icon + "level up"). These are HARD-locked — you must level up,
+ * you can't discover-bypass them. Only the band BETWEEN this and HIDDEN_TIER_RANGE
+ * (i.e. exactly unlockedTier+3) is the hidden, discoverable one (spec 08 rev).
+ */
+export const LOCK_TEASER_RANGE = 2;
+
 /** Proximity (metres) at which the camera goes "warm" near an undiscovered hidden spot. */
 export const WARM_RADIUS_M = 500;
+
+/**
+ * Local-first reach radius (metres). Once we have the user's location, only spots
+ * within this distance (or major destinations) are surfaced on the map/home — so
+ * the world fills in around where you actually are. Tunable.
+ */
+export const VICINITY_RADIUS_M = 10000;
+
+/**
+ * Wider "teaser" radius (metres). A few tier-eligible spots BETWEEN the vicinity
+ * and this radius are surfaced in the home Challenge list (badged "worth the
+ * trip") to pull explorers beyond their local bubble without flooding the map.
+ * Tunable.
+ */
+export const REACH_RADIUS_M = 200000;
 
 /**
  * Default XP reward per location tier, anchored to the OSRS XP "band" each tier

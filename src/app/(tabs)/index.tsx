@@ -10,19 +10,41 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
 
 import { BrandAssets, BrandText } from '@/components/brand';
 import { Brand, BrandRadius, Spacing, stampBorder } from '@/constants/theme';
 import { storage } from '@/utils/storage';
-import { unlockedTier } from '@/utils/leveling';
+import { unlockedTier, levelForTier, VICINITY_RADIUS_M, REACH_RADIUS_M, LOCK_TEASER_RANGE } from '@/utils/leveling';
 import { refreshGeofencesOnFocus } from '@/utils/geofencing';
 import { User, ExploreLocation } from '@/types';
+
+// Straight-line distance (metres) between two coordinates — for the "nearest
+// spots" fallback when there are no high-value top picks yet.
+function distanceMeters(
+  a: { latitude: number; longitude: number },
+  b: { latitude: number; longitude: number }
+): number {
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLon = toRad(b.longitude - a.longitude);
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
 
 export default function HomeScreen() {
   const router = useRouter();
 
   const [user, setUser] = useState<User | null>(null);
   const [locations, setLocations] = useState<ExploreLocation[]>([]);
+  const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  // Location ids the user has checked in at THIS calendar month — shown as
+  // "done" in the monthly challenge list (which resets each month).
+  const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
 
   // Authentication check and data loader
@@ -31,16 +53,29 @@ export default function HomeScreen() {
       try {
         const currentUser = await storage.getUser();
         if (!currentUser) {
-          // If no user profile exists, redirect to onboarding login flow
-          router.replace('/auth/login');
+          // No profile yet → start the up-front story walkthrough, which then
+          // leads into account creation.
+          router.replace('/auth/walkthrough');
           return;
         }
         setUser(currentUser);
-        // Tier-gate: only surface locations whose tier the user has unlocked
-        // at their current level (spec 06). Higher tiers stay hidden.
+        // Surface unlocked spots + the +1/+2 locked teasers (and majors). The
+        // +3 hidden band is never shown here (it's discover-only). Instant load
+        // from cache/bundle; the located fetch below re-syncs the real slice.
         const allLocs = await storage.getLocations();
-        const maxTier = unlockedTier(currentUser.stats.currentLevel);
-        setLocations(allLocs.filter((loc) => loc.tier <= maxTier));
+        const cap = unlockedTier(currentUser.stats.currentLevel) + LOCK_TEASER_RANGE;
+        setLocations(allLocs.filter((loc) => loc.isMajorDestination || loc.tier <= cap));
+
+        // Mark challenges completed this month (the list resets monthly).
+        const checkIns = await storage.getCheckIns();
+        const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+        setCompletedIds(
+          new Set(
+            checkIns
+              .filter((c) => new Date(c.timestamp).getTime() >= monthStart)
+              .map((c) => c.locationId)
+          )
+        );
       } catch (e) {
         console.error('Failed to load user or locations in Home', e);
       } finally {
@@ -48,6 +83,33 @@ export default function HomeScreen() {
       }
     }
     loadData();
+
+    // Best-effort current location for the "nearest spots" fallback. Runs
+    // SEPARATELY (fire-and-forget) so a slow or never-arriving GPS fix can never
+    // block the dashboard from rendering — it just updates the ordering once it
+    // resolves. (getCurrentPositionAsync can hang indefinitely without a fix.)
+    (async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+        setUserCoords(coords);
+        // Re-sync the real local slice now that we know where they are + their
+        // level — the server returns only their tier-relevant reach spots (+
+        // majors), so we never pull the whole catalogue. This is the "new city"
+        // / reopen sync trigger.
+        const u = await storage.getUser();
+        const level = u?.stats.currentLevel ?? 1;
+        const slice = await storage.getLocations({ ...coords, level });
+        const cap = unlockedTier(level) + LOCK_TEASER_RANGE;
+        setLocations(slice.filter((l) => l.isMajorDestination || l.tier <= cap));
+      } catch {
+        // ignore — keep the instant cached/bundled set
+      }
+    })();
   }, []);
 
   // Keep background geofences in sync with the user's progress: prompts for
@@ -70,9 +132,52 @@ export default function HomeScreen() {
 
   if (!user) return null;
 
-  // Filter top picks (locations with >= 300 points) and challenge locations
-  const topPicks = locations.filter(loc => loc.points >= 300);
-  const challenges = locations.filter(loc => loc.points < 300 || loc.id === 'kings_park_lookout');
+  const unlocked = unlockedTier(user.stats.currentLevel);
+  // Per-card helpers. A spot is LOCKED if it's above the player's tier (surfaced
+  // +1/+2 teasers + any above-tier major) — hard-locked, level up to reach it.
+  // "Worth the trip" = a real trip beyond the 10km local bubble.
+  const isLocked = (loc: ExploreLocation) => loc.tier > unlocked;
+  const isWorthTrip = (loc: ExploreLocation) =>
+    !!userCoords &&
+    !loc.isMajorDestination &&
+    distanceMeters(userCoords, loc.coordinates) > VICINITY_RADIUS_M;
+
+  // The home lists work at the 200km REACH range (the map stays a tight local
+  // bubble — that's separate): your local spots PLUS a taste of what's further
+  // afield, so an Exmouth player can see what Perth is chasing.
+  const reachLocations = locations.filter(
+    (loc) =>
+      loc.isMajorDestination ||
+      !userCoords ||
+      distanceMeters(userCoords, loc.coordinates) <= REACH_RADIUS_M
+  );
+
+  // Top picks = high-value spots within reach (incl. aspirational locked ones);
+  // nearest-few fallback so the section is never empty. Curated, not a flood.
+  const highValue = reachLocations.filter((loc) => loc.points >= 300);
+  const byDistance = (a: ExploreLocation, b: ExploreLocation) =>
+    userCoords
+      ? distanceMeters(userCoords, a.coordinates) - distanceMeters(userCoords, b.coordinates)
+      : 0;
+  const topPicks = (highValue.length > 0 ? [...highValue].sort(byDistance) : [...reachLocations].sort(byDistance)).slice(0, 6);
+  const topPickIds = new Set(topPicks.map((l) => l.id));
+
+  // This month's challenges = the rest within reach; completed (this month) sink
+  // to the bottom in a done state. Curated to a realistic monthly count.
+  const sortedChallenges = reachLocations
+    .filter((loc) => !topPickIds.has(loc.id))
+    .sort(
+      (a, b) =>
+        Number(completedIds.has(a.id)) - Number(completedIds.has(b.id)) || byDistance(a, b)
+    )
+    .slice(0, 12);
+  const now = new Date();
+  const daysToReset = Math.max(
+    1,
+    Math.ceil(
+      (new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime() - now.getTime()) / 86400000
+    )
+  );
 
   const getCategoryIcon = (category: string): keyof typeof Ionicons.glyphMap => {
     switch (category) {
@@ -99,21 +204,13 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <Image source={BrandAssets.logo} style={styles.logo} resizeMode="contain" />
           <View style={styles.headerRight}>
-            {/* Streak chip */}
+            {/* Streak chip (profile + map live in the bottom nav, not here) */}
             <View style={styles.streakChip}>
               <Ionicons name="flame" size={14} color="#ef4444" />
               <BrandText weight="semibold" style={styles.streakText}>
                 {user.stats.dayStreak}d Streak
               </BrandText>
             </View>
-            {/* Settings gear */}
-            <TouchableOpacity
-              style={styles.gearButton}
-              onPress={() => router.push('/profile')}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="settings-outline" size={20} color={Brand.ink} />
-            </TouchableOpacity>
           </View>
         </View>
 
@@ -121,82 +218,32 @@ export default function HomeScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
-          {/* ── This week's top picks ── */}
+          {/* ── This month's challenges ── */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <View style={styles.sectionTitleRow}>
-                <Ionicons name="medal-outline" size={18} color={Brand.ink} />
+                <Ionicons name="flag-outline" size={18} color={Brand.ink} />
                 <BrandText weight="semibold" style={styles.sectionTitle}>
-                  This weeks top picks
+                  This month&apos;s challenges
                 </BrandText>
               </View>
-              <TouchableOpacity onPress={() => router.push('/explore')} activeOpacity={0.7}>
-                <BrandText weight="semibold" style={styles.viewAllLink}>
-                  View Map
+              <View style={styles.resetPill}>
+                <Ionicons name="time-outline" size={12} color={Brand.inkSecondary} />
+                <BrandText weight="semibold" style={styles.resetText}>
+                  Resets in {daysToReset}d
                 </BrandText>
-              </TouchableOpacity>
-            </View>
-
-            {/* Vertical list of top-pick cards */}
-            <View style={styles.verticalList}>
-              {topPicks.map(item => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={styles.pickCard}
-                  activeOpacity={0.85}
-                  onPress={() =>
-                    router.push({ pathname: '/explore', params: { selectedId: item.id } })
-                  }
-                >
-                  <Image source={{ uri: item.imageUrls[0] }} style={styles.pickImage} />
-                  <View style={styles.pickInfo}>
-                    <BrandText weight="semibold" style={styles.pickName} numberOfLines={1}>
-                      {item.name}
-                    </BrandText>
-                    <View style={styles.pickAddressRow}>
-                      <Ionicons name="location-outline" size={12} color={Brand.inkSecondary} />
-                      <BrandText weight="medium" style={styles.pickAddress} numberOfLines={2}>
-                        {item.address}
-                      </BrandText>
-                    </View>
-                    {/* Points badge */}
-                    <View style={styles.pointsBadge}>
-                      <Ionicons name="trophy-outline" size={13} color={Brand.sticker.gold} />
-                      <BrandText weight="semibold" style={styles.pointsText}>
-                        {item.points} Points
-                      </BrandText>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Pink "VIEW THEM ALL →" button */}
-            <TouchableOpacity
-              style={styles.viewAllButton}
-              activeOpacity={0.85}
-              onPress={() => router.push('/explore')}
-            >
-              <BrandText weight="bold" style={styles.viewAllButtonText}>
-                VIEW THEM ALL →
-              </BrandText>
-            </TouchableOpacity>
-          </View>
-
-          {/* ── Challenge locations ── */}
-          <View style={styles.section}>
-            <View style={styles.sectionTitleRow}>
-              <Ionicons name="flag-outline" size={18} color={Brand.ink} />
-              <BrandText weight="semibold" style={styles.sectionTitle}>
-                Challenge locations
-              </BrandText>
+              </View>
             </View>
 
             <View style={[styles.verticalList, { marginTop: Spacing.three }]}>
-              {challenges.map(item => (
+              {sortedChallenges.map(item => {
+                const done = completedIds.has(item.id);
+                const locked = isLocked(item);
+                const worthTrip = isWorthTrip(item);
+                return (
                 <TouchableOpacity
                   key={item.id}
-                  style={styles.challengeCard}
+                  style={[styles.challengeCard, (done || locked) && styles.challengeCardDim]}
                   activeOpacity={0.85}
                   onPress={() =>
                     router.push({ pathname: '/explore', params: { selectedId: item.id } })
@@ -233,14 +280,95 @@ export default function HomeScreen() {
                           {item.category.toUpperCase()}
                         </BrandText>
                       </View>
+                      <View style={styles.tierBadge}>
+                        <BrandText weight="bold" style={styles.tierBadgeText}>Tier {item.tier}</BrandText>
+                      </View>
                       <BrandText weight="semibold" style={styles.challengeXp}>
                         +{item.points} XP
                       </BrandText>
+                      {worthTrip && (
+                        <View style={styles.reachBadge}>
+                          <Ionicons name="airplane" size={9} color={Brand.purple} />
+                          <BrandText weight="bold" style={styles.reachBadgeText}>
+                            Worth the trip
+                          </BrandText>
+                        </View>
+                      )}
                     </View>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color={Brand.inkSubtle} />
+                  {locked ? (
+                    <View style={styles.lockBadge}>
+                      <Ionicons name="lock-closed" size={16} color={Brand.inkSubtle} />
+                      <BrandText weight="bold" style={styles.lockBadgeText}>Lv {levelForTier(item.tier)}</BrandText>
+                    </View>
+                  ) : done ? (
+                    <View style={styles.doneBadge}>
+                      <Ionicons name="checkmark-circle" size={18} color={Brand.sticker.green} />
+                      <BrandText weight="bold" style={styles.doneBadgeText}>Done</BrandText>
+                    </View>
+                  ) : (
+                    <Ionicons name="chevron-forward" size={18} color={Brand.inkSubtle} />
+                  )}
                 </TouchableOpacity>
-              ))}
+                );
+              })}
+            </View>
+          </View>
+
+          {/* ── This week's top picks (below challenges) ── */}
+          <View style={styles.section}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="medal-outline" size={18} color={Brand.ink} />
+              <BrandText weight="semibold" style={styles.sectionTitle}>
+                This weeks top picks
+              </BrandText>
+            </View>
+
+            {/* Vertical list of top-pick cards */}
+            <View style={styles.verticalList}>
+              {topPicks.map(item => {
+                const locked = isLocked(item);
+                return (
+                <TouchableOpacity
+                  key={item.id}
+                  style={[styles.pickCard, locked && styles.challengeCardDim]}
+                  activeOpacity={0.85}
+                  onPress={() =>
+                    router.push({ pathname: '/explore', params: { selectedId: item.id } })
+                  }
+                >
+                  <Image source={{ uri: item.imageUrls[0] }} style={styles.pickImage} />
+                  <View style={styles.pickInfo}>
+                    <BrandText weight="semibold" style={styles.pickName} numberOfLines={1}>
+                      {item.name}
+                    </BrandText>
+                    <View style={styles.pickAddressRow}>
+                      <Ionicons name="location-outline" size={12} color={Brand.inkSecondary} />
+                      <BrandText weight="medium" style={styles.pickAddress} numberOfLines={2}>
+                        {item.address}
+                      </BrandText>
+                    </View>
+                    <View style={styles.pickBadgeRow}>
+                      <View style={styles.pointsBadge}>
+                        <Ionicons name="trophy-outline" size={13} color={Brand.sticker.gold} />
+                        <BrandText weight="semibold" style={styles.pointsText}>
+                          {item.points} Points
+                        </BrandText>
+                      </View>
+                      <View style={styles.tierBadge}>
+                        <BrandText weight="bold" style={styles.tierBadgeText}>Tier {item.tier}</BrandText>
+                      </View>
+                      {locked && (
+                        <View style={styles.lockBadge}>
+                          <Ionicons name="lock-closed" size={12} color={Brand.inkSubtle} />
+                          <BrandText weight="bold" style={styles.lockBadgeText}>Lv {levelForTier(item.tier)}</BrandText>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
         </ScrollView>
@@ -448,5 +576,68 @@ const styles = StyleSheet.create({
   challengeXp: {
     fontSize: 12,
     color: Brand.sticker.purple,
+  },
+  reachBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(129,65,220,0.10)',
+    paddingHorizontal: Spacing.one + 2,
+    paddingVertical: 2,
+    borderRadius: BrandRadius.pill,
+  },
+  reachBadgeText: {
+    fontSize: 9,
+    color: Brand.purple,
+  },
+  resetPill: {
+    ...stampBorder,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Brand.surface,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 4,
+    borderRadius: BrandRadius.pill,
+  },
+  resetText: {
+    fontSize: 11,
+    color: Brand.inkSecondary,
+  },
+  challengeCardDim: {
+    opacity: 0.55,
+  },
+  doneBadge: {
+    alignItems: 'center',
+    gap: 1,
+  },
+  doneBadgeText: {
+    fontSize: 9,
+    color: Brand.sticker.green,
+  },
+  pickBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  tierBadge: {
+    backgroundColor: 'rgba(42,36,33,0.06)',
+    paddingHorizontal: Spacing.one + 2,
+    paddingVertical: 2,
+    borderRadius: BrandRadius.pill,
+  },
+  tierBadgeText: {
+    fontSize: 9,
+    color: Brand.inkSecondary,
+  },
+  lockBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  lockBadgeText: {
+    fontSize: 9,
+    color: Brand.inkSubtle,
   },
 });

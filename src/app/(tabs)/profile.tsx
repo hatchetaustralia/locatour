@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   View,
@@ -7,7 +7,23 @@ import {
   TextInput,
   TouchableOpacity,
   ActivityIndicator,
+  Modal,
+  FlatList,
+  Dimensions,
+  Alert,
+  type ListRenderItemInfo,
 } from 'react-native';
+import {
+  GestureHandlerRootView,
+  GestureDetector,
+  Gesture,
+} from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  runOnJS,
+} from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,9 +31,20 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BrandText, StampButton } from '@/components/brand';
 import { Brand, BrandFonts, BrandRadius, stampBorder, Spacing } from '@/constants/theme';
 import { storage } from '@/utils/storage';
+import { checkUsernameAvailable, UsernameStatus } from '@/utils/account';
 import { avatarUri } from '@/utils/avatar';
 import { User, Achievement, CheckIn, ExploreLocation } from '@/types';
 import { INTERESTS } from '@/constants/interests';
+
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+
+// A single full-screen photo joined with its caption metadata, used by the
+// swipeable viewer below.
+type ViewerPhoto = {
+  uri: string;
+  name: string;
+  date: string;
+};
 
 // Preset avatars reused from the onboarding "Create Profile" flow for consistency.
 const AVATAR_PRESETS = [
@@ -60,7 +87,131 @@ const formatTime = (iso: string) => {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
-// RuneScape-style difficulty ordering + colours for the achievement tiers.
+// ---------------------------------------------------------------------------
+// ZoomablePhoto — one full-screen page in the viewer. Pinch-to-zoom and
+// double-tap-to-toggle-zoom via react-native-gesture-handler + reanimated.
+// A single tap (that isn't a double tap) bubbles up to close the viewer.
+// ---------------------------------------------------------------------------
+function ZoomablePhoto({ photo, onClose }: { photo: ViewerPhoto; onClose: () => void }) {
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+
+  const pinch = Gesture.Pinch()
+    .onUpdate((e) => {
+      scale.value = Math.max(1, Math.min(savedScale.value * e.scale, 4));
+    })
+    .onEnd(() => {
+      savedScale.value = scale.value;
+    });
+
+  const doubleTap = Gesture.Tap()
+    .numberOfTaps(2)
+    .onEnd(() => {
+      const next = scale.value > 1 ? 1 : 2.5;
+      scale.value = withTiming(next);
+      savedScale.value = next;
+    });
+
+  // Single tap closes — but only when not zoomed in, so a tap to pan doesn't
+  // accidentally dismiss. requireExternalGestureToFail keeps double-tap working.
+  const singleTap = Gesture.Tap()
+    .numberOfTaps(1)
+    .onEnd(() => {
+      if (scale.value <= 1) runOnJS(onClose)();
+    });
+
+  const composed = Gesture.Race(
+    pinch,
+    Gesture.Exclusive(doubleTap, singleTap),
+  );
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <GestureDetector gesture={composed}>
+      <Animated.View style={styles.viewerPage}>
+        <Animated.Image
+          source={{ uri: photo.uri }}
+          style={[styles.viewerImage, animatedStyle]}
+          resizeMode="contain"
+        />
+      </Animated.View>
+    </GestureDetector>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// PhotoViewer — full-screen modal with a horizontal paging FlatList of every
+// check-in photo. Shows the location name + date overlaid, plus an X to close.
+// ---------------------------------------------------------------------------
+function PhotoViewer({
+  photos,
+  initialIndex,
+  onClose,
+}: {
+  photos: ViewerPhoto[];
+  initialIndex: number;
+  onClose: () => void;
+}) {
+  const [index, setIndex] = useState(initialIndex);
+  const current = photos[index];
+
+  const renderItem = ({ item }: ListRenderItemInfo<ViewerPhoto>) => (
+    <ZoomablePhoto photo={item} onClose={onClose} />
+  );
+
+  return (
+    <Modal visible animationType="fade" transparent onRequestClose={onClose}>
+      <GestureHandlerRootView style={styles.viewerRoot}>
+        <FlatList
+          data={photos}
+          keyExtractor={(_, i) => `viewer-${i}`}
+          renderItem={renderItem}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          initialScrollIndex={initialIndex}
+          getItemLayout={(_, i) => ({ length: SCREEN_W, offset: SCREEN_W * i, index: i })}
+          onMomentumScrollEnd={(e) =>
+            setIndex(Math.round(e.nativeEvent.contentOffset.x / SCREEN_W))
+          }
+        />
+
+        {/* Caption overlay (location + date). */}
+        {current ? (
+          <SafeAreaView style={styles.viewerCaption} edges={['bottom']} pointerEvents="none">
+            <BrandText weight="semibold" color={Brand.surface} style={styles.viewerCaptionName}>
+              {current.name}
+            </BrandText>
+            <BrandText weight="medium" color={Brand.surface} style={styles.viewerCaptionDate}>
+              {current.date}
+            </BrandText>
+            {photos.length > 1 ? (
+              <BrandText weight="medium" color={Brand.surface} style={styles.viewerCounter}>
+                {index + 1} / {photos.length}
+              </BrandText>
+            ) : null}
+          </SafeAreaView>
+        ) : null}
+
+        {/* Close button. */}
+        <SafeAreaView style={styles.viewerCloseWrap} edges={['top']}>
+          <TouchableOpacity
+            style={styles.viewerCloseButton}
+            onPress={onClose}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Ionicons name="close" size={26} color={Brand.surface} />
+          </TouchableOpacity>
+        </SafeAreaView>
+      </GestureHandlerRootView>
+    </Modal>
+  );
+}
+
+// Tiered difficulty ordering + colours for the achievement tiers.
 const DIFFICULTY_ORDER: Record<string, number> = {
   Easy: 0, Medium: 1, Hard: 2, Elite: 3, Master: 4, Grandmaster: 5,
 };
@@ -78,6 +229,9 @@ export default function ProfileScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<ProfileTab>('overview');
   const [isEditing, setIsEditing] = useState(false);
+  // Full-screen photo viewer: the tapped photo's index into `viewerPhotos`,
+  // or null when the viewer is closed.
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 
   // Edit-mode form state
   const [editDisplayName, setEditDisplayName] = useState('');
@@ -87,6 +241,19 @@ export default function ProfileScreen() {
   const [displayNameError, setDisplayNameError] = useState('');
   const [usernameError, setUsernameError] = useState('');
   const [editInterests, setEditInterests] = useState<string[]>([]);
+  // Live username availability status (mirrors the onboarding screen).
+  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus | 'checking' | null>(null);
+  // Transient "Saved ✓" badge — true for ~1.5s after a successful auto-save.
+  const [justSaved, setJustSaved] = useState(false);
+
+  // Auto-save plumbing. `editDirtyRef` guards against the no-op save that would
+  // otherwise fire the instant we populate the form on entering edit mode — it's
+  // flipped true only on a genuine user edit, and reset when we leave edit mode.
+  const editDirtyRef = useRef(false);
+  const savedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Monotonic request id so a slower in-flight username check can't clobber the
+  // result of a newer keystroke.
+  const usernameReqId = useRef(0);
 
   const loadData = useCallback(async () => {
     try {
@@ -137,6 +304,71 @@ export default function ProfileScreen() {
     loadData();
   }, [loadData]);
 
+  // ── Live username availability check (debounced ~400ms) ───────────────────
+  // Mirrors the onboarding screen. Pass user.uid as device_id so the user's OWN
+  // current username reads as available, not "taken". Sits ABOVE the early
+  // returns to preserve hook order.
+  useEffect(() => {
+    if (!isEditing || !user) return;
+    const u = editUsername.trim();
+    if (u.length < 3) {
+      setUsernameStatus(u.length === 0 ? null : 'too_short');
+      return;
+    }
+    setUsernameStatus('checking');
+    const reqId = ++usernameReqId.current;
+    const handle = setTimeout(async () => {
+      const status = await checkUsernameAvailable(u, user.uid);
+      if (reqId !== usernameReqId.current) return; // a newer keystroke won
+      setUsernameStatus(status);
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [editUsername, isEditing, user]);
+
+  // ── Debounced auto-save (~600ms) ──────────────────────────────────────────
+  // Saves edits as the user makes them — no explicit Save button. The
+  // editDirtyRef guard prevents a no-op save firing the moment we enter edit
+  // mode (which populates all the edit* state). Username is conditionally held
+  // back when the typed handle isn't valid/available (see CHANGE 2). Sits ABOVE
+  // the early returns to preserve hook order.
+  useEffect(() => {
+    if (!isEditing || !user) return;
+    if (!editDirtyRef.current) return; // entering edit mode is not a user change
+    // Don't persist an empty display name; just surface the requirement.
+    if (!editDisplayName.trim()) {
+      setDisplayNameError('Display name is required');
+      return;
+    }
+    setDisplayNameError('');
+
+    const handle = setTimeout(async () => {
+      // Keep the last-known-good username unless the typed one is valid. While
+      // 'checking'/'too_short'/'taken' we save the OTHER fields and retain the
+      // saved username; 'available'/'unknown' (offline) save the typed handle.
+      const typed = editUsername.trim();
+      const usernameToSave =
+        usernameStatus === 'available' || usernameStatus === 'unknown'
+          ? typed
+          : user.username; // last-known-good (still has its display @)
+
+      const updated = await storage.updateProfile(
+        editDisplayName.trim(),
+        usernameToSave,
+        editBio.trim(),
+        editAvatar,
+        editInterests,
+      );
+      if (updated) {
+        setUser(updated);
+        setJustSaved(true);
+        if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
+        savedTimerRef.current = setTimeout(() => setJustSaved(false), 1500);
+      }
+    }, 600);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editDisplayName, editUsername, editBio, editAvatar, editInterests, usernameStatus, isEditing]);
+
   const enterEditMode = () => {
     if (!user) return;
     setEditDisplayName(user.displayName);
@@ -147,55 +379,48 @@ export default function ProfileScreen() {
     setEditInterests(user.interests || []);
     setDisplayNameError('');
     setUsernameError('');
+    setUsernameStatus(null);
+    setJustSaved(false);
+    editDirtyRef.current = false; // populating the form is not a user change
     setIsEditing(true);
+  };
+
+  const exitEditMode = () => {
+    editDirtyRef.current = false;
+    if (savedTimerRef.current) {
+      clearTimeout(savedTimerRef.current);
+      savedTimerRef.current = null;
+    }
+    setJustSaved(false);
+    setIsEditing(false);
   };
 
   const handleUsernameChange = (text: string) => {
     const cleaned = text.replace(/[^a-zA-Z0-9_.]/g, '').toLowerCase();
+    editDirtyRef.current = true;
     setEditUsername(cleaned);
     if (usernameError) setUsernameError('');
   };
 
   const toggleEditInterest = (id: string) => {
+    editDirtyRef.current = true;
     setEditInterests((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
   };
 
-  const handleSave = async () => {
-    let isValid = true;
-
-    if (!editDisplayName.trim()) {
-      setDisplayNameError('Display name is required');
-      isValid = false;
-    } else {
-      setDisplayNameError('');
-    }
-
-    if (!editUsername.trim()) {
-      setUsernameError('Username is required');
-      isValid = false;
-    } else if (editUsername.length < 3) {
-      setUsernameError('Username must be at least 3 characters');
-      isValid = false;
-    } else {
-      setUsernameError('');
-    }
-
-    if (!isValid) return;
-
-    const updated = await storage.updateProfile(
-      editDisplayName.trim(),
-      editUsername,
-      editBio.trim(),
-      editAvatar,
-      editInterests,
-    );
-
-    if (updated) {
-      setUser(updated);
-    }
-    setIsEditing(false);
+  const handleLogout = () => {
+    Alert.alert('Log out', 'Are you sure you want to log out?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Log out',
+        style: 'destructive',
+        onPress: async () => {
+          await storage.logout();
+          router.replace('/auth/login');
+        },
+      },
+    ]);
   };
 
   if (isLoading) {
@@ -222,6 +447,26 @@ export default function ProfileScreen() {
   );
   const unlockedCount = achievements.filter((a) => a.isUnlocked).length;
 
+  // Every check-in photo (newest first), resolved to a real image with caption,
+  // for the swipeable full-screen viewer. Each entry maps to one timeline node.
+  // NOTE: plain consts (not useMemo) — they must NOT be hooks because they sit
+  // after the early returns above; a hook here changes the hook count between
+  // renders and crashes with "Rendered more hooks than during the previous render".
+  const viewerPhotos: ViewerPhoto[] = entries.map((entry) => ({
+    uri: entry.checkIn.photoUrl || entry.location?.imageUrls[0] || '',
+    name: entry.location?.name ?? 'Unknown location',
+    date: formatDate(entry.checkIn.timestamp),
+  }));
+
+  // Cumulative points earned across all check-ins — the rewarding "lifetime"
+  // tally shown at the top of the timeline.
+  const cumulativePoints = entries.reduce(
+    (sum, entry) => sum + (entry.checkIn.pointsEarned || 0),
+    0,
+  );
+
+  const openViewer = (index: number) => setViewerIndex(index);
+
   // ---------------------------------------------------------------------------
   // EDIT MODE
   // ---------------------------------------------------------------------------
@@ -231,12 +476,22 @@ export default function ProfileScreen() {
         <View style={styles.editHeader}>
           <TouchableOpacity
             style={[styles.iconSquare, stampBorder]}
-            onPress={() => setIsEditing(false)}
+            onPress={exitEditMode}
           >
             <Ionicons name="arrow-back-outline" size={20} color={Brand.ink} />
           </TouchableOpacity>
           <BrandText weight="semibold" style={styles.editHeaderTitle}>Edit Profile</BrandText>
-          <View style={styles.iconSquarePlaceholder} />
+          {/* Subtle transient "Saved ✓" badge — auto-save means no Save button. */}
+          {justSaved ? (
+            <View style={styles.savedBadge}>
+              <Ionicons name="checkmark-circle" size={14} color={Brand.sticker.green} />
+              <BrandText weight="semibold" color={Brand.sticker.green} style={styles.savedBadgeText}>
+                Saved
+              </BrandText>
+            </View>
+          ) : (
+            <View style={styles.iconSquarePlaceholder} />
+          )}
         </View>
 
         <ScrollView
@@ -264,7 +519,10 @@ export default function ProfileScreen() {
                         styles.roundedFull,
                         selected && styles.presetItemSelected,
                       ]}
-                      onPress={() => setEditAvatar(preset)}
+                      onPress={() => {
+                        editDirtyRef.current = true;
+                        setEditAvatar(preset);
+                      }}
                     >
                       <Image source={{ uri: preset }} style={styles.presetImage} />
                       {selected && (
@@ -295,6 +553,7 @@ export default function ProfileScreen() {
                 placeholderTextColor={Brand.inkSubtle}
                 value={editDisplayName}
                 onChangeText={(text) => {
+                  editDirtyRef.current = true;
                   setEditDisplayName(text);
                   if (displayNameError) setDisplayNameError('');
                 }}
@@ -312,7 +571,7 @@ export default function ProfileScreen() {
               style={[
                 styles.inputRow,
                 stampBorder,
-                usernameError ? styles.inputRowError : null,
+                (usernameError || usernameStatus === 'taken') ? styles.inputRowError : null,
               ]}
             >
               <BrandText weight="medium" style={styles.atPrefix}>@</BrandText>
@@ -325,9 +584,20 @@ export default function ProfileScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
               />
+              {usernameStatus === 'checking' ? (
+                <ActivityIndicator size="small" color={Brand.inkSubtle} />
+              ) : usernameStatus === 'available' ? (
+                <Ionicons name="checkmark-circle" size={18} color={Brand.sticker.green} />
+              ) : usernameStatus === 'taken' ? (
+                <Ionicons name="close-circle" size={18} color="#d1453b" />
+              ) : null}
             </View>
             {usernameError ? (
               <BrandText weight="medium" style={styles.errorText}>{usernameError}</BrandText>
+            ) : usernameStatus === 'available' ? (
+              <BrandText weight="medium" style={styles.availableText}>Nice — that one&apos;s free</BrandText>
+            ) : usernameStatus === 'taken' ? (
+              <BrandText weight="medium" style={styles.errorText}>That username is taken</BrandText>
             ) : null}
           </View>
 
@@ -343,7 +613,12 @@ export default function ProfileScreen() {
                 placeholder="I love hiking and skating 🏄..."
                 placeholderTextColor={Brand.inkSubtle}
                 value={editBio}
-                onChangeText={(text) => text.length <= 150 && setEditBio(text)}
+                onChangeText={(text) => {
+                  if (text.length <= 150) {
+                    editDirtyRef.current = true;
+                    setEditBio(text);
+                  }
+                }}
                 multiline
                 numberOfLines={3}
                 textAlignVertical="top"
@@ -374,18 +649,13 @@ export default function ProfileScreen() {
             </View>
           </View>
 
+          {/* Auto-save handles persistence; "Done" just leaves edit mode. */}
           <StampButton
             variant="primary"
-            label="SAVE CHANGES"
-            onPress={handleSave}
+            label="DONE"
+            onPress={exitEditMode}
             style={styles.saveButton}
           />
-
-          <TouchableOpacity style={styles.cancelButton} onPress={() => setIsEditing(false)}>
-            <BrandText weight="semibold" color={Brand.inkSecondary} style={styles.cancelButtonText}>
-              Cancel
-            </BrandText>
-          </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
     );
@@ -515,66 +785,125 @@ export default function ProfileScreen() {
               </View>
             )}
 
-            {/* Recent check-ins (folded in from History) */}
+            {/* Check-in timeline (folded in from History) */}
             <View style={styles.overviewBlock}>
-              <BrandText weight="medium" style={styles.blockTitle}>Recent check-ins</BrandText>
+              <View style={styles.timelineHeader}>
+                <BrandText weight="medium" style={styles.blockTitle}>Your journey</BrandText>
+                {entries.length > 0 ? (
+                  <BrandText weight="medium" color={Brand.inkSecondary} style={styles.timelineCount}>
+                    {entries.length} {entries.length === 1 ? 'stop' : 'stops'}
+                  </BrandText>
+                ) : null}
+              </View>
+
               {entries.length === 0 ? (
                 <View style={[styles.emptyCard, stampBorder]}>
                   <Ionicons name="map-outline" size={28} color={Brand.purple} />
+                  <BrandText weight="semibold" style={styles.emptyTitle}>
+                    No check-ins yet — go explore!
+                  </BrandText>
                   <BrandText weight="medium" color={Brand.inkSecondary} style={styles.emptyText}>
-                    No check-ins yet. Explore the map and check in to start your journey.
+                    Explore the map and check in to start your journey.
                   </BrandText>
                 </View>
               ) : (
-                <View style={styles.checkInList}>
-                  {entries.map((entry) => {
-                    const loc = entry.location;
-                    return (
-                      <View key={entry.checkIn.id} style={[styles.checkInCard, stampBorder]}>
-                        <Image
-                          source={{ uri: entry.checkIn.photoUrl || loc?.imageUrls[0] }}
-                          style={styles.checkInImage}
-                        />
-                        <View style={styles.checkInInfo}>
-                          <BrandText weight="semibold" style={styles.checkInName} numberOfLines={1}>
-                            {loc?.name ?? 'Unknown location'}
-                          </BrandText>
-                          <View style={styles.checkInMetaRow}>
-                            <View style={styles.checkInMetaItem}>
-                              <Ionicons name="calendar-outline" size={12} color={Brand.inkSubtle} />
-                              <BrandText weight="medium" color={Brand.inkSecondary} style={styles.checkInMetaText}>
-                                {formatDate(entry.checkIn.timestamp)}
-                              </BrandText>
-                            </View>
-                            <View style={styles.checkInMetaItem}>
-                              <Ionicons name="time-outline" size={12} color={Brand.inkSubtle} />
-                              <BrandText weight="medium" color={Brand.inkSecondary} style={styles.checkInMetaText}>
-                                {formatTime(entry.checkIn.timestamp)}
-                              </BrandText>
-                            </View>
+                <>
+                  {/* Cumulative-points reward summary. */}
+                  <View style={[styles.pointsSummary, stampBorder]}>
+                    <View style={[styles.pointsSummaryIcon, styles.roundedFull]}>
+                      <Ionicons name="trophy" size={20} color={Brand.bg} />
+                    </View>
+                    <View style={styles.pointsSummaryText}>
+                      <BrandText weight="bold" style={styles.pointsSummaryValue}>
+                        {cumulativePoints.toLocaleString()}
+                      </BrandText>
+                      <BrandText weight="medium" color={Brand.inkSecondary} style={styles.pointsSummaryLabel}>
+                        points earned exploring
+                      </BrandText>
+                    </View>
+                  </View>
+
+                  {/* Vertical timeline: connector line + dated nodes + thumbs. */}
+                  <View style={styles.timeline}>
+                    {entries.map((entry, idx) => {
+                      const loc = entry.location;
+                      const isLast = idx === entries.length - 1;
+                      const thumbUri = entry.checkIn.photoUrl || loc?.imageUrls[0];
+                      return (
+                        <View key={entry.checkIn.id} style={styles.timelineRow}>
+                          {/* Rail: node dot + connector line. */}
+                          <View style={styles.timelineRail}>
+                            <View style={[styles.timelineNode, styles.roundedFull]} />
+                            {!isLast ? <View style={styles.timelineLine} /> : null}
                           </View>
-                          <View style={styles.checkInBadges}>
-                            <View style={[styles.pointsBadge, stampBorder]}>
-                              <Ionicons name="trophy" size={11} color={Brand.sticker.gold} />
-                              <BrandText weight="semibold" color={Brand.sticker.gold} style={styles.pointsText}>
-                                {entry.checkIn.pointsEarned} pts
-                              </BrandText>
-                            </View>
-                            {entry.pendingSync && (
-                              <View style={[styles.pendingBadge, stampBorder]}>
-                                <Ionicons name="cloud-upload-outline" size={11} color={Brand.sticker.pink} />
-                                <BrandText weight="semibold" color={Brand.sticker.pink} style={styles.pendingText}>
-                                  Pending sync
+
+                          {/* Card. */}
+                          <View style={styles.timelineCardWrap}>
+                            <View style={[styles.checkInCard, stampBorder]}>
+                              <TouchableOpacity
+                                activeOpacity={0.85}
+                                onPress={() => openViewer(idx)}
+                              >
+                                <Image source={{ uri: thumbUri }} style={styles.checkInImage} />
+                                <View style={styles.checkInImageBadge}>
+                                  <Ionicons name="expand-outline" size={12} color={Brand.bg} />
+                                </View>
+                              </TouchableOpacity>
+                              <View style={styles.checkInInfo}>
+                                <BrandText weight="semibold" style={styles.checkInName} numberOfLines={1}>
+                                  {loc?.name ?? 'Unknown location'}
                                 </BrandText>
+                                <View style={styles.checkInMetaRow}>
+                                  <View style={styles.checkInMetaItem}>
+                                    <Ionicons name="calendar-outline" size={12} color={Brand.inkSubtle} />
+                                    <BrandText weight="medium" color={Brand.inkSecondary} style={styles.checkInMetaText}>
+                                      {formatDate(entry.checkIn.timestamp)}
+                                    </BrandText>
+                                  </View>
+                                  <View style={styles.checkInMetaItem}>
+                                    <Ionicons name="time-outline" size={12} color={Brand.inkSubtle} />
+                                    <BrandText weight="medium" color={Brand.inkSecondary} style={styles.checkInMetaText}>
+                                      {formatTime(entry.checkIn.timestamp)}
+                                    </BrandText>
+                                  </View>
+                                </View>
+                                <View style={styles.checkInBadges}>
+                                  <View style={[styles.pointsBadgeBig, stampBorder]}>
+                                    <Ionicons name="trophy" size={13} color={Brand.bg} />
+                                    <BrandText weight="bold" color={Brand.bg} style={styles.pointsTextBig}>
+                                      +{entry.checkIn.pointsEarned} pts
+                                    </BrandText>
+                                  </View>
+                                  {entry.pendingSync && (
+                                    <View style={[styles.pendingBadge, stampBorder]}>
+                                      <Ionicons name="cloud-upload-outline" size={11} color={Brand.sticker.pink} />
+                                      <BrandText weight="semibold" color={Brand.sticker.pink} style={styles.pendingText}>
+                                        Pending sync
+                                      </BrandText>
+                                    </View>
+                                  )}
+                                </View>
                               </View>
-                            )}
+                            </View>
                           </View>
                         </View>
-                      </View>
-                    );
-                  })}
-                </View>
+                      );
+                    })}
+                  </View>
+                </>
               )}
+
+              {/* Log out — clears the profile and returns to the auth flow. */}
+              <TouchableOpacity
+                style={[styles.logoutButton, stampBorder]}
+                activeOpacity={0.85}
+                onPress={handleLogout}
+              >
+                <Ionicons name="log-out-outline" size={18} color={Brand.sticker.pink} />
+                <BrandText weight="bold" color={Brand.sticker.pink} style={styles.logoutText}>
+                  Log out
+                </BrandText>
+              </TouchableOpacity>
             </View>
           </View>
         ) : activeTab === 'gallery' ? (
@@ -582,14 +911,22 @@ export default function ProfileScreen() {
             {entries.length === 0 ? (
               <View style={[styles.emptyCard, stampBorder]}>
                 <Ionicons name="images-outline" size={28} color={Brand.purple} />
+                <BrandText weight="semibold" style={styles.emptyTitle}>
+                  No check-ins yet — go explore!
+                </BrandText>
                 <BrandText weight="medium" color={Brand.inkSecondary} style={styles.emptyText}>
-                  No photos yet. Check in at a location to start your gallery.
+                  Check in at a location to start your gallery.
                 </BrandText>
               </View>
             ) : (
               <View style={styles.galleryGrid}>
-                {entries.map((entry) => (
-                  <View key={entry.checkIn.id} style={[styles.galleryItem, stampBorder]}>
+                {entries.map((entry, idx) => (
+                  <TouchableOpacity
+                    key={entry.checkIn.id}
+                    activeOpacity={0.85}
+                    style={[styles.galleryItem, stampBorder]}
+                    onPress={() => openViewer(idx)}
+                  >
                     <Image
                       source={{ uri: entry.checkIn.photoUrl || entry.location?.imageUrls[0] }}
                       style={styles.galleryImage}
@@ -602,7 +939,7 @@ export default function ProfileScreen() {
                         {formatDate(entry.checkIn.timestamp)}
                       </BrandText>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 ))}
               </View>
             )}
@@ -671,6 +1008,14 @@ export default function ProfileScreen() {
           </View>
         )}
       </ScrollView>
+
+      {viewerIndex !== null && viewerPhotos.length > 0 ? (
+        <PhotoViewer
+          photos={viewerPhotos}
+          initialIndex={viewerIndex}
+          onClose={() => setViewerIndex(null)}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -820,6 +1165,21 @@ const styles = StyleSheet.create({
     gap: Spacing.four,
   },
 
+  // Log out button (bottom of Overview)
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    backgroundColor: Brand.surface,
+    paddingVertical: Spacing.three,
+    borderRadius: BrandRadius.control,
+    marginTop: Spacing.two,
+  },
+  logoutText: {
+    fontSize: 14,
+  },
+
   // Overview blocks
   overviewBlock: {
     gap: Spacing.two,
@@ -931,10 +1291,82 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     padding: Spacing.four,
   },
+  emptyTitle: {
+    fontSize: 15,
+    color: Brand.ink,
+    textAlign: 'center',
+  },
   emptyText: {
     fontSize: 13,
     textAlign: 'center',
     lineHeight: 20,
+  },
+
+  // Timeline header
+  timelineHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  timelineCount: {
+    fontSize: 13,
+  },
+
+  // Cumulative-points reward summary
+  pointsSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    padding: Spacing.three,
+    backgroundColor: '#FDF3DA',
+  },
+  pointsSummaryIcon: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Brand.sticker.gold,
+  },
+  pointsSummaryText: {
+    flex: 1,
+  },
+  pointsSummaryValue: {
+    fontSize: 24,
+    color: Brand.ink,
+  },
+  pointsSummaryLabel: {
+    fontSize: 12,
+  },
+
+  // Timeline
+  timeline: {
+    marginTop: Spacing.two,
+  },
+  timelineRow: {
+    flexDirection: 'row',
+  },
+  timelineRail: {
+    width: 24,
+    alignItems: 'center',
+  },
+  timelineNode: {
+    width: 14,
+    height: 14,
+    marginTop: 6,
+    backgroundColor: Brand.purple,
+    borderWidth: 2,
+    borderColor: Brand.bg,
+  },
+  timelineLine: {
+    flex: 1,
+    width: 2,
+    marginTop: 2,
+    marginBottom: 2,
+    backgroundColor: 'rgba(129,65,220,0.35)',
+  },
+  timelineCardWrap: {
+    flex: 1,
+    paddingBottom: Spacing.three,
   },
   checkInCard: {
     flexDirection: 'row',
@@ -948,6 +1380,14 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: BrandRadius.control,
     backgroundColor: Brand.bg,
+  },
+  checkInImageBadge: {
+    position: 'absolute',
+    bottom: 4,
+    right: 4,
+    backgroundColor: 'rgba(42,36,33,0.6)',
+    borderRadius: BrandRadius.pill,
+    padding: 3,
   },
   checkInInfo: {
     flex: 1,
@@ -988,6 +1428,20 @@ const styles = StyleSheet.create({
   },
   pointsText: {
     fontSize: 11,
+  },
+  // Prominent gold points badge for the timeline cards.
+  pointsBadgeBig: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: BrandRadius.pill,
+    backgroundColor: Brand.sticker.gold,
+  },
+  pointsTextBig: {
+    fontSize: 12,
+    letterSpacing: 0.2,
   },
   pendingBadge: {
     flexDirection: 'row',
@@ -1275,12 +1729,71 @@ const styles = StyleSheet.create({
     width: '100%',
     marginTop: Spacing.two,
   },
-  cancelButton: {
-    alignItems: 'center',
-    paddingVertical: Spacing.three,
-    marginTop: Spacing.one,
+  availableText: {
+    color: Brand.sticker.green,
+    fontSize: 12,
+    marginTop: 2,
   },
-  cancelButtonText: {
+  // Transient "Saved ✓" badge in the edit header.
+  savedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  savedBadgeText: {
+    fontSize: 13,
+  },
+
+  // ---- Full-screen photo viewer ----
+  viewerRoot: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  viewerPage: {
+    width: SCREEN_W,
+    height: SCREEN_H,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewerImage: {
+    width: SCREEN_W,
+    height: SCREEN_H,
+  },
+  viewerCloseWrap: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+  },
+  viewerCloseButton: {
+    margin: Spacing.three,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  viewerCaption: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.three,
+    paddingBottom: Spacing.three,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  viewerCaptionName: {
+    fontSize: 18,
+  },
+  viewerCaptionDate: {
     fontSize: 14,
+    opacity: 0.85,
+    marginTop: 2,
+  },
+  viewerCounter: {
+    fontSize: 12,
+    opacity: 0.7,
+    marginTop: 4,
   },
 });

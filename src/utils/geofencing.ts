@@ -178,13 +178,17 @@ export async function refreshGeofencesOnFocus(): Promise<void> {
       await syncGeofences();
       return;
     }
-    // Not yet authorized: run the full prompt chain once, while we've never
-    // asked (foreground still undetermined). Otherwise stay quiet so we don't
-    // nag on every focus or bounce the user to Settings repeatedly.
-    const fg = await Location.getForegroundPermissionsAsync();
-    if (fg.status === 'undetermined') {
+    if (bg.status === 'undetermined') {
+      // We've never asked for "Allow all the time" yet — run the full prompt
+      // chain. Gating on BACKGROUND (not foreground) status is what fixes
+      // existing users: their foreground permission was already granted, so the
+      // old foreground-undetermined check never fired and geofences never armed.
+      // Once the user answers (granted/denied) the status is no longer
+      // undetermined, so we won't nag or bounce them to Settings again.
       await setupGeofencing();
+      return;
     }
+    // bg denied → respect it; background geofencing can't run without it.
   } catch (e) {
     console.warn('[geofence] refresh failed', (e as Error).message);
   }

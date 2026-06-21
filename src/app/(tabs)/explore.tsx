@@ -19,18 +19,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandText } from '@/components/brand';
 import { Brand, Spacing, stampBorder, BrandRadius } from '@/constants/theme';
 import { storage } from '@/utils/storage';
-import { unlockedTier } from '@/utils/leveling';
-import { formatDistance, openDirections } from '@/utils/geo';
+import { unlockedTier, levelForTier, VICINITY_RADIUS_M } from '@/utils/leveling';
+import { formatDistance, openDirections, isWithinVicinity } from '@/utils/geo';
+import { avatarUri } from '@/utils/avatar';
 import { ExploreLocation, CheckIn } from '@/types';
 
 // Native Map imports (conditionally rendered)
 let MapView: any = null;
 let Marker: any = null;
+let Circle: any = null;
 if (Platform.OS !== 'web') {
   try {
     const RNMaps = require('react-native-maps');
     MapView = RNMaps.default;
     Marker = RNMaps.Marker;
+    Circle = RNMaps.Circle;
   } catch (e) {
     console.error('Failed to import react-native-maps', e);
   }
@@ -43,6 +46,10 @@ const LIGHT_MAP_STYLE = [
   { featureType: 'poi.park', elementType: 'geometry.fill', stylers: [{ color: '#dcefdf' }] },
   { featureType: 'water', elementType: 'geometry.fill', stylers: [{ color: '#bfe6e9' }] },
   { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#fffdfb' }] },
+  // Soften airports: man-made land + building fills render dark navy by default;
+  // tint them a light warm grey and hide transit/airport icons for a paper look.
+  { featureType: 'landscape.man_made', elementType: 'geometry.fill', stylers: [{ color: '#EAE3DB' }] },
+  { featureType: 'transit', elementType: 'all', stylers: [{ visibility: 'off' }] },
 ];
 
 // "3rd March 2024" style date — matches the Previous Check-ins design.
@@ -76,6 +83,11 @@ export default function ExploreScreen() {
   const [locations, setLocations] = useState<ExploreLocation[]>([]);
   const [selectedLoc, setSelectedLoc] = useState<ExploreLocation | null>(null);
   const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
+  const [userAvatar, setUserAvatar] = useState<string | null>(null);
+  const [userLevel, setUserLevel] = useState(1);
+  // react-native-maps on Android won't paint a remote-image custom marker unless
+  // tracksViewChanges stays true until the image loads — flipped off via onLoad.
+  const [trackUserMarker, setTrackUserMarker] = useState(true);
   const [visitedLogs, setVisitedLogs] = useState<CheckIn[]>([]);
   const [showAnnouncement, setShowAnnouncement] = useState(true);
   const [activeSlide, setActiveSlide] = useState(0);
@@ -84,6 +96,9 @@ export default function ExploreScreen() {
   const [satellite, setSatellite] = useState(false);
 
   const flatListRef = useRef<FlatList>(null);
+  const mapRef = useRef<any>(null);
+  // Guard so we only auto-center on the very first location fix.
+  const didCenterRef = useRef(false);
 
   // Drag-to-dismiss for the detail sheet: panning the grabber down past a
   // threshold slides it away and clears the selection (a native bottom-sheet feel).
@@ -109,38 +124,86 @@ export default function ExploreScreen() {
 
   // Initial data load
   useEffect(() => {
+    // GPS watch subscription, set once permission is granted; cleared on unmount.
+    let watchSub: Location.LocationSubscription | null = null;
+    let cancelled = false;
+
     async function init() {
-      // Tier-gate locations by the user's level: only show tiers they've
-      // unlocked (spec 06). Locked locations are simply hidden for now.
-      const [allLocs, user] = await Promise.all([
-        storage.getLocations(),
-        storage.getUser(),
-      ]);
-      const maxTier = unlockedTier(user?.stats.currentLevel ?? 1);
-      const locs = allLocs.filter((l) => l.tier <= maxTier);
-      setLocations(locs);
+      const user = await storage.getUser();
+      const level = user?.stats.currentLevel ?? 1;
+      setUserLevel(level);
+      // Pull the tier-relevant slice (≤ unlockedTier+3 within reach + majors).
+      // We DON'T cap at unlockedTier here: the map render below only draws ≤
+      // unlocked pins, but keeping the wider slice lets a tapped locked teaser
+      // (from Home) open its sheet, and the camera detect the +3 hidden band.
+      const allLocs = await storage.getLocations({ level });
+      setLocations(allLocs);
+      // Capture the user's avatar for the live "you are here" map marker.
+      setUserAvatar(avatarUri(user?.avatarUrl, user?.username));
 
       const checkins = await storage.getCheckIns();
       setVisitedLogs(checkins);
 
       // Handle query parameter trigger
       if (searchParams.selectedId) {
-        const found = locs.find((l) => l.id === searchParams.selectedId);
+        const found = allLocs.find((l) => l.id === searchParams.selectedId);
         if (found) setSelectedLoc(found);
       }
 
-      // Request GPS permissions
+      // Request GPS permissions, then live-watch position. On the FIRST fix we
+      // animate the camera to the user once (guarded by didCenterRef).
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({});
-          setUserLocation(loc);
+        if (status === 'granted' && !cancelled) {
+          watchSub = await Location.watchPositionAsync(
+            {
+              accuracy: Location.Accuracy.Balanced,
+              distanceInterval: 10,
+              timeInterval: 5000,
+            },
+            (loc) => {
+              setUserLocation(loc);
+              if (!didCenterRef.current) {
+                didCenterRef.current = true;
+                mapRef.current?.animateToRegion(
+                  {
+                    latitude: loc.coords.latitude,
+                    longitude: loc.coords.longitude,
+                    latitudeDelta: 0.02,
+                    longitudeDelta: 0.02,
+                  },
+                  600
+                );
+                // Re-sync the local slice now we have a precise fix (+ level).
+                storage
+                  .getLocations({
+                    latitude: loc.coords.latitude,
+                    longitude: loc.coords.longitude,
+                    level,
+                  })
+                  .then((slice) => {
+                    if (!cancelled) setLocations(slice);
+                  })
+                  .catch(() => {});
+              }
+            }
+          );
+          // If the effect was torn down while awaiting, stop immediately.
+          if (cancelled) {
+            watchSub.remove();
+            watchSub = null;
+          }
         }
       } catch (e) {
         console.warn('GPS permission denied or failed to retrieve coordinates', e);
       }
     }
     init();
+
+    return () => {
+      cancelled = true;
+      watchSub?.remove();
+    };
   }, [searchParams.selectedId]);
 
   const handleMarkerSelect = async (loc: ExploreLocation) => {
@@ -256,11 +319,64 @@ export default function ExploreScreen() {
     ? Math.max(1, Math.ceil((cooldownUntil.getTime() - Date.now()) / (60 * 60 * 1000)))
     : 0;
 
+  // Geofence gate (#8): if we know where the user is and they're outside the
+  // selected spot's geofence, disable CHECK IN so they can't tap straight into
+  // the camera and "instant check-in" from far away. The camera step verifies
+  // again from live GPS. When userLocation is unknown we leave it enabled.
+  // Effective radius mirrors camera.tsx: the location's own geofence (default
+  // 150m) floored at 50m so the tolerance is never unreasonably tight.
+  const selectedDistance = selectedLoc ? getDistanceToLocation(selectedLoc.coordinates) : null;
+  const selectedRadius = selectedLoc
+    ? Math.max(50, selectedLoc.geofenceRadius ?? 150)
+    : 150;
+  const tooFar = selectedDistance != null && selectedDistance > selectedRadius;
+  // Hard tier-lock: a surfaced spot above your tier requires leveling up — no
+  // check-in even if you're standing on it (the camera enforces this too).
+  const selectedLocked = !!selectedLoc && selectedLoc.tier > unlockedTier(userLevel);
+  const checkInDisabled = !!cooldownUntil || tooFar || selectedLocked;
+
+  // Local-first vicinity gate (layered on top of the tier filter already applied
+  // to `locations` in init): a spot shows if it's a major destination, OR we have
+  // no GPS fix yet, OR it's within VICINITY_RADIUS_M of the user. `userCoords` is
+  // null until the watch delivers a fix, so the world stays visible pre-fix.
+  const userCoords = userLocation
+    ? { latitude: userLocation.coords.latitude, longitude: userLocation.coords.longitude }
+    : null;
+  const visibleLocations = locations.filter((loc) => {
+    // The map draws only your UNLOCKED pins (+ always-visible majors + a spot you
+    // explicitly opened, e.g. a "Worth the trip" teaser tapped on Home). The
+    // +1/+2 locked teasers and the +3 hidden band are never normal pins.
+    const tierVisible =
+      loc.tier <= unlockedTier(userLevel) ||
+      loc.isMajorDestination ||
+      loc.id === searchParams.selectedId;
+    const reachVisible =
+      loc.id === searchParams.selectedId ||
+      loc.isMajorDestination ||
+      !userCoords ||
+      isWithinVicinity(userCoords, loc.coordinates, VICINITY_RADIUS_M);
+    return tierVisible && reachVisible;
+  });
+
+  // Is the open spot a trip beyond the local bubble? Drives a "Worth the trip"
+  // note on the detail sheet so the explorer knows it's outside their area.
+  const selectedIsReach =
+    !!selectedLoc &&
+    !selectedLoc.isMajorDestination &&
+    selectedDistance != null &&
+    selectedDistance > VICINITY_RADIUS_M;
+
   return (
     <View style={styles.container}>
       {/* Announcement Overlay Banner — gold stamp card with dismiss */}
       {showAnnouncement && (
-        <View style={[styles.announcement, stampBorder]}>
+        <View
+          style={[
+            styles.announcement,
+            stampBorder,
+            Platform.OS !== 'web' && { top: insets.top + 8 },
+          ]}
+        >
           <BrandText weight="semibold" style={styles.announcementText}>
             Here&apos;s a useful announcement!
           </BrandText>
@@ -283,7 +399,7 @@ export default function ExploreScreen() {
             <View style={styles.webPark} />
 
             {/* Custom Interactive Pins */}
-            {locations.map((loc) => {
+            {visibleLocations.map((loc) => {
               const isSelected = selectedLoc?.id === loc.id;
               // Map lat/long to absolute pixel values roughly centered around Perth coordinates
               const leftVal = 100 + (loc.coordinates.longitude - 115.8291) * 3000;
@@ -309,6 +425,7 @@ export default function ExploreScreen() {
         ) : (
           // Native react-native-maps rendering
           <MapView
+            ref={mapRef}
             style={styles.map}
             initialRegion={{
               latitude: -31.953,
@@ -318,10 +435,26 @@ export default function ExploreScreen() {
             }}
             mapType={satellite ? 'hybrid' : 'standard'}
             customMapStyle={satellite ? undefined : LIGHT_MAP_STYLE}
-            showsUserLocation
-            showsMyLocationButton
+            // Native Google controls clash with the status bar / pill nav — use
+            // our own avatar marker + recenter button instead.
+            showsUserLocation={false}
+            showsMyLocationButton={false}
+            showsCompass={false}
+            toolbarEnabled={false}
           >
-            {locations.map((loc) => (
+            {/* Soft "your reach" bubble: the VICINITY_RADIUS_M radius around the
+                user, in low-opacity brand teal, drawn once we have a fix. */}
+            {userCoords && Circle && (
+              <Circle
+                center={userCoords}
+                radius={VICINITY_RADIUS_M}
+                strokeWidth={1}
+                strokeColor="rgba(125,227,231,0.5)"
+                fillColor="rgba(125,227,231,0.06)"
+              />
+            )}
+
+            {visibleLocations.map((loc) => (
               <Marker
                 key={loc.id}
                 coordinate={loc.coordinates}
@@ -330,12 +463,39 @@ export default function ExploreScreen() {
                 {renderPinBadge(loc, selectedLoc?.id === loc.id)}
               </Marker>
             ))}
+
+            {/* "You are here" — the user's avatar in a teal ring. */}
+            {userLocation && userAvatar && (
+              <Marker
+                coordinate={{
+                  latitude: userLocation.coords.latitude,
+                  longitude: userLocation.coords.longitude,
+                }}
+                anchor={{ x: 0.5, y: 0.5 }}
+                tracksViewChanges={trackUserMarker}
+              >
+                <View style={styles.userMarkerRing}>
+                  <Image
+                    source={{ uri: userAvatar }}
+                    style={styles.userMarkerAvatar}
+                    // Keep redrawing for a beat AFTER the avatar loads so it
+                    // actually paints into the marker before we freeze it —
+                    // otherwise Android snapshots an empty circle.
+                    onLoad={() => setTimeout(() => setTrackUserMarker(false), 800)}
+                  />
+                </View>
+              </Marker>
+            )}
           </MapView>
         )}
 
         {/* Standard / satellite toggle (top-right over the map) */}
         <TouchableOpacity
-          style={[styles.mapTypeToggle, stampBorder]}
+          style={[
+            styles.mapTypeToggle,
+            stampBorder,
+            Platform.OS !== 'web' && { top: insets.top + (showAnnouncement ? 56 : 8) },
+          ]}
           onPress={() => setSatellite((s) => !s)}
           activeOpacity={0.85}
         >
@@ -348,6 +508,30 @@ export default function ExploreScreen() {
             {satellite ? 'Standard' : 'Satellite'}
           </BrandText>
         </TouchableOpacity>
+
+        {/* Recenter / my-location button (native only). Sits above the floating
+            pill tab bar, clear of the bottom inset. */}
+        {Platform.OS !== 'web' && MapView && (
+          <TouchableOpacity
+            style={[styles.recenterBtn, stampBorder, { bottom: insets.bottom + 88 }]}
+            onPress={() => {
+              if (userLocation) {
+                mapRef.current?.animateToRegion(
+                  {
+                    latitude: userLocation.coords.latitude,
+                    longitude: userLocation.coords.longitude,
+                    latitudeDelta: 0.02,
+                    longitudeDelta: 0.02,
+                  },
+                  500
+                );
+              }
+            }}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="locate" size={20} color={Brand.ink} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Location detail sheet — draggable cream stamp card above the tab bar */}
@@ -419,6 +603,14 @@ export default function ExploreScreen() {
                     <Ionicons name="location" size={14} color={Brand.ink} />
                     <BrandText weight="semibold" style={styles.distStatText}>
                       {formatDistance(getDistanceToLocation(selectedLoc.coordinates))} away
+                    </BrandText>
+                  </View>
+                )}
+                {selectedIsReach && (
+                  <View style={[styles.statPill, styles.reachStatPill]}>
+                    <Ionicons name="airplane" size={13} color={Brand.purple} />
+                    <BrandText weight="bold" style={styles.reachStatText}>
+                      Worth the trip — outside your area
                     </BrandText>
                   </View>
                 )}
@@ -499,8 +691,8 @@ export default function ExploreScreen() {
             <View style={[styles.ctaWrapper, { paddingBottom: insets.bottom + 72 }]}>
               <TouchableOpacity
                 activeOpacity={0.85}
-                disabled={!!cooldownUntil}
-                style={[styles.checkInBtn, stampBorder, cooldownUntil && styles.checkInBtnDisabled]}
+                disabled={checkInDisabled}
+                style={[styles.checkInBtn, stampBorder, checkInDisabled && styles.checkInBtnDisabled]}
                 onPress={() =>
                   router.push({
                     pathname: '/camera',
@@ -508,9 +700,27 @@ export default function ExploreScreen() {
                   })
                 }
               >
-                <Ionicons name={cooldownUntil ? 'time-outline' : 'camera'} size={18} color={Brand.bg} />
+                <Ionicons
+                  name={
+                    selectedLocked
+                      ? 'lock-closed'
+                      : cooldownUntil
+                        ? 'time-outline'
+                        : tooFar
+                          ? 'walk-outline'
+                          : 'camera'
+                  }
+                  size={18}
+                  color={Brand.bg}
+                />
                 <BrandText weight="bold" color={Brand.bg} style={styles.checkInBtnText}>
-                  {cooldownUntil ? `AVAILABLE IN ${cooldownHoursLeft}H` : 'CHECK IN'}
+                  {selectedLocked
+                    ? `REACH LEVEL ${levelForTier(selectedLoc.tier)} TO UNLOCK`
+                    : cooldownUntil
+                      ? `AVAILABLE IN ${cooldownHoursLeft}H`
+                      : tooFar
+                        ? `GET CLOSER • ${formatDistance(selectedDistance)} AWAY`
+                        : 'CHECK IN'}
                 </BrandText>
               </TouchableOpacity>
             </View>
@@ -531,7 +741,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
 
-  // Announcement banner
+  // Announcement banner (native `top` is applied inline from safe-area insets)
   announcement: {
     position: 'absolute',
     top: Platform.OS === 'web' ? Spacing.three : 52,
@@ -560,6 +770,7 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  // Satellite toggle (native `top` is applied inline from safe-area insets)
   mapTypeToggle: {
     position: 'absolute',
     top: Platform.OS === 'web' ? 72 : 96,
@@ -574,6 +785,40 @@ const styles = StyleSheet.create({
   },
   mapTypeToggleText: {
     fontSize: 12,
+  },
+  // Recenter / my-location button (native only; `bottom` applied inline).
+  recenterBtn: {
+    position: 'absolute',
+    right: Spacing.three,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Brand.surface,
+    zIndex: 20,
+  },
+  // Live "you are here" avatar marker.
+  userMarkerRing: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Brand.surface,
+    borderWidth: 2,
+    borderColor: Brand.teal,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.25,
+    shadowRadius: 2,
+    elevation: 4,
+  },
+  userMarkerAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: Brand.surface,
   },
   webMapBackground: {
     flex: 1,
@@ -858,6 +1103,15 @@ const styles = StyleSheet.create({
   distStatText: {
     fontSize: 12,
     color: Brand.ink,
+  },
+  reachStatPill: {
+    backgroundColor: 'rgba(129,65,220,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(129,65,220,0.25)',
+  },
+  reachStatText: {
+    fontSize: 12,
+    color: Brand.purple,
   },
 
   // Address + description

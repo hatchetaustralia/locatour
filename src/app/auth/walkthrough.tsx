@@ -13,49 +13,50 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandText, StampButton } from '@/components/brand';
-import { Brand, Spacing, BrandRadius, stampBorder } from '@/constants/theme';
+import { Brand, Spacing, stampBorder } from '@/constants/theme';
 
 const { width } = Dimensions.get('window');
 
 type Slide = {
   icon: keyof typeof Ionicons.glyphMap;
   color: string;
+  tilt: number; // a little hand-stamped rotation for character
   title: string;
   body: string;
 };
 
-// The onboarding walkthrough: the game rules, the multiplier, hidden hunting,
-// and notifications (spec 08). Shown once, at the end of onboarding.
+// The up-front story (spec 08). Runs BEFORE account creation — a quick, fun tour
+// of what Locatour is, told as an explorer's journey rather than a rules list.
+// Each step is a passport-stamp badge (brand stamp border + a clean icon), no
+// other game's name — the voice is our own.
 const SLIDES: Slide[] = [
   {
     icon: 'compass',
     color: Brand.purple,
-    title: 'Explore the real world',
-    body: 'Locatour turns public places — parks, lookouts, beaches, hidden gems — into a game. Travel there in real life, snap a check-in, and earn XP.',
+    tilt: -6,
+    title: "Out there, something's waiting",
+    body: 'Tucked behind the everyday — past the car parks and the usual streets — are beaches, lookouts, lakes and little gems most people walk straight past. Locatour turns the whole map into your playground.',
   },
   {
-    icon: 'trophy',
+    icon: 'camera',
     color: Brand.sticker.gold,
-    title: 'Check in & level up',
-    body: 'Every check-in earns XP and levels you up, RuneScape-style. You can re-check the same spot once every 24 hours — so keep discovering new ones.',
+    tilt: 5,
+    title: 'Been there? Stamp it.',
+    body: 'Roll up to a spot in real life and snap a photo to stamp your passport. Every stamp banks XP and nudges you up the ranks — and the more days you wander, the hotter your streak burns.',
   },
   {
-    icon: 'layers',
-    color: Brand.teal,
-    title: 'Tiers unlock as you level',
-    body: 'Every spot has a tier (1–10). Big, well-serviced places are low-tier and open to all. Fragile or special places are high-tier — protected behind your level so only dedicated explorers reach them.',
+    icon: 'ribbon',
+    color: Brand.sticker.green,
+    tilt: -4,
+    title: 'Earn your way in',
+    body: 'The big, busy places are open to everyone. The rare and wild ones stay locked behind your rank — keys you earn by actually getting out there. Climb the ranks and the map opens up.',
   },
   {
     icon: 'sparkles',
     color: Brand.sticker.pink,
-    title: 'Hunt hidden spots 🌈',
-    body: "Spots up to 3 tiers above you are HIDDEN — they won't appear on your map. But stumble onto one in the real world and you DISCOVER it: a rainbow check-in plus a one-time 3× XP bonus. Spots far beyond your level stay secret.",
-  },
-  {
-    icon: 'notifications',
-    color: Brand.sticker.green,
-    title: 'Get the nudge',
-    body: "Switch on notifications and we'll ping you when you're near a spot to check in — or quietly hint that you're “closing in on something” 🔍 when a hidden gem is nearby.",
+    tilt: 6,
+    title: 'Chase the hidden ones',
+    body: "Some places never show up at all — until you physically stumble onto one. Find a hidden gem and it's a rainbow moment: a one-time bonus, serious bragging rights, and a quiet nudge from us whenever you're wandering close to a secret.",
   },
 ];
 
@@ -64,7 +65,8 @@ export default function WalkthroughScreen() {
   const listRef = useRef<FlatList<Slide>>(null);
   const [index, setIndex] = useState(0);
 
-  const finish = () => router.replace('/');
+  // The story now runs up-front, so finishing it leads into account creation.
+  const finish = () => router.replace('/auth/login');
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const i = Math.round(e.nativeEvent.contentOffset.x / width);
@@ -103,8 +105,11 @@ export default function WalkthroughScreen() {
         scrollEventThrottle={16}
         renderItem={({ item }) => (
           <View style={[styles.slide, { width }]}>
-            <View style={[styles.iconBubble, stampBorder, { backgroundColor: item.color }]}>
-              <Ionicons name={item.icon} size={56} color={Brand.bg} />
+            {/* Passport-stamp badge: stamp border + an inner rubber-stamp ring. */}
+            <View style={[styles.stamp, stampBorder, { backgroundColor: item.color, transform: [{ rotate: `${item.tilt}deg` }] }]}>
+              <View style={styles.stampInner}>
+                <Ionicons name={item.icon} size={54} color={Brand.bg} />
+              </View>
             </View>
             <BrandText weight="bold" style={styles.title}>
               {item.title}
@@ -155,10 +160,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.five,
     gap: Spacing.four,
   },
-  iconBubble: {
-    width: 120,
-    height: 120,
-    borderRadius: BrandRadius.sticker,
+  // Passport-stamp badge
+  stamp: {
+    width: 132,
+    height: 132,
+    borderRadius: 66,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.two,
+  },
+  stampInner: {
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    borderWidth: 2,
+    borderColor: 'rgba(252,240,232,0.6)',
     alignItems: 'center',
     justifyContent: 'center',
   },

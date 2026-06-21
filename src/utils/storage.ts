@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import { User, ExploreLocation, CheckIn, Achievement, Coordinates } from '../types';
-import { deriveLevelStats, CHECKIN_COOLDOWN_H, maxDiscoverableTier } from './leveling';
+import { deriveLevelStats, CHECKIN_COOLDOWN_H, maxDiscoverableTier, REACH_RADIUS_M } from './leveling';
 import { API_URLS, API_TIMEOUT_MS } from '../constants/config';
 import { ACHIEVEMENTS as ACHIEVEMENTS_CATALOGUE, AchievementDef } from '../constants/achievements';
 
@@ -36,7 +36,8 @@ const INITIAL_LOCATIONS: ExploreLocation[] = [
     ],
     verificationTags: ['city view', 'river', 'lookout', 'war memorial', 'garden'],
     createdAt: '2026-01-12T12:00:00Z',
-    tier: 1
+    tier: 1,
+    isMajorDestination: true
   },
   {
     id: 'locatour_hq_cafe',
@@ -89,8 +90,8 @@ const INITIAL_LOCATIONS: ExploreLocation[] = [
     id: 'yanchep_lagoon',
     name: 'Yanchep Lagoon',
     category: 'scenic',
-    coordinates: { latitude: -31.5447, longitude: 115.6878 },
-    address: 'Yanchep Lagoon, Yanchep WA 6035',
+    coordinates: { latitude: -31.5499347, longitude: 115.6241774 },
+    address: '5 Brazier Rd, Yanchep WA 6035',
     points: 300,
     description: 'A stunning coastal lagoon with calm turquoise water sheltered by a limestone reef — a local favourite for snorkelling, swimming and sunset picnics.',
     imageUrls: [
@@ -100,8 +101,747 @@ const INITIAL_LOCATIONS: ExploreLocation[] = [
     verificationTags: ['beach', 'lagoon', 'ocean', 'reef', 'sand'],
     createdAt: '2026-06-20T00:00:00Z',
     tier: 1,
-    geofenceRadius: 1500
-  }
+    geofenceRadius: 300
+  },
+  {
+    id: 'yanchep_national_park',
+    name: 'Yanchep National Park',
+    category: 'parks',
+    coordinates: { latitude: -31.5487, longitude: 115.68533 },
+    address: 'Yanchep Beach Rd & Indian Ocean Dr, Yanchep WA 6035',
+    points: 100,
+    description: 'Spot wild koalas, kangaroos and black cockatoos in this much-loved bushland park, then wander the boardwalks around the wetlands. A great day out for the whole family.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1439066615861-d1af74d74000',
+      'https://images.unsplash.com/photo-1500534623283-312aade485b7'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 1,
+    geofenceRadius: 250
+  },
+  {
+    id: 'yanchep_crystal_cave',
+    name: 'Yanchep Crystal Cave',
+    category: 'scenic',
+    coordinates: { latitude: -31.54757, longitude: 115.69266 },
+    address: 'Yanchep WA 6035',
+    points: 350,
+    description: 'Descend underground into a glittering limestone cave full of delicate stalactites and reflective pools. A cool, otherworldly hideaway beneath the bush.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4',
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 3,
+    geofenceRadius: 150
+  },
+  {
+    id: 'loch_mcness',
+    name: 'Loch McNess',
+    category: 'parks',
+    coordinates: { latitude: -31.53389, longitude: 115.67556 },
+    address: 'Loch McNess, Yanchep WA 6035',
+    points: 200,
+    description: 'A peaceful spring-fed lake fringed by paperbarks and reeds, brilliant for a lazy paddle or a picnic with the local waterbirds.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1439066615861-d1af74d74000',
+      'https://images.unsplash.com/photo-1500534623283-312aade485b7'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 2,
+    geofenceRadius: 200
+  },
+  {
+    id: 'two_rocks_marina',
+    name: 'Two Rocks Marina',
+    category: 'scenic',
+    coordinates: { latitude: -31.49484, longitude: 115.58299 },
+    address: '1 Pope St, Two Rocks WA 6037',
+    points: 200,
+    description: 'A breezy working marina where fishing boats bob beside the breakwater. Grab some fish and chips and watch the sun melt into the Indian Ocean.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4',
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 2,
+    geofenceRadius: 250
+  },
+  {
+    id: 'pipidinny_beach',
+    name: 'Pippidinny Beach',
+    category: 'scenic',
+    coordinates: { latitude: -31.5843, longitude: 115.64488 },
+    address: 'Pippidinny Rd, Eglinton WA 6034',
+    points: 200,
+    description: 'A wild, dune-backed stretch of coast with rarely a soul in sight — perfect for long beach walks and 4WD adventures away from the crowds.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
+      'https://images.unsplash.com/photo-1500534623283-312aade485b7'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 2,
+    geofenceRadius: 300
+  },
+  {
+    id: 'mary_lindsay_homestead',
+    name: 'Mary Lindsay Homestead',
+    category: 'parks',
+    coordinates: { latitude: -31.54474, longitude: 115.62294 },
+    address: 'Capricorn Esplanade, Yanchep WA 6035',
+    points: 100,
+    description: 'A charming heritage homestead and green reserve right by the coast, with shady lawns and a slice of local history to soak up.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1439066615861-d1af74d74000',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 1,
+    geofenceRadius: 150
+  },
+  {
+    id: 'yanchep_beach',
+    name: 'Yanchep Beach',
+    category: 'scenic',
+    coordinates: { latitude: -31.54115, longitude: 115.61677 },
+    address: 'Yanchep Beach, Yanchep WA 6035',
+    points: 100,
+    description: 'Soft white sand and clear shallows make this the go-to swimming beach for Yanchep locals. Sunsets here are pure gold.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e',
+      'https://images.unsplash.com/photo-1500534623283-312aade485b7'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 1,
+    geofenceRadius: 300
+  },
+  {
+    id: 'yanchep_sun_city_country_club',
+    name: 'Yanchep Sun City Country Club',
+    category: 'parks',
+    coordinates: { latitude: -31.54646, longitude: 115.65422 },
+    address: '144 St Andrews Dr, Yanchep WA 6035',
+    points: 100,
+    description: 'Rolling green fairways and big coastal skies — a relaxed spot for a round of golf or just a stroll past the manicured greens.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1439066615861-d1af74d74000',
+      'https://images.unsplash.com/photo-1500534623283-312aade485b7'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 1,
+    geofenceRadius: 200
+  },
+  {
+    id: 'capricorn_esplanade',
+    name: 'Capricorn Esplanade',
+    category: 'scenic',
+    coordinates: { latitude: -31.54174, longitude: 115.62111 },
+    address: 'Capricorn Esplanade, Yanchep WA 6035',
+    points: 100,
+    description: 'A breezy beachfront esplanade lined with grassy foreshore and ocean views — ideal for a coffee, a picnic or a sunset cycle.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4',
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 1,
+    geofenceRadius: 200
+  },
+  {
+    id: 'wreck_point',
+    name: 'Wreck Point',
+    category: 'scenic',
+    coordinates: { latitude: -31.50286, longitude: 115.58392 },
+    address: '8 Marcon St, Two Rocks WA 6037',
+    points: 350,
+    description: 'A rugged coastal lookout with sweeping ocean panoramas and crashing surf below. A quiet vantage point that rewards those who seek it out.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1439066615861-d1af74d74000',
+      'https://images.unsplash.com/photo-1500534623283-312aade485b7'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 3,
+    geofenceRadius: 150
+  },
+  {
+    id: 'wa_elizabeth_quay',
+    name: 'Elizabeth Quay',
+    category: 'scenic',
+    coordinates: { latitude: -31.9575763, longitude: 115.85698740000001 },
+    address: 'The Esplanade, Perth WA 6000, Australia',
+    points: 100,
+    description: 'A buzzing riverside precinct of waterfront promenades, bridges and pop-up bars right on the Swan River. The beating heart of modern Perth.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 1,
+    geofenceRadius: 250
+  },
+  {
+    id: 'wa_bell_tower',
+    name: 'The Bell Tower',
+    category: 'scenic',
+    coordinates: { latitude: -31.9590003, longitude: 115.85829550000001 },
+    address: 'Barrack Square, Riverside Dr, Perth WA 6000, Australia',
+    points: 100,
+    description: 'A striking copper-and-glass spire on the foreshore housing the historic Swan Bells. Ring a bell, then soak up the river views.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 1,
+    geofenceRadius: 150,
+    isMajorDestination: true
+  },
+  {
+    id: 'wa_fremantle_prison',
+    name: 'Fremantle Prison',
+    category: 'scenic',
+    coordinates: { latitude: -32.054983799999995, longitude: 115.7536591 },
+    address: '1 The Terrace, Fremantle WA 6160, Australia',
+    points: 200,
+    description: 'A World Heritage-listed convict-era gaol with spine-tingling tunnels and torch-lit night tours. History you can almost touch.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 2,
+    geofenceRadius: 200
+  },
+  {
+    id: 'wa_cottesloe_beach',
+    name: 'Cottesloe Beach',
+    category: 'scenic',
+    coordinates: { latitude: -31.993862200000002, longitude: 115.7510477 },
+    address: 'Cottesloe Beach, Western Australia, Australia',
+    points: 100,
+    description: 'Perth’s most-loved swimming beach, framed by Norfolk pines and the iconic Indiana teahouse. Golden sand and even better sunsets.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 1,
+    geofenceRadius: 350
+  },
+  {
+    id: 'wa_scarborough_beach',
+    name: 'Scarborough Beach',
+    category: 'scenic',
+    coordinates: { latitude: -31.893518099999998, longitude: 115.7548947 },
+    address: 'Scarborough Beach, Western Australia, Australia',
+    points: 100,
+    description: 'A lively beachside hub with a buzzing esplanade, surf breaks and an ocean pool. Sun, sand and street-food energy.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 1,
+    geofenceRadius: 350
+  },
+  {
+    id: 'wa_rottnest_island',
+    name: 'Rottnest Island',
+    category: 'scenic',
+    coordinates: { latitude: -31.996502699999997, longitude: 115.5398997 },
+    address: 'Rottnest Island WA 6161, Australia',
+    points: 350,
+    description: 'A car-free island paradise of secluded bays, snorkelling reefs and the world-famous selfie-loving quokkas. A true bucket-list escape.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 3,
+    geofenceRadius: 400,
+    isMajorDestination: true
+  },
+  {
+    id: 'wa_bibra_lake',
+    name: 'Bibra Lake',
+    category: 'parks',
+    coordinates: { latitude: -32.1071299, longitude: 115.8072672 },
+    address: 'Bibra Lake WA 6163, Australia',
+    points: 100,
+    description: 'A peaceful wetland reserve with a huge adventure playground, shady picnic spots and walk trails alive with birdlife.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1439066615861-d1af74d74000?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 1,
+    geofenceRadius: 300
+  },
+  {
+    id: 'wa_mandurah_foreshore',
+    name: 'Mandurah Foreshore',
+    category: 'scenic',
+    coordinates: { latitude: -32.5326461, longitude: 115.7191502 },
+    address: '17 Mandurah Terrace, Mandurah WA 6210, Australia',
+    points: 100,
+    description: 'A relaxed canal-city waterfront where dolphins cruise the estuary and the boardwalk hums with cafes and street art.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 1,
+    geofenceRadius: 300
+  },
+  {
+    id: 'wa_pinnacles',
+    name: 'The Pinnacles Desert',
+    category: 'parks',
+    coordinates: { latitude: -30.591275000000003, longitude: 115.1581522 },
+    address: 'Nambung WA 6521, Australia',
+    points: 700,
+    description: 'Thousands of eerie limestone spires rising from golden desert sands — an otherworldly moonscape that glows at sunrise and sunset.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1439066615861-d1af74d74000?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 4,
+    geofenceRadius: 400,
+    isMajorDestination: true
+  },
+  {
+    id: 'wa_lancelin_dunes',
+    name: 'Lancelin Sand Dunes',
+    category: 'scenic',
+    coordinates: { latitude: -31.0020631, longitude: 115.3307129 },
+    address: 'Beacon Rd, Lancelin WA 6044, Australia',
+    points: 350,
+    description: 'Towering white sand dunes perfect for sandboarding and 4WD adventures, with a sleepy fishing town and turquoise bays nearby.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 3,
+    geofenceRadius: 350
+  },
+  {
+    id: 'wa_kalbarri_natures_window',
+    name: 'Nature\'s Window',
+    category: 'parks',
+    coordinates: { latitude: -27.553136499999997, longitude: 114.44599269999999 },
+    address: 'Kalbarri National Park WA 6536, Australia',
+    points: 700,
+    description: 'A natural rock arch perfectly framing the winding Murchison River gorge below. One of WA’s most photographed wonders.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1439066615861-d1af74d74000?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 4,
+    geofenceRadius: 300,
+    isMajorDestination: true
+  },
+  {
+    id: 'wa_kalbarri_skywalk',
+    name: 'Kalbarri Skywalk',
+    category: 'scenic',
+    coordinates: { latitude: -27.554840600000002, longitude: 114.43397089999999 },
+    address: 'West Loop Lookout Road, Kalbarri National Park WA 6536, Australia',
+    points: 700,
+    description: 'Twin cantilevered platforms jutting out over the Murchison Gorge, leaving you suspended 100 metres above the valley floor.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 4,
+    geofenceRadius: 250
+  },
+  {
+    id: 'wa_geraldton_hmas_sydney',
+    name: 'HMAS Sydney II Memorial',
+    category: 'scenic',
+    coordinates: { latitude: -28.773215, longitude: 114.6160051 },
+    address: 'Gummer Ave, Geraldton WA 6530, Australia',
+    points: 200,
+    description: 'A moving hilltop memorial of soaring silver gulls honouring the lost crew of HMAS Sydney, with sweeping views over the port city.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 2,
+    geofenceRadius: 200
+  },
+  {
+    id: 'wa_turquoise_bay',
+    name: 'Turquoise Bay',
+    category: 'scenic',
+    coordinates: { latitude: -22.0978565, longitude: 113.8881097 },
+    address: 'Turquoise Bay, Cape Range National Park WA 6707, Australia',
+    points: 1300,
+    description: 'A dazzling stretch of white sand where you can snorkel straight off the beach onto the vibrant coral of Ningaloo Reef.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 5,
+    geofenceRadius: 350
+  },
+  {
+    id: 'wa_cape_range_np',
+    name: 'Cape Range National Park',
+    category: 'parks',
+    coordinates: { latitude: -22.236679799999997, longitude: 113.84652870000001 },
+    address: 'Cape Range National Park WA 6707, Australia',
+    points: 1300,
+    description: 'Rugged limestone gorges meet the turquoise Ningaloo coast — home to red kangaroos, deep canyons and reef-fringed beaches.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1439066615861-d1af74d74000?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 5,
+    geofenceRadius: 400
+  },
+  {
+    id: 'wa_exmouth_ningaloo',
+    name: 'Ningaloo Reef',
+    category: 'scenic',
+    coordinates: { latitude: -22.644441399999998, longitude: 113.6402804 },
+    address: 'Western Australia, Australia',
+    points: 1300,
+    description: 'A pristine fringing reef where you can swim with whale sharks, manta rays and turtles just metres from shore.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 5,
+    geofenceRadius: 400
+  },
+  {
+    id: 'wa_monkey_mia',
+    name: 'Monkey Mia',
+    category: 'scenic',
+    coordinates: { latitude: -25.7953126, longitude: 113.71665349999999 },
+    address: 'Monkey Mia, WA 6537, Australia',
+    points: 700,
+    description: 'A World Heritage beach famous for its wild bottlenose dolphins that glide into the shallows to greet visitors each morning.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 4,
+    geofenceRadius: 350
+  },
+  {
+    id: 'wa_shell_beach',
+    name: 'Shell Beach',
+    category: 'scenic',
+    coordinates: { latitude: -26.215, longitude: 113.7736111 },
+    address: 'Shell Beach, Western Australia 6537, Australia',
+    points: 700,
+    description: 'A surreal beach made entirely of billions of tiny white cockle shells, stretching for kilometres along a brilliant blue bay.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 4,
+    geofenceRadius: 350
+  },
+  {
+    id: 'wa_busselton_jetty',
+    name: 'Busselton Jetty',
+    category: 'scenic',
+    coordinates: { latitude: -33.644531199999996, longitude: 115.34503509999999 },
+    address: '17 Foreshore Parade, Busselton WA 6280, Australia',
+    points: 200,
+    description: 'The longest timber-piled jetty in the Southern Hemisphere, stretching 1.8km to an underwater observatory amid the coral.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 2,
+    geofenceRadius: 300
+  },
+  {
+    id: 'wa_cape_leeuwin',
+    name: 'Cape Leeuwin Lighthouse',
+    category: 'scenic',
+    coordinates: { latitude: -34.3749541, longitude: 115.1363477 },
+    address: 'Leeuwin Rd, Augusta WA 6290, Australia',
+    points: 700,
+    description: 'WA’s tallest lighthouse stands where the Indian and Southern Oceans collide — a dramatic, wind-whipped edge of the continent.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 4,
+    geofenceRadius: 300,
+    isMajorDestination: true
+  },
+  {
+    id: 'wa_mammoth_cave',
+    name: 'Mammoth Cave',
+    category: 'parks',
+    coordinates: { latitude: -34.060037, longitude: 115.02967710000001 },
+    address: 'Caves Rd, Forest Grove WA 6286, Australia',
+    points: 350,
+    description: 'A vast underground chamber draped in ancient stalactites and fossils, explored on a self-guided boardwalk through the dark.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1439066615861-d1af74d74000?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 3,
+    geofenceRadius: 200
+  },
+  {
+    id: 'wa_margaret_river',
+    name: 'Margaret River',
+    category: 'food',
+    coordinates: { latitude: -33.9535468, longitude: 115.0629667 },
+    address: 'Margaret River WA 6285, Australia',
+    points: 200,
+    description: 'The gourmet heart of WA’s wine country, packed with cellar doors, breweries, chocolate factories and farm-gate produce.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 2,
+    geofenceRadius: 250
+  },
+  {
+    id: 'wa_the_gap_albany',
+    name: 'The Gap',
+    category: 'scenic',
+    coordinates: { latitude: -35.1184965, longitude: 117.89235930000001 },
+    address: 'The Gap Rd, Torndirrup WA 6330, Australia',
+    points: 700,
+    description: 'A sky-bridge platform juts over a churning chasm where the Southern Ocean explodes against towering granite cliffs.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 4,
+    geofenceRadius: 250
+  },
+  {
+    id: 'wa_middleton_beach',
+    name: 'Middleton Beach',
+    category: 'scenic',
+    coordinates: { latitude: -35.022841199999995, longitude: 117.90885440000001 },
+    address: 'Middleton Beach WA 6330, Australia',
+    points: 200,
+    description: 'A gorgeous crescent of white sand and calm clear water, with a buzzing boardwalk of cafes right behind the dunes.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 2,
+    geofenceRadius: 300
+  },
+  {
+    id: 'wa_whale_world_albany',
+    name: 'Albany\'s Historic Whaling Station',
+    category: 'scenic',
+    coordinates: { latitude: -35.0952775, longitude: 117.9594063 },
+    address: '81 Whaling Station Rd, Torndirrup WA 6330, Australia',
+    points: 350,
+    description: 'The last operating whaling station in the country, now a fascinating museum where you can clamber aboard a real whale chaser.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 3,
+    geofenceRadius: 250
+  },
+  {
+    id: 'wa_lucky_bay',
+    name: 'Lucky Bay',
+    category: 'scenic',
+    coordinates: { latitude: -33.9882318, longitude: 122.2315877 },
+    address: 'Lucky Bay, Lucky Bay Rd, Cape Le Grand WA 6450, Australia',
+    points: 1300,
+    description: 'Squeaky-white sand, electric-blue water and kangaroos lazing on the beach — routinely voted Australia’s whitest sand.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 5,
+    geofenceRadius: 400,
+    isMajorDestination: true
+  },
+  {
+    id: 'wa_cape_le_grand',
+    name: 'Cape Le Grand National Park',
+    category: 'parks',
+    coordinates: { latitude: -33.924932999999996, longitude: 122.1958746 },
+    address: 'Cape Le Grand Rd, Cape Le Grand WA 6450, Australia',
+    points: 1300,
+    description: 'A coastal wonderland of granite peaks, sweeping bays and turquoise water — hike Frenchman Peak for a jaw-dropping panorama.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1439066615861-d1af74d74000?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 5,
+    geofenceRadius: 400
+  },
+  {
+    id: 'wa_wave_rock',
+    name: 'Wave Rock',
+    category: 'scenic',
+    coordinates: { latitude: -32.441925499999996, longitude: 118.8970171 },
+    address: '1 Wave Rock Rd, Hyden WA 6359, Australia',
+    points: 700,
+    description: 'A 15-metre granite wall curled into a perfect breaking wave, streaked with mineral colours and 2.7 billion years old.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 4,
+    geofenceRadius: 350,
+    isMajorDestination: true
+  },
+  {
+    id: 'wa_super_pit_lookout',
+    name: 'KCGM Super Pit Lookout',
+    category: 'scenic',
+    coordinates: { latitude: -30.792246399999996, longitude: 121.50529619999999 },
+    address: 'Mount Monger Rd, Trafalgar WA 6431, Australia',
+    points: 350,
+    description: 'Peer into one of the largest open-cut gold mines on Earth, where giant haul trucks look like ants on the terraced walls.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 3,
+    geofenceRadius: 200
+  },
+  {
+    id: 'wa_karijini_np',
+    name: 'Karijini National Park',
+    category: 'parks',
+    coordinates: { latitude: -22.6751716, longitude: 118.2889234 },
+    address: 'Karijini WA 6751, Australia',
+    points: 2300,
+    description: 'A breathtaking maze of deep red gorges, hidden waterfalls and spa-like rock pools carved over billions of years in the Pilbara.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1439066615861-d1af74d74000?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 6,
+    geofenceRadius: 400
+  },
+  {
+    id: 'wa_karijini_fortescue',
+    name: 'Fortescue Falls',
+    category: 'parks',
+    coordinates: { latitude: -22.4777579, longitude: 118.5506552 },
+    address: 'Dales Rd, Karijini WA 6751, Australia',
+    points: 2300,
+    description: 'A tiered waterfall tumbling into an emerald plunge pool deep within Dales Gorge — a reward at the end of the descent.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1439066615861-d1af74d74000?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 6,
+    geofenceRadius: 300
+  },
+  {
+    id: 'wa_cable_beach',
+    name: 'Cable Beach',
+    category: 'scenic',
+    coordinates: { latitude: -17.9319444, longitude: 122.20805559999998 },
+    address: 'Cable Beach, WA 6726, Australia',
+    points: 1300,
+    description: '22 kilometres of pearl-white sand meeting the Indian Ocean, famous for camel trains silhouetted against fiery tropical sunsets.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 5,
+    geofenceRadius: 400,
+    isMajorDestination: true
+  },
+  {
+    id: 'wa_gantheaume_point',
+    name: 'Gantheaume Point',
+    category: 'scenic',
+    coordinates: { latitude: -17.9738748, longitude: 122.17745679999999 },
+    address: 'Gantheaume Point Rd, Broome WA 6725, Australia',
+    points: 1300,
+    description: 'Fiery red sandstone cliffs plunging into turquoise sea, where 130-million-year-old dinosaur footprints appear at low tide.',
+    imageUrls: [
+      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
+      'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?auto=format&fit=crop&w=600&q=80'
+    ],
+    verificationTags: [],
+    createdAt: '2026-06-21T00:00:00Z',
+    tier: 5,
+    geofenceRadius: 300
+  },
 ];
 
 // Offline Queue Database Interfaces for SQLite
@@ -237,6 +977,16 @@ class StorageManager {
     this.saveState();
   }
 
+  /**
+   * Sign out: drop the in-memory profile and clear the persisted user so the app
+   * returns to the auth flow. Check-in history stays on the device (mock auth —
+   * there's no server account to sync back to).
+   */
+  public async logout(): Promise<void> {
+    this.user = null;
+    this.writeKey('locatour_user', '');
+  }
+
   public async updateProfile(displayName: string, username: string, bio: string, avatarUrl: string, interests?: string[]): Promise<User | null> {
     if (!this.user) return null;
     this.user = {
@@ -319,6 +1069,7 @@ class StorageManager {
           : raw.geofence_radius_m != null
             ? Number(raw.geofence_radius_m)
             : undefined,
+      isMajorDestination: Boolean(raw.isMajorDestination ?? raw.is_major_destination ?? false),
     };
   }
 
@@ -347,8 +1098,21 @@ class StorageManager {
     return null;
   }
 
-  private async fetchRemoteLocations(): Promise<ExploreLocation[] | null> {
-    const body = await this.fetchFromApi('/api/locations');
+  private async fetchRemoteLocations(
+    opts?: { latitude?: number; longitude?: number; level?: number },
+  ): Promise<ExploreLocation[] | null> {
+    // When we know where the user is, ask the server for ONLY their slice —
+    // tier-relevant spots within the reach radius (+ always-visible majors) —
+    // so the phone never downloads the whole ~1000-spot catalogue.
+    let path = '/api/locations';
+    if (opts?.latitude != null && opts?.longitude != null) {
+      let q = `?lat=${encodeURIComponent(String(opts.latitude))}&lng=${encodeURIComponent(
+        String(opts.longitude),
+      )}&radius=${REACH_RADIUS_M}`;
+      if (opts.level != null) q += `&level=${opts.level}`;
+      path += q;
+    }
+    const body = await this.fetchFromApi(path);
     if (!body) return null;
     // The API response may be wrapped as { data: [...] } (Laravel resources).
     const list = Array.isArray(body) ? body : Array.isArray(body?.data) ? body.data : null;
@@ -361,20 +1125,32 @@ class StorageManager {
     return mapped;
   }
 
-  public async getLocations(): Promise<ExploreLocation[]> {
-    // After the first successful resolution this session, reuse the in-memory
-    // list (already either live API data or the mock fallback).
-    if (this.locationsFetched) return this.locations;
-
-    const remote = await this.fetchRemoteLocations();
-    if (remote) {
-      this.locations = remote;
-    } else {
-      // Offline / API down: prefer the last good cached API result, else the
-      // bundled mock (which carries tier:1 defaults).
-      const cached = this.readCachedLocations();
-      this.locations = cached ?? INITIAL_LOCATIONS;
+  /**
+   * Returns the locations to show. Pass the user's {latitude, longitude, level}
+   * to (re-)sync the local slice from the server — call this on app reopen and
+   * after a tier-up so a new city / new tier pulls fresh spots. Without a
+   * location we don't fetch the whole catalogue: we serve the in-memory session
+   * list, then the last cached slice, then the bundled offline sample.
+   */
+  public async getLocations(
+    opts?: { latitude?: number; longitude?: number; level?: number },
+  ): Promise<ExploreLocation[]> {
+    // Located (re-)sync: always fetch a fresh slice when we have coordinates.
+    if (opts?.latitude != null && opts?.longitude != null) {
+      const remote = await this.fetchRemoteLocations(opts);
+      if (remote) {
+        this.locations = remote;
+        this.locationsFetched = true;
+        return this.locations;
+      }
+      // Fetch failed (offline) → fall through to cache/bundled below.
     }
+
+    // No coordinates yet (or the located fetch failed): reuse what we have
+    // rather than pulling the full catalogue.
+    if (this.locationsFetched) return this.locations;
+    const cached = this.readCachedLocations();
+    this.locations = cached ?? INITIAL_LOCATIONS;
     this.locationsFetched = true;
     return this.locations;
   }
@@ -651,6 +1427,73 @@ class StorageManager {
         coordinatesChecked: { latitude: item.latitude, longitude: item.longitude },
         verifiedOffline: true
       }));
+    }
+  }
+
+  // --- Account token (Sanctum) ---
+  // The bearer token is persisted in the same kv store as the rest of the
+  // profile so it survives app restarts. getToken/setToken are the only public
+  // surface account.ts needs; readKey/writeKey stay private.
+  public getToken(): string | null {
+    const t = this.readKey('locatour_token');
+    return t && t.length > 0 ? t : null;
+  }
+
+  public setToken(token: string): void {
+    this.writeKey('locatour_token', token);
+  }
+
+  // --- Pending check-in uploads (retry queue) ---
+  // The offline_queue table is the source of truth for check-ins that still need
+  // to be uploaded to the server. getQueuedUploads returns each row with its id
+  // (for per-item removal after a confirmed upload) and a PendingUpload payload
+  // enriched with the location name resolved from the in-memory location list.
+  public async getQueuedUploads(): Promise<
+    { id: string; payload: import('./account').PendingUpload }[]
+  > {
+    const rows: SQLiteQueueItem[] =
+      Platform.OS === 'web' || !this.db
+        ? this.offlineQueue
+        : (() => {
+            try {
+              return this.db.getAllSync('SELECT * FROM offline_queue;') as SQLiteQueueItem[];
+            } catch (e) {
+              console.error('Failed to read offline_queue for upload', e);
+              return this.offlineQueue;
+            }
+          })();
+
+    return rows.map((item) => {
+      const loc = this.locations.find((l) => l.id === item.locationId);
+      return {
+        id: item.id,
+        payload: {
+          locationId: item.locationId,
+          locationName: loc?.name ?? null,
+          photoUri: item.photoUrl,
+          pointsEarned: item.points,
+          latitude: item.latitude,
+          longitude: item.longitude,
+          verifiedOffline: true,
+          checkedInAt: item.timestamp,
+        },
+      };
+    });
+  }
+
+  // Remove one queued upload by id after it has been confirmed uploaded.
+  public async removeQueuedUpload(id: string): Promise<void> {
+    if (Platform.OS === 'web' || !this.db) {
+      this.offlineQueue = this.offlineQueue.filter((i) => i.id !== id);
+      this.saveState();
+      return;
+    }
+    try {
+      this.db.runSync('DELETE FROM offline_queue WHERE id = ?;', [id]);
+    } catch (e) {
+      console.error('Failed to delete queued upload, falling back to memory', e);
+      this.offlineQueue = this.offlineQueue.filter((i) => i.id !== id);
+      this.saveState();
     }
   }
 

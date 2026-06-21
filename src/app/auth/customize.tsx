@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
+  ActivityIndicator,
   Image,
   ScrollView,
   StyleSheet,
@@ -14,24 +15,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BrandAssets, BrandText, StampButton } from '@/components/brand';
 import { Brand, BrandFonts, BrandRadius, stampBorder } from '@/constants/theme';
 import { storage } from '@/utils/storage';
+import { registerAccount } from '@/utils/account';
 import { INTERESTS } from '@/constants/interests';
+import { fetchSuburbs, SuburbSuggestion } from '@/utils/places';
 
 // ---------------------------------------------------------------------------
 // Data
 // ---------------------------------------------------------------------------
 const GENDERS = ['Male', 'Female', 'Prefer not to say'];
-
-// Mock WA suburbs for autocomplete
-const MOCK_SUBURBS = [
-  'Subiaco, WA',
-  'Belmont, WA',
-  'Fremantle, WA',
-  'Perth CBD, WA',
-  'Cottesloe, WA',
-  'Scarborough, WA',
-  'South Perth, WA',
-  'Leederville, WA',
-];
 
 // ---------------------------------------------------------------------------
 // Screen
@@ -44,18 +35,40 @@ export default function CustomizeScreen() {
   const [suburbQuery, setSuburbQuery] = useState('');
   const [selectedSuburb, setSelectedSuburb] = useState('');
   const [showSuburbs, setShowSuburbs] = useState(false);
+  const [suburbSuggestions, setSuburbSuggestions] = useState<SuburbSuggestion[]>([]);
+  const [suburbLoading, setSuburbLoading] = useState(false);
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [error, setError] = useState('');
 
-  const filteredSuburbs = MOCK_SUBURBS.filter(
-    s => s.toLowerCase().includes(suburbQuery.toLowerCase()) && s !== selectedSuburb,
-  );
+  // Live suburb autocomplete via the backend Google Places proxy. Debounced so
+  // we don't fire a request on every keystroke; the last query wins.
+  const suburbReqId = useRef(0);
+  useEffect(() => {
+    const q = suburbQuery.trim();
+    // Don't re-search the exact value the user just picked.
+    if (!q || q === selectedSuburb) {
+      setSuburbSuggestions([]);
+      setSuburbLoading(false);
+      return;
+    }
+    setSuburbLoading(true);
+    const reqId = ++suburbReqId.current;
+    const handle = setTimeout(async () => {
+      const results = await fetchSuburbs(q);
+      // Ignore stale responses (a newer keystroke superseded this one).
+      if (reqId !== suburbReqId.current) return;
+      setSuburbSuggestions(results);
+      setSuburbLoading(false);
+    }, 320);
+    return () => clearTimeout(handle);
+  }, [suburbQuery, selectedSuburb]);
 
   const handleSuburbSelect = (suburb: string) => {
     setSelectedSuburb(suburb);
     setSuburbQuery(suburb);
     setShowSuburbs(false);
+    setSuburbSuggestions([]);
   };
 
   const handleInterestToggle = (id: string) => {
@@ -72,12 +85,20 @@ export default function CustomizeScreen() {
   };
 
   const handleComplete = async () => {
-    if (!selectedSuburb) {
-      setError('Please select a home suburb');
+    // Accept either a picked suggestion or whatever the user typed, so a flaky
+    // Places lookup never hard-blocks onboarding.
+    const suburb = (selectedSuburb || suburbQuery).trim();
+
+    if (!suburb) {
+      setError('Please enter your home suburb');
       return;
     }
     if (selectedInterests.length === 0) {
       setError('Please select at least 1 interest category');
+      return;
+    }
+    if (!agreedToTerms) {
+      setError('Please agree to the Terms and Conditions to continue');
       return;
     }
 
@@ -85,7 +106,7 @@ export default function CustomizeScreen() {
     const currentUser = await storage.getUser();
     if (currentUser) {
       currentUser.gender = gender;
-      currentUser.homeSuburb = selectedSuburb;
+      currentUser.homeSuburb = suburb;
       currentUser.interests = selectedInterests;
 
       // Auto-unlock the photographer star if photo is selected
@@ -96,11 +117,21 @@ export default function CustomizeScreen() {
       await storage.setUser(currentUser);
     } else {
       // Emergency creation
-      await storage.customizeInterests(gender, selectedSuburb, selectedInterests);
+      await storage.customizeInterests(gender, suburb, selectedInterests);
     }
 
-    // Finished setup — show the game walkthrough, which then enters the app.
-    router.replace('/auth/walkthrough');
+    // Register the real, persistent server account now that the local user is
+    // saved (device_id = the local uid). Fire-and-forget + fail-soft: a network
+    // failure must NEVER block finishing onboarding — syncAccount() retries on
+    // the next app start.
+    const finalUser = await storage.getUser();
+    if (finalUser) {
+      void registerAccount(finalUser);
+    }
+
+    // Setup done — enter the app (the game walkthrough now runs up-front, before
+    // account creation).
+    router.replace('/');
   };
 
   return (
@@ -191,23 +222,43 @@ export default function CustomizeScreen() {
                 />
               </View>
 
-              {showSuburbs && filteredSuburbs.length > 0 && (
-                <View style={[styles.dropdownPanel, styles.suburbDropdown, stampBorder]}>
-                  {filteredSuburbs.map(s => (
-                    <TouchableOpacity
-                      key={s}
-                      style={[
-                        styles.dropdownItem,
-                        s !== filteredSuburbs[filteredSuburbs.length - 1] && styles.dropdownItemBorder,
-                      ]}
-                      onPress={() => handleSuburbSelect(s)}
-                    >
-                      <Ionicons name="location-outline" size={16} color={Brand.purple} />
-                      <BrandText weight="medium" style={styles.dropdownItemText}>{s}</BrandText>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
+              {showSuburbs &&
+                suburbQuery.trim().length >= 2 &&
+                suburbQuery.trim() !== selectedSuburb && (
+                  <View style={[styles.dropdownPanel, styles.suburbDropdown, stampBorder]}>
+                    {suburbLoading ? (
+                      <View style={styles.dropdownItem}>
+                        <ActivityIndicator size="small" color={Brand.purple} />
+                        <BrandText weight="medium" color={Brand.inkSubtle} style={styles.dropdownItemText}>
+                          Searching…
+                        </BrandText>
+                      </View>
+                    ) : suburbSuggestions.length > 0 ? (
+                      suburbSuggestions.map((s, i) => (
+                        <TouchableOpacity
+                          key={s.placeId ?? s.description}
+                          style={[
+                            styles.dropdownItem,
+                            i !== suburbSuggestions.length - 1 && styles.dropdownItemBorder,
+                          ]}
+                          onPress={() => handleSuburbSelect(s.description)}
+                        >
+                          <Ionicons name="location-outline" size={16} color={Brand.purple} />
+                          <BrandText weight="medium" style={styles.dropdownItemText}>
+                            {s.description}
+                          </BrandText>
+                        </TouchableOpacity>
+                      ))
+                    ) : (
+                      <View style={styles.dropdownItem}>
+                        <Ionicons name="information-circle-outline" size={16} color={Brand.inkSubtle} />
+                        <BrandText weight="medium" color={Brand.inkSubtle} style={styles.dropdownItemText}>
+                          No matches — we&apos;ll use what you typed
+                        </BrandText>
+                      </View>
+                    )}
+                  </View>
+                )}
             </View>
           </View>
 
