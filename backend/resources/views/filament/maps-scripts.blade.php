@@ -144,12 +144,14 @@
                         mapTypeIds: ['roadmap', 'satellite'],
                     },
                     streetViewControl: false,
-                    // Hide the noisy POI categories (schools, businesses, medical,
-                    // government, worship, transit) so the map reads cleanly and shows
-                    // mostly natural / recreation places worth adding. The kept POIs
-                    // (parks, attractions) stay visible AND clickable for quick-add.
+                    // Hide the genuinely-noisy POI categories so the map reads cleaner.
+                    // NOTE: we deliberately do NOT hide poi.business — Google buckets
+                    // landmarks/establishments (e.g. the King Neptune Statue, a
+                    // historical_landmark) under "business" too, so hiding it would
+                    // remove the very places worth adding (and make them un-clickable
+                    // for quick-add). Schools/medical/government/worship/transit are
+                    // safe to drop.
                     styles: [
-                        { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
                         { featureType: 'poi.school', stylers: [{ visibility: 'off' }] },
                         { featureType: 'poi.medical', stylers: [{ visibility: 'off' }] },
                         { featureType: 'poi.government', stylers: [{ visibility: 'off' }] },
@@ -228,15 +230,18 @@
                 try {
                     const { Place } = await google.maps.importLibrary('places');
                     const place = new Place({ id: placeId });
-                    await place.fetchFields({ fields: ['displayName', 'formattedAddress', 'location'] });
+                    await place.fetchFields({ fields: ['displayName', 'formattedAddress', 'location', 'primaryType', 'editorialSummary'] });
                     const lat = place.location ? place.location.lat() : (latLng ? latLng.lat() : '');
                     const lng = place.location ? place.location.lng() : (latLng ? latLng.lng() : '');
+                    const summary = typeof place.editorialSummary === 'string' ? place.editorialSummary : '';
                     const params = new URLSearchParams({
                         name: place.displayName || '',
                         address: place.formattedAddress || '',
                         latitude: lat,
                         longitude: lng,
                         place_id: placeId,
+                        category: this.categoryForType(place.primaryType || ''),
+                        description: summary,
                     });
                     this.info.setContent(this.addPoiCard(place.displayName || '', place.formattedAddress || '', this.createUrl + '?' + params.toString()));
                     this.info.setPosition(latLng);
@@ -253,6 +258,13 @@
                         <a href="${this.escape(href)}" style="display:inline-block;background:#b45309;color:#fff;font-weight:600;text-decoration:none;font-size:13px;padding:7px 13px;border-radius:8px">+ Add as location</a>
                     </div>`
                 );
+            },
+            // Map a Google primaryType to a Locatour category (parks / scenic / food).
+            categoryForType(type) {
+                const t = (type || '').toLowerCase();
+                if (/restaurant|cafe|bar|food|bakery|meal|coffee|pub|winery|brewery/.test(t)) return 'food';
+                if (/park|garden|campground|hiking|trail|forest|nature_reserve|playground/.test(t)) return 'parks';
+                return 'scenic'; // landmarks, attractions, beaches, viewpoints, museums, etc.
             },
             // Fetch the per-location popup JSON (lazy, on marker click). Returns
             // null on any failure so the caller can show an error card.

@@ -21,7 +21,7 @@ class CreateLocation extends CreateRecord
     {
         parent::mount();
 
-        foreach (['name', 'address', 'place_id'] as $field) {
+        foreach (['name', 'address', 'place_id', 'category', 'description'] as $field) {
             $value = request()->query($field);
             if (filled($value)) {
                 $this->data[$field] = $value;
