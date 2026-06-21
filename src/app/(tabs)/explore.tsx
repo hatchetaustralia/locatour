@@ -100,12 +100,16 @@ export default function ExploreScreen() {
   // Guard so we only auto-center on the very first location fix.
   const didCenterRef = useRef(false);
 
-  // Drag-to-dismiss for the detail sheet: panning the grabber down past a
-  // threshold slides it away and clears the selection (a native bottom-sheet feel).
+  // Drag-to-dismiss for the detail sheet: dragging anywhere on the card down
+  // past a threshold slides it away and clears the selection (a native
+  // bottom-sheet feel). We only claim the gesture when the inner ScrollView is
+  // at the very top, so scrolling tall content still works normally.
   const translateY = useRef(new Animated.Value(0)).current;
+  const sheetScrollAtTop = useRef(true);
   const pan = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_e, g) => g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
+      onMoveShouldSetPanResponder: (_e, g) =>
+        sheetScrollAtTop.current && g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
       onPanResponderMove: (_e, g) => {
         if (g.dy > 0) translateY.setValue(g.dy);
       },
@@ -157,7 +161,9 @@ export default function ExploreScreen() {
         if (status === 'granted' && !cancelled) {
           watchSub = await Location.watchPositionAsync(
             {
-              accuracy: Location.Accuracy.Balanced,
+              // High (GPS) rather than Balanced — Balanced leans on coarse
+              // network/wifi location and can land a whole suburb off.
+              accuracy: Location.Accuracy.High,
               distanceInterval: 10,
               timeInterval: 5000,
             },
@@ -205,6 +211,24 @@ export default function ExploreScreen() {
       watchSub?.remove();
     };
   }, [searchParams.selectedId]);
+
+  // Whenever a spot is opened (via a marker tap or a deep-link selectedId),
+  // glide the camera to it and nudge it upward so the pin sits clear above the
+  // detail sheet (which covers the lower portion of the screen).
+  useEffect(() => {
+    if (!selectedLoc || Platform.OS === 'web' || !mapRef.current) return;
+    const latitudeDelta = 0.02;
+    mapRef.current.animateToRegion(
+      {
+        // Centre south of the pin so the pin renders in the upper third.
+        latitude: selectedLoc.coordinates.latitude - latitudeDelta * 0.22,
+        longitude: selectedLoc.coordinates.longitude,
+        latitudeDelta,
+        longitudeDelta: latitudeDelta,
+      },
+      450
+    );
+  }, [selectedLoc]);
 
   const handleMarkerSelect = async (loc: ExploreLocation) => {
     translateY.setValue(0);
@@ -543,9 +567,12 @@ export default function ExploreScreen() {
           ]}
           pointerEvents="box-none"
         >
-          <Animated.View style={[styles.bottomSheet, stampBorder, { transform: [{ translateY }] }]}>
-            {/* Grabber + title — drag down to dismiss (no close cross) */}
-            <View style={styles.sheetGrabber} {...pan.panHandlers}>
+          <Animated.View
+            style={[styles.bottomSheet, stampBorder, { transform: [{ translateY }] }]}
+            {...pan.panHandlers}
+          >
+            {/* Grabber + title — drag the whole card down to dismiss (no close cross) */}
+            <View style={styles.sheetGrabber}>
               <View style={styles.dragHandle} />
               <View style={styles.sheetTitleRow}>
                 <BrandText weight="semibold" style={styles.sheetTitle} numberOfLines={1}>
@@ -559,6 +586,12 @@ export default function ExploreScreen() {
               style={styles.sheetScroll}
               contentContainerStyle={styles.sheetScrollContent}
               showsVerticalScrollIndicator={false}
+              scrollEventThrottle={16}
+              onScroll={(e) => {
+                // Only let a downward drag dismiss the sheet when content is
+                // scrolled to the top; otherwise the ScrollView keeps the gesture.
+                sheetScrollAtTop.current = e.nativeEvent.contentOffset.y <= 0;
+              }}
             >
               {/* Photo Carousel */}
               <View style={styles.carouselWrapper}>
@@ -873,6 +906,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingTop: 12,
+    // Symmetric horizontal room so the XP badge (which floats off the bubble's
+    // top-right) stays inside the marker's bounds — native maps clip overflow.
+    paddingHorizontal: 26,
   },
   pinBubble: {
     width: 34,
@@ -884,7 +920,7 @@ const styles = StyleSheet.create({
   xpBadge: {
     position: 'absolute',
     top: 0,
-    right: -14,
+    right: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
