@@ -130,12 +130,13 @@ class LocationController extends Controller
 
     /**
      * The highest tier (1-10) unlocked at a given player level. Mirrors the
-     * app's gate exactly: every 10 levels unlocks the next tier, capped at 10.
-     * unlockedTier(level) = min(10, floor((level-1)/10)+1).
+     * app's leveling.ts gate exactly: tiers unlock on round decades, capped at 10.
+     * unlockedTier(level) = min(10, floor(level/10)+1) — L1..9→1, L10..19→2, …,
+     * L90..99→10.
      */
     private static function unlockedTier(int $level): int
     {
-        return (int) min(10, intdiv(max($level, 1) - 1, 10) + 1);
+        return (int) min(10, intdiv(max($level, 1), 10) + 1);
     }
 
     /**
