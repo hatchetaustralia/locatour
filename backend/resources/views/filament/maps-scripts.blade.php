@@ -135,8 +135,25 @@
                 this.map = new Map(this.$refs.map, {
                     center: { lat: -31.9523, lng: 115.8613 },
                     zoom: 12,
-                    mapTypeControl: false,
+                    // Map / Satellite toggle (top-right).
+                    mapTypeControl: true,
+                    mapTypeControlOptions: {
+                        position: google.maps.ControlPosition.TOP_RIGHT,
+                        mapTypeIds: ['roadmap', 'satellite'],
+                    },
                     streetViewControl: false,
+                    // Hide the noisy POI categories (schools, businesses, medical,
+                    // government, worship, transit) so the map reads cleanly and shows
+                    // mostly natural / recreation places worth adding. The kept POIs
+                    // (parks, attractions) stay visible AND clickable for quick-add.
+                    styles: [
+                        { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
+                        { featureType: 'poi.school', stylers: [{ visibility: 'off' }] },
+                        { featureType: 'poi.medical', stylers: [{ visibility: 'off' }] },
+                        { featureType: 'poi.government', stylers: [{ visibility: 'off' }] },
+                        { featureType: 'poi.place_of_worship', stylers: [{ visibility: 'off' }] },
+                        { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+                    ],
                 });
                 this.info = new InfoWindow({ maxWidth: 320 });
 
