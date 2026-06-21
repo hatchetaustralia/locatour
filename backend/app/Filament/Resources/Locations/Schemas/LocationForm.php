@@ -347,7 +347,7 @@ class LocationForm
         return new HtmlString(
             '<div style="display:flex;align-items:center;gap:0.5rem;">'
             .'<span style="display:inline-flex;align-items:center;justify-content:center;width:2.25rem;height:2.25rem;border-radius:0.5rem;background:'.$color.';color:#fff;font-weight:700;">T'.$tier.'</span>'
-            .'<div><div style="font-weight:600;">Tier '.$tier.' · '.$pts.' pts</div>'
+            .'<div><div style="font-weight:600;">'.e(Location::rarityForTier($tier)).' · Tier '.$tier.' · '.$pts.' pts</div>'
             .'<div style="font-size:0.75rem;opacity:0.7;line-height:1.3;">'.$desc.'</div></div></div>'
         );
     }
@@ -370,6 +370,9 @@ class LocationForm
             default => [7, 10, 'no facilities recorded — likely fragile / protect it'],
         };
 
-        return "Tier {$lo}–{$hi} ({$note}). Set the points to match — this is only a hint.";
+        $loName = Location::rarityForTier($lo);
+        $hiName = Location::rarityForTier($hi);
+
+        return "{$loName}–{$hiName} (Tier {$lo}–{$hi}, {$note}). Set the points to match — this is only a hint.";
     }
 }
