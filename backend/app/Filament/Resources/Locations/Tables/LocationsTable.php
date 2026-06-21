@@ -40,8 +40,9 @@ class LocationsTable
                     ->placeholder('Seed / admin')
                     ->toggleable(),
                 TextColumn::make('tier')
-                    ->label('Tier')
+                    ->label('Rarity')
                     ->badge()
+                    ->formatStateUsing(fn ($state): string => Location::rarityForTier((int) $state))
                     ->sortable(),
                 TextColumn::make('points')
                     ->numeric()
@@ -75,7 +76,7 @@ class LocationsTable
                     ->options(
                         collect(Location::TIER_DESCRIPTIONS)
                             ->keys()
-                            ->mapWithKeys(fn (int $tier): array => [$tier => "Tier {$tier}"])
+                            ->mapWithKeys(fn (int $tier): array => [$tier => Location::rarityForTier($tier)])
                             ->all(),
                     ),
             ])

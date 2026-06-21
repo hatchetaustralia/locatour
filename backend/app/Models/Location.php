@@ -112,6 +112,33 @@ class Location extends Model
     }
 
     /**
+     * Player-facing RARITY name for each tier (1-10). The app and admin show this
+     * ascending rarity scale instead of a bare "Tier N" number (numbers read
+     * ambiguously — "is 1 or 10 the best?"). The numeric tier stays the internal
+     * source of truth; this is purely the label. Mirrors leveling.ts TIER_RARITY.
+     *
+     * @var array<int, string>
+     */
+    public const TIER_RARITY = [
+        1 => 'Common',
+        2 => 'Uncommon',
+        3 => 'Rare',
+        4 => 'Prized',
+        5 => 'Epic',
+        6 => 'Iconic',
+        7 => 'Legendary',
+        8 => 'Mythic',
+        9 => 'Ancient',
+        10 => 'Apex',
+    ];
+
+    /** The rarity label for a tier (1-10). Falls back to tier 1 for bad input. */
+    public static function rarityForTier(int $tier): string
+    {
+        return self::TIER_RARITY[$tier] ?? self::TIER_RARITY[1];
+    }
+
+    /**
      * Tier is derived from points (points is the single source of truth), so
      * recompute it on every save regardless of how the row was written (form,
      * API, seeder).

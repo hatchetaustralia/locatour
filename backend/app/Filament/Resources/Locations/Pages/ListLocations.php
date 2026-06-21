@@ -66,7 +66,7 @@ class ListLocations extends ListRecords
             ->distinct()
             ->orderBy('tier')
             ->pluck('tier')
-            ->mapWithKeys(fn (int $tier): array => [$tier => "Tier {$tier}"])
+            ->mapWithKeys(fn (int $tier): array => [$tier => Location::rarityForTier($tier)])
             ->all();
 
         // Current filter values (from URL / Livewire state) for server-side
@@ -82,7 +82,7 @@ class ListLocations extends ListRecords
             $statusHtml .= "<option value=\"{$value}\"{$selected}>{$label}</option>";
         }
 
-        $tierHtml = '<option value=""'.($currentTier === '' ? ' selected' : '').'>All tiers</option>';
+        $tierHtml = '<option value=""'.($currentTier === '' ? ' selected' : '').'>All rarities</option>';
         foreach ($tierOptions as $value => $label) {
             $selected = (string) $value === (string) $currentTier ? ' selected' : '';
             $tierHtml .= "<option value=\"{$value}\"{$selected}>{$label}</option>";

@@ -233,7 +233,7 @@
                         ${header}
                         <div style="padding:12px 14px 14px">
                             <div style="font-weight:700;font-size:15px;color:#2a2421;margin-bottom:4px">${this.escape(d.name)}</div>
-                            <div style="color:#6b6157;margin-bottom:8px">Tier ${d.tier} · ${this.escape(d.category)} · <strong style="color:#2a2421">+${d.points} pts</strong></div>
+                            <div style="color:#6b6157;margin-bottom:8px">${this.rarity(d.tier)} · ${this.escape(d.category)} · <strong style="color:#2a2421">+${d.points} pts</strong></div>
                             <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
                                 <span style="display:inline-block;padding:2px 9px;border-radius:9999px;background:${sc};color:#fff;font-size:11px;font-weight:600;text-transform:capitalize">${this.escape(d.status)}</span>
                                 <span style="color:#6b6157;font-size:12px">${checkins} check-in${checkins === 1 ? '' : 's'}</span>
@@ -246,6 +246,12 @@
             },
             // Match the in-app map markers: a category-coloured "stamp" badge
             // with a dark border, the TIER, and a small status dot + tail.
+            // Ascending rarity label for a tier (1..10) — mirrors Location::TIER_RARITY
+            // and the app's leveling.ts TIER_RARITY. The compact map marker keeps the
+            // numeric tier (a long word won't fit a pin); the popup uses the name.
+            rarity(tier) {
+                return ['Common', 'Uncommon', 'Rare', 'Prized', 'Epic', 'Iconic', 'Legendary', 'Mythic', 'Ancient', 'Apex'][Math.min(9, Math.max(0, (tier || 1) - 1))];
+            },
             categoryColor(category) {
                 return ({ parks: '#7DCE96', scenic: '#7DE3E7', food: '#F0B730' })[category] || '#8141DC';
             },

@@ -31,9 +31,9 @@ class LocationInfolist
                         TextEntry::make('category')
                             ->badge(),
                         TextEntry::make('tier')
-                            ->label('Tier')
+                            ->label('Rarity')
                             ->badge()
-                            ->formatStateUsing(fn (int $state): string => 'T'.$state)
+                            ->formatStateUsing(fn (int $state): string => Location::rarityForTier($state))
                             ->color('info'),
                         TextEntry::make('points')
                             ->numeric(),
