@@ -82,27 +82,27 @@ class ListLocations extends ListRecords
             $tierHtml .= "<option value=\"{$value}\"{$selected}>{$label}</option>";
         }
 
-        // Inline styles reuse Filament's own input-wrapper tokens so the selects
-        // look identical to the table's built-in SelectFilter dropdowns.
+        // The layout is built with INLINE styles, not Tailwind utility classes.
+        // This raw HTML lives in a PHP file that the admin theme's CSS build does
+        // not scan, so utilities like `flex`/`gap-3`/`min-w-40` are never compiled
+        // and the selects would fall back to block-stacking (the bug being fixed
+        // here). Inline styles always apply. `fi-input-wrp`/`fi-select-input` are
+        // Filament's own component classes (always present in the theme) so each
+        // box still matches the native SelectFilter dropdowns.
+        $selectStyle = 'width:100%;border:none;background:transparent;padding:0.5rem 0.75rem;font-size:0.875rem;color:inherit;outline:none;cursor:pointer';
+        $boxStyle = 'display:flex;flex:0 1 14rem;min-width:11rem;border-radius:0.5rem';
+
         $filterBar = <<<HTML
-            <div class="fi-ta-filters-above-content-ctn px-4 py-3 sm:px-6 border-b border-gray-200 dark:border-white/10">
-                <div class="flex flex-wrap gap-3">
-                    <div class="fi-input-wrp flex rounded-lg shadow-sm ring-1 ring-gray-950/10 dark:ring-white/20 min-w-40">
-                        <select
-                            wire:model.live="tableFilters.status.value"
-                            class="fi-select-input block w-full border-none bg-transparent py-1.5 pe-8 ps-3 text-sm text-gray-950 outline-none focus:ring-0 dark:text-white"
-                        >
-                            {$statusHtml}
-                        </select>
-                    </div>
-                    <div class="fi-input-wrp flex rounded-lg shadow-sm ring-1 ring-gray-950/10 dark:ring-white/20 min-w-40">
-                        <select
-                            wire:model.live="tableFilters.tier.value"
-                            class="fi-select-input block w-full border-none bg-transparent py-1.5 pe-8 ps-3 text-sm text-gray-950 outline-none focus:ring-0 dark:text-white"
-                        >
-                            {$tierHtml}
-                        </select>
-                    </div>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:0.75rem;padding:0 0 0.25rem">
+                <div class="fi-input-wrp" style="{$boxStyle}">
+                    <select wire:model.live="tableFilters.status.value" class="fi-select-input" style="{$selectStyle}">
+                        {$statusHtml}
+                    </select>
+                </div>
+                <div class="fi-input-wrp" style="{$boxStyle}">
+                    <select wire:model.live="tableFilters.tier.value" class="fi-select-input" style="{$selectStyle}">
+                        {$tierHtml}
+                    </select>
                 </div>
             </div>
         HTML;
