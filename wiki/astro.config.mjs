@@ -57,6 +57,7 @@ export default defineConfig({
             { label: 'Finding & unlocking locations', slug: 'play/locations' },
             { label: 'Hidden locations', slug: 'play/hidden-locations' },
             { label: 'Photo check-ins', slug: 'play/photo-checkins' },
+            { label: 'Nearby alerts', slug: 'play/nearby-alerts' },
             { label: 'Levels, tiers & progression', slug: 'play/progression' },
             { label: 'Rewards & recognition', slug: 'play/rewards' },
             { label: 'Becoming a contributor', slug: 'play/contributors' },

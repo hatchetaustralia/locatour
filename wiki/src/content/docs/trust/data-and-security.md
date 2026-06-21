@@ -27,18 +27,43 @@ We collect what the game needs to work, and not more.
 
 - We **don't** send you to businesses or sell your attention to advertisers.
 - We **don't** sell your personal data.
-- We **don't** track your location in the background — location is used **at the
-  moment you check in**, not while the app is closed or idle.
+- We **don't** track your location in the background **by default** — out of the
+  box, location is used **only at the moment you check in**. Background location
+  is used **only if you choose to turn on [Nearby
+  alerts](/play/nearby-alerts/)** (see below), and even then it's matched against
+  nearby spots on your device, never recorded as a trail.
 
 ## Permissions, explained
 
-- **Location** is needed to verify that you're really at a place when you check
-  in. You can read exactly how that works in [How photo check-in
+- **Location ("while using")** is needed to verify that you're really at a place
+  when you check in. You can read exactly how that works in [How photo check-in
   works](/trust/photo-checkin-tech/).
 - **Camera** is needed so you can take your check-in photo live, in the app.
+- **Background location ("allow all the time")** is **optional** and used
+  **only** if you turn on [Nearby alerts](/play/nearby-alerts/). It lets the app
+  notify you when you wander near a spot with the app closed. It is off by
+  default, requested only after a clear in-app explanation, and reversible at any
+  time. We never request "allow all the time" unless you opt in.
 
-You're always in control of these in your device settings — though the game
-needs them to function.
+You're always in control of these in your device settings. The game needs
+location-while-using and camera to function; background location is entirely your
+choice.
+
+## Nearby alerts & background location
+
+If you turn on [Nearby alerts](/play/nearby-alerts/), Locatour uses your phone's
+low-power background location to notify you when you're near a Locatour spot —
+even when the app is closed. Here's exactly what that does and doesn't mean:
+
+- **What it does:** your phone checks your rough position against nearby Locatour
+  spots, on the device, and fires an occasional notification.
+- **What it does not do:** it does **not** build or store a continuous history of
+  where you've been, and your location is **never** shared or sold.
+- **It's strictly opt-in.** Off by default; turned on only via the Profile
+  toggle, and only after a plain-language explanation shown *before* the system
+  permission prompt.
+- **It's reversible.** Turn the toggle off, or change the permission in your
+  device settings, and background location use stops immediately.
 
 ## How we protect it
 

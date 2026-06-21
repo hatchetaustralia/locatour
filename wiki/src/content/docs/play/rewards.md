@@ -13,6 +13,13 @@ Every check-in earns experience that moves you up the levels and unlocks more of
 the map. It's the backbone of the whole game — see [Levels, tiers &
 progression](/play/progression/).
 
+## The Nearby alerts bonus
+
+Switching on [Nearby alerts](/play/nearby-alerts/) earns you a permanent **+50%
+points bonus on every check-in** — and it stacks with the first-find discovery
+bonus. It's the single most effective way to boost your points over time, on top
+of the ambient discovery the alerts themselves bring.
+
 ## Streaks
 
 Check in regularly and you build a **streak** — a run of consecutive days spent

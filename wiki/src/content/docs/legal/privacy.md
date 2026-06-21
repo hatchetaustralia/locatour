@@ -31,8 +31,10 @@ use the Service.
 **Information from playing the game**
 
 - **Location data** — at the time you check in, we collect your device's GPS
-  position and accuracy to verify you are at a location. We do **not** collect
-  your location in the background or when you are not checking in.
+  position and accuracy to verify you are at a location. By default we do **not**
+  collect your location in the background. If you opt in to **Nearby alerts**
+  (see Section 3), we additionally use background location to notify you when you
+  are near a location, matched against nearby places on your device.
 - **Photos** — the photos you take in the app when you check in.
 - **Gameplay data** — your check-ins, experience, levels, streaks,
   achievements, and history.
@@ -61,10 +63,26 @@ We use your information to:
 
 ## 3. Location data
 
-Location is central to Locatour. We use your device's location **only at the
-moment you check in**, to confirm you are physically at a place. We do not run
-background location tracking. You can disable location access at any time in
-your device settings, but check-ins will not work without it.
+Location is central to Locatour. By default, we use your device's location
+**only at the moment you check in**, to confirm you are physically at a place,
+and we do **not** run background location tracking.
+
+**Optional background location (Nearby alerts).** You may choose to enable
+"Nearby alerts," which uses your device's background location to notify you when
+you are near a Locatour place — including when the app is closed. This feature:
+
+- is **off by default** and never enabled without your action;
+- requests background ("allow all the time") location permission only **after**
+  an in-app explanation of what it does;
+- matches your approximate position against nearby places **on your device** to
+  trigger notifications, and does **not** create a stored history of your
+  movements;
+- can be turned off at any time via the in-app toggle or your device settings,
+  which stops background location use immediately.
+
+We do not sell or share your location data. You can disable location access at
+any time in your device settings, but check-ins will not work without
+location-while-using.
 
 ## 4. Camera and photos
 

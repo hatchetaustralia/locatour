@@ -55,7 +55,15 @@ head:
             "name": "Does Locatour track my location in the background?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "No. Locatour uses your location at the moment you check in to verify you're at a place. It does not track your location in the background or while the app is closed."
+              "text": "Not by default. Out of the box, Locatour uses your location only at the moment you check in. Background location is used only if you choose to turn on the optional Nearby alerts feature, which notifies you when you wander near a spot. Even then, your position is matched against nearby spots on your device and is never recorded as a trail or shared."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "What are Nearby alerts?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Nearby alerts are an optional, opt-in feature that gives you a gentle notification when you wander near a Locatour spot, even with the app closed. Turning it on also earns you a permanent +50% points bonus on every check-in. It is off by default, uses low-power background location, is strictly throttled so it never spams you, and can be turned off at any time."
             }
           },
           {
@@ -115,9 +123,19 @@ locations](/play/hidden-locations/).
 
 ## Does Locatour track my location in the background?
 
-No. Locatour uses your location **at the moment you check in** to verify you're
-at a place. It does not track your location in the background or while the app
-is closed.
+**Not by default.** Out of the box, Locatour uses your location **only at the
+moment you check in**. Background location is used **only if you choose to turn
+on [Nearby alerts](/play/nearby-alerts/)** — and even then your position is
+matched against nearby spots on your device, never recorded as a trail or
+shared.
+
+## What are Nearby alerts?
+
+An optional, opt-in feature that gives you a gentle notification when you wander
+near a Locatour spot — even with the app closed — and earns you a permanent
+**+50% points bonus** on every check-in. It's off by default, sips battery, is
+strictly throttled so it never spams you, and can be switched off any time. See
+[Nearby alerts](/play/nearby-alerts/).
 
 ## Does Locatour sell my data?
 

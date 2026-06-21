@@ -29,6 +29,14 @@ it**. The mechanics are the product's moat — protect them.
 - ✅ "Higher tiers unlock the ability to reach more fragile, hidden places."
 - ❌ "You reach tier 6 at 51 levels / N points."
 
+**Nearby alerts — what's OK to publish.** Player-facing UX that the app already
+surfaces is fine: the feature exists, it's opt-in/off-by-default, the **+50%
+points bonus** (shown in-app), and the anti-spam behaviour (a small daily cap,
+quiet overnight hours, no repeat pings for ~a month). Keep the **spot-detection
+distances qualitative** ("a few hundred metres" / "as you get close"), not exact,
+and never publish the region count, DB internals, or multiplier constants by
+name.
+
 ## Tone
 
 Warm, encouraging, plain-spoken. Think a friendly game wiki, not a legal
