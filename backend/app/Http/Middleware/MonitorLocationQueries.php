@@ -38,11 +38,22 @@ class MonitorLocationQueries
     /** Rolling counting window, in seconds (1 hour). */
     public const WINDOW_SECONDS = 3600;
 
-    /** Queries within a window above which the account is FLAGGED for review. */
-    public const FLAG_THRESHOLD = 400;
+    /**
+     * Queries within a window above which the account is FLAGGED for review.
+     * The app calls /api/locations only a handful of times per session (once per
+     * screen-mount / first GPS fix — NOT per map pan or GPS tick), so even a very
+     * active human stays in the low tens per hour. 100 leaves comfortable headroom
+     * while catching sustained automated pulls early. Flagging is non-destructive
+     * (admin review only), so it can sit fairly tight.
+     */
+    public const FLAG_THRESHOLD = 100;
 
-    /** Queries within a window above which the account is also AUTO-BLOCKED. */
-    public const BLOCK_THRESHOLD = 1200;
+    /**
+     * Queries within a window above which the account is also AUTO-BLOCKED.
+     * Auto-block is destructive, so this keeps a wide margin (~5x) over the
+     * heaviest plausible human use — only an automated client sustains this rate.
+     */
+    public const BLOCK_THRESHOLD = 300;
 
     public function handle(Request $request, Closure $next): Response
     {
