@@ -14,7 +14,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { checkLevelingInvariants } from '@/utils/leveling';
-import { syncAccount, uploadPendingCheckIns } from '@/utils/account';
+import { syncAccount, uploadPendingCheckIns, ensureHomeCoordinates } from '@/utils/account';
 // Side-effect import: registers the background geofencing task + the foreground
 // notification handler at module load — including the headless re-launch the OS
 // uses to deliver a geofence event while the app is closed (spec 08, Phase 2).
@@ -52,6 +52,9 @@ export default function RootLayout() {
   useEffect(() => {
     void syncAccount();
     void uploadPendingCheckIns();
+    // Backfill base coordinates for profiles created before we captured them, so
+    // the map can warm-start at the user's home (fail-soft; no-op if already set).
+    void ensureHomeCoordinates();
   }, []);
 
   // Deep-link a tapped proximity notification straight to the map with that

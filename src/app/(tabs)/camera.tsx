@@ -21,6 +21,8 @@ import { File, Directory, Paths } from 'expo-file-system';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandText } from '@/components/brand';
+import { HiddenNearbyBar } from '@/components/hidden-nearby-bar';
+import { ShutterButton, ShutterMode } from '@/components/shutter-button';
 import { Brand, BrandFonts, BrandRadius, stampBorder, Spacing } from '@/constants/theme';
 import { storage } from '@/utils/storage';
 import { uploadCheckInNow, uploadPendingCheckIns } from '@/utils/account';
@@ -28,7 +30,11 @@ import {
   unlockedTier,
   maxDiscoverableTier,
   DISCOVERY_MULTIPLIER,
+  NEARBY_ALERTS_POINT_MULTIPLIER,
+  NEARBY_ALERTS_BONUS_PCT,
   WARM_RADIUS_M,
+  CHECK_IN_RADIUS_M,
+  HIDDEN_RADIUS_M,
   LOCK_TEASER_RANGE,
   levelForTier,
 } from '@/utils/leveling';
@@ -36,18 +42,9 @@ import { formatDistance } from '@/utils/geo';
 import { ExploreLocation, CheckIn, User, Coordinates, Achievement } from '@/types';
 
 // --- Tuning flags ---
-// Real-world proximity FLOOR for a valid check-in. A location's own
-// geofenceRadius is used when larger; this is the minimum tolerance.
-const CHECK_IN_RADIUS_M = 50;
-// Fallback geofence radius (metres) for locations that don't define their own.
-const DEFAULT_GEOFENCE_RADIUS_M = 150;
 // Mock verification duration (later this becomes a real server call).
 const VERIFY_DURATION_MS = 1800;
 
-// The effective check-in radius for a location: its own geofence (when present),
-// floored at CHECK_IN_RADIUS_M so the tolerance is never unreasonably tight.
-const effectiveRadius = (loc: ExploreLocation) =>
-  Math.max(CHECK_IN_RADIUS_M, loc.geofenceRadius ?? DEFAULT_GEOFENCE_RADIUS_M);
 
 // Copy a freshly-captured photo out of the (clearable) cache directory into the
 // permanent document directory so the local thumbnail + the upload-retry both
@@ -169,6 +166,12 @@ export default function CameraScreen() {
   const [zone, setZone] = useState<{ status: 'checking' | 'in' | 'out' | 'warm' | 'hidden'; name?: string }>({
     status: 'checking',
   });
+  // Live metres to the nearest undiscovered hidden spot (when warm/hidden) — drives
+  // the live distance readout that ticks down as the explorer closes in.
+  const [hiddenDistance, setHiddenDistance] = useState<number | null>(null);
+  // The hidden spot the user is currently ON (within range) — drives the
+  // "You've unlocked X" card. Captured when the zone goes 'hidden'.
+  const [hiddenSpot, setHiddenSpot] = useState<{ id: string; name: string; image?: string } | null>(null);
 
   const [flow, setFlow] = useState<FlowState>('capture');
   const [facing, setFacing] = useState<CameraType>('back');
@@ -180,6 +183,8 @@ export default function CameraScreen() {
   const [updatedUser, setUpdatedUser] = useState<User | null>(null);
   const [pointsEarned, setPointsEarned] = useState(0);
   const [isDiscovery, setIsDiscovery] = useState(false);
+  // Whether this check-in earned the Nearby-Alerts explorer bonus (for the reveal).
+  const [explorerBonus, setExplorerBonus] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   // Reward reveal: any achievements unlocked by this check-in, plus the level the
   // user was on BEFORE it (used to detect a level-up on the verified screen).
@@ -191,8 +196,37 @@ export default function CameraScreen() {
   // it cannot be discovered. Holds the spot name + the level required to unlock.
   const [locked, setLocked] = useState<{ name: string; levelRequired: number } | null>(null);
 
+  // Name of the spot the user tapped CHECK IN on — used for the Polaroid caption
+  // on the preview/confirm step.
+  const [targetName, setTargetName] = useState('');
+
   // Guards a second tap while a capture/verification is already in flight.
   const processingRef = useRef(false);
+  // The hidden-spot id we've already unlocked this approach — so the unlock +
+  // card fire ONCE per spot, not on every GPS tick.
+  const currentHiddenIdRef = useRef<string | null>(null);
+  // Transient "get closer" nudge shown when the shutter is tapped out of range.
+  const [nudge, setNudge] = useState(false);
+  const nudgeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tracks whether we're in check-in range, to fire a one-shot "you've arrived"
+  // success haptic the moment the user walks INTO range (felt through a pocket
+  // when the app is open).
+  const arrivedRef = useRef(false);
+
+  // Resolve the tapped location's name for the preview caption (best-effort).
+  useEffect(() => {
+    if (!targetLocationId) return;
+    let cancelled = false;
+    storage
+      .getLocationById(targetLocationId)
+      .then((loc) => {
+        if (!cancelled && loc) setTargetName(loc.name);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [targetLocationId]);
 
   // Request camera permission on mount (native only; web CameraView handles its own prompt).
   useEffect(() => {
@@ -206,6 +240,7 @@ export default function CameraScreen() {
   useEffect(() => {
     if (isWeb || flow !== 'capture') return;
     let cancelled = false;
+    let watchSub: Location.LocationSubscription | null = null;
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
@@ -213,8 +248,6 @@ export default function CameraScreen() {
           if (!cancelled) setZone({ status: 'out' });
           return;
         }
-        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        const here: Coordinates = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
         const [locations, user, checkIns] = await Promise.all([
           storage.getLocations(),
           storage.getUser(),
@@ -223,35 +256,93 @@ export default function CameraScreen() {
         const level = user?.stats.currentLevel ?? 1;
         const maxTier = unlockedTier(level);
         const maxDisc = maxDiscoverableTier(level);
+        // Genuinely-hidden band sits ABOVE the hard-locked teasers (tier >
+        // maxTier+LOCK_TEASER_RANGE = unlocked+3). Teasers (unlocked+1/+2) are
+        // visible-but-locked map pins — NOT hidden — so they must never drive the
+        // "something hidden nearby" detection.
+        const discoveryFloor = maxTier + LOCK_TEASER_RANGE;
         const visited = new Set(checkIns.map((c) => c.locationId));
 
-        // Nearest CHECKABLE spot (unlocked, or a hidden one already discovered),
-        // and separately the nearest UNDISCOVERED hidden spot (secret tiers ignored).
-        let nearestCheckable: ExploreLocation | null = null;
-        let nearestCheckableDist = Infinity;
-        let nearestHidden: ExploreLocation | null = null;
-        let nearestHiddenDist = Infinity;
-        for (const loc of locations) {
-          if (loc.tier > maxDisc) continue; // secret — never surfaced
-          const d = getDistance(here, loc.coordinates);
-          const undiscoveredHidden = loc.tier > maxTier && !visited.has(loc.id);
-          if (undiscoveredHidden) {
-            if (d < nearestHiddenDist) { nearestHiddenDist = d; nearestHidden = loc; }
-          } else if (d < nearestCheckableDist) {
-            nearestCheckableDist = d;
-            nearestCheckable = loc;
+        // Recompute the zone (and the live distance to the nearest hidden spot)
+        // on every position update so the temperature gauge heats up as the
+        // explorer walks/drives closer.
+        const evaluate = (here: Coordinates) => {
+          // Nearest CHECKABLE spot (unlocked, or a hidden one already discovered),
+          // and separately the nearest UNDISCOVERED hidden spot (secret tiers ignored).
+          let nearestCheckable: ExploreLocation | null = null;
+          let nearestCheckableDist = Infinity;
+          let nearestHidden: ExploreLocation | null = null;
+          let nearestHiddenDist = Infinity;
+          for (const loc of locations) {
+            if (loc.tier > maxDisc) continue; // secret — never surfaced
+            const d = getDistance(here, loc.coordinates);
+            if (loc.tier > discoveryFloor) {
+              // Genuinely hidden (unlocked+3). Undiscovered → a hidden target;
+              // once discovered it becomes a normal checkable spot.
+              if (!visited.has(loc.id)) {
+                if (d < nearestHiddenDist) { nearestHiddenDist = d; nearestHidden = loc; }
+              } else if (d < nearestCheckableDist) {
+                nearestCheckableDist = d; nearestCheckable = loc;
+              }
+            } else if (loc.tier <= maxTier) {
+              // Unlocked → checkable.
+              if (d < nearestCheckableDist) { nearestCheckableDist = d; nearestCheckable = loc; }
+            }
+            // else: locked teaser band (maxTier < tier <= discoveryFloor) — a
+            // visible map pin, but neither checkable nor hidden; ignore here.
           }
-        }
-        if (cancelled) return;
+          if (cancelled) return;
 
-        if (nearestCheckable && nearestCheckableDist <= (nearestCheckable.geofenceRadius ?? CHECK_IN_RADIUS_M)) {
-          setZone({ status: 'in', name: nearestCheckable.name });
-        } else if (nearestHidden && nearestHiddenDist <= (nearestHidden.geofenceRadius ?? CHECK_IN_RADIUS_M)) {
-          setZone({ status: 'hidden' });
-        } else if (nearestHidden && nearestHiddenDist <= WARM_RADIUS_M) {
-          setZone({ status: 'warm' });
-        } else {
-          setZone({ status: 'out' });
+          // One-shot "you've arrived" success haptic when crossing INTO range.
+          const inRangeNow =
+            (!!nearestCheckable && nearestCheckableDist <= CHECK_IN_RADIUS_M) ||
+            (!!nearestHidden && nearestHiddenDist <= HIDDEN_RADIUS_M);
+          if (inRangeNow && !arrivedRef.current) {
+            try {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch {
+              // ignore
+            }
+          }
+          arrivedRef.current = inRangeNow;
+
+          if (nearestCheckable && nearestCheckableDist <= CHECK_IN_RADIUS_M) {
+            setZone({ status: 'in', name: nearestCheckable.name });
+            setHiddenDistance(null);
+            currentHiddenIdRef.current = null;
+            setHiddenSpot(null);
+          } else if (nearestHidden && nearestHiddenDist <= HIDDEN_RADIUS_M) {
+            setZone({ status: 'hidden' });
+            setHiddenDistance(Math.round(nearestHiddenDist));
+            // Physically reaching the spot UNLOCKS it (persists on the map). Fire
+            // ONCE per spot — guard against the per-second GPS ticks.
+            if (currentHiddenIdRef.current !== nearestHidden.id) {
+              currentHiddenIdRef.current = nearestHidden.id;
+              storage.unlockLocation(nearestHidden.id);
+              setHiddenSpot({ id: nearestHidden.id, name: nearestHidden.name, image: nearestHidden.imageUrls?.[0] });
+            }
+          } else if (nearestHidden && nearestHiddenDist <= WARM_RADIUS_M) {
+            setZone({ status: 'warm' });
+            setHiddenDistance(Math.round(nearestHiddenDist));
+            currentHiddenIdRef.current = null;
+            setHiddenSpot(null);
+          } else {
+            setZone({ status: 'out' });
+            setHiddenDistance(null);
+            currentHiddenIdRef.current = null;
+            setHiddenSpot(null);
+          }
+        };
+
+        watchSub = await Location.watchPositionAsync(
+          // Tight, continuous updates so the distance ticks down like a compass.
+          // distanceInterval: 0 = don't gate on movement; report ~every second.
+          { accuracy: Location.Accuracy.BestForNavigation, distanceInterval: 0, timeInterval: 1000 },
+          (pos) => evaluate({ latitude: pos.coords.latitude, longitude: pos.coords.longitude })
+        );
+        if (cancelled) {
+          watchSub.remove();
+          watchSub = null;
         }
       } catch {
         if (!cancelled) setZone({ status: 'out' });
@@ -259,21 +350,36 @@ export default function CameraScreen() {
     })();
     return () => {
       cancelled = true;
+      watchSub?.remove();
     };
   }, [isWeb, flow]);
 
-  // Rainbow glow border for the "hidden spot discovered" sheet.
+  // Rainbow shimmer for the "hidden spot discovered" reveal sheet border.
   const rainbow = useRef(new Animated.Value(0)).current;
+
+  // Shutter feedback mode — the Skia ShutterButton renders the actual glow:
+  //   'warm'  = a hidden spot is near (rainbow), 'ready' = in range to check in
+  //   (green), 'none' = plain white shutter.
+  const shutterMode: ShutterMode =
+    flow !== 'capture'
+      ? 'none'
+      : zone.status === 'in' || zone.status === 'hidden'
+        ? 'ready'
+        : zone.status === 'warm'
+          ? 'warm'
+          : 'none';
+
+  const rainbowActive = flow === 'verified' && isDiscovery;
   useEffect(() => {
-    if (flow !== 'verified' || !isDiscovery) return;
+    if (!rainbowActive) return;
     const loop = Animated.loop(
       Animated.timing(rainbow, { toValue: 1, duration: 2400, easing: Easing.linear, useNativeDriver: false })
     );
     loop.start();
     return () => loop.stop();
-  }, [flow, isDiscovery, rainbow]);
+  }, [rainbowActive, rainbow]);
   const rainbowColor = rainbow.interpolate({
-    inputRange: [0, 0.17, 0.34, 0.51, 0.68, 0.85, 1],
+    inputRange: [0, 1 / 6, 2 / 6, 3 / 6, 4 / 6, 5 / 6, 1],
     outputRange: ['#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#5ac8fa', '#af52de', '#ff3b30'],
   });
 
@@ -284,6 +390,7 @@ export default function CameraScreen() {
     setUpdatedUser(null);
     setPointsEarned(0);
     setIsDiscovery(false);
+    setExplorerBonus(false);
     setErrorMessage('');
     setNewAchievements([]);
     setTooFar(null);
@@ -306,6 +413,21 @@ export default function CameraScreen() {
   };
 
   const handleShutter = async () => {
+    // Gate: only allow a capture when actually in check-in range. Tapping the
+    // glowing-but-not-there shutter buzzes an error + nudges, instead of a doomed
+    // photo → verify → "check-in failed" loop. (The web/simulate path is never gated.)
+    const inRange = zone.status === 'in' || zone.status === 'hidden';
+    if (!isWeb && cameraRef.current && !inRange) {
+      try {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      } catch {
+        // ignore
+      }
+      setNudge(true);
+      if (nudgeTimer.current) clearTimeout(nudgeTimer.current);
+      nudgeTimer.current = setTimeout(() => setNudge(false), 1800);
+      return;
+    }
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {
@@ -359,7 +481,7 @@ export default function CameraScreen() {
         (async () => {
           const { status } = await Location.requestForegroundPermissionsAsync();
           if (status !== 'granted') return null;
-          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
           return { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
         })(),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
@@ -416,7 +538,7 @@ export default function CameraScreen() {
       const undiscoveredHidden = loc.tier > discoveryFloor && !visited.has(loc.id);
       if (!undiscoveredHidden) continue;
       const d = getDistance(coords, loc.coordinates);
-      if (d <= effectiveRadius(loc) && d < onsiteHiddenDist) {
+      if (d <= CHECK_IN_RADIUS_M && d < onsiteHiddenDist) {
         onsiteHiddenDist = d;
         onsiteHidden = loc;
       }
@@ -440,10 +562,10 @@ export default function CameraScreen() {
         return;
       }
       const d = getDistance(coords, tapped.coordinates);
-      inRange = d <= effectiveRadius(tapped);
+      inRange = d <= CHECK_IN_RADIUS_M;
       if (!inRange) {
         // #8: too far — do NOT record. Show a clear, branded distance state.
-        setTooFar({ name: tapped.name, distance: d, radius: effectiveRadius(tapped) });
+        setTooFar({ name: tapped.name, distance: d, radius: CHECK_IN_RADIUS_M });
         setFlow('toofar');
         return;
       }
@@ -471,7 +593,11 @@ export default function CameraScreen() {
     // (tier > discoveryFloor, i.e. above the hard-locked teasers) earns the one-time
     // discovery bonus (DISCOVERY_MULTIPLIER) and the rainbow treatment.
     const discovered = target.tier > discoveryFloor && !visited.has(target.id);
-    const earned = discovered ? target.points * DISCOVERY_MULTIPLIER : target.points;
+    // Explorer bonus: opted-in Nearby-Alerts users earn a multiplier on every
+    // check-in (stacks on top of the first-find discovery bonus).
+    const alertsBonus = storage.getNearbyAlertsEnabled() ? NEARBY_ALERTS_POINT_MULTIPLIER : 1;
+    const base = discovered ? target.points * DISCOVERY_MULTIPLIER : target.points;
+    const earned = Math.round(base * alertsBonus);
 
     // #9: capture the level BEFORE the check-in so we can detect a level-up.
     const levelBefore = verifyUser?.stats.currentLevel ?? 1;
@@ -548,6 +674,7 @@ export default function CameraScreen() {
     setUpdatedUser(fresh);
     setPointsEarned(earned);
     setIsDiscovery(discovered);
+    setExplorerBonus(alertsBonus > 1);
     setNewAchievements(unlockedNow);
     setPrevLevel(levelBefore);
 
@@ -567,9 +694,9 @@ export default function CameraScreen() {
         ? `You're in the ${zone.name} zone! 🎯`
         : "You're in a check-in zone! 🎯"
       : zone.status === 'hidden'
-        ? 'Hidden spot found! 🌈 Snap to claim it'
+        ? 'Hidden spot found — snap to claim it!'
         : zone.status === 'warm'
-          ? "Getting warm… something hidden's nearby 🔍"
+          ? "👀 Something's hidden nearby"
           : zone.status === 'out'
             ? 'No zone here — roam closer to a spot! 🧭'
             : 'Scanning for a zone…';
@@ -579,10 +706,14 @@ export default function CameraScreen() {
       : zone.status === 'hidden'
         ? 'sparkles'
         : zone.status === 'warm'
-          ? 'flame'
+          ? 'search' // the "looking for it" magnifying glass (was a flame)
           : zone.status === 'out'
             ? 'compass-outline'
             : 'navigate-outline';
+
+  // Temperature: the thermometer colour heats up (cool→hot) as the explorer
+  // closes from WARM_RADIUS_M to 0. Shown only while approaching (warm); once
+  // within range the bar flips to the "found it — claim it" state instead.
   const zonePillStyle =
     zone.status === 'in'
       ? styles.zonePillIn
@@ -597,23 +728,70 @@ export default function CameraScreen() {
 
   const renderCaptureControls = () => (
     <>
-      {/* Top-center geofence status: in-zone, hidden-spot, warm, or nothing nearby. */}
+      {/* Top-center geofence status: in-zone, hidden-spot, warm, or nothing nearby.
+          The hidden/warm states shimmer rainbow + show a temperature gauge. */}
       <SafeAreaView style={styles.topBar} edges={['top']} pointerEvents="box-none">
-        <View style={[styles.zonePill, stampBorder, zonePillStyle]}>
-          <Ionicons name={zoneIcon} size={16} color={zoneColor} />
-          <BrandText weight="bold" style={[styles.zoneText, { color: zoneColor }]}>
-            {zoneText}
-          </BrandText>
-        </View>
+        {zone.status === 'hidden' && hiddenSpot ? (
+          // Reached + unlocked a hidden spot: a snapshot + a simple "unlocked,
+          // check in now" prompt, with a link to view it on the map.
+          <View style={[styles.unlockCard, stampBorder]}>
+            {hiddenSpot.image ? (
+              <Image source={{ uri: hiddenSpot.image }} style={styles.unlockThumb} />
+            ) : (
+              <View style={[styles.unlockThumb, styles.unlockThumbFallback]}>
+                <Ionicons name="sparkles" size={20} color={Brand.purple} />
+              </View>
+            )}
+            <View style={styles.unlockInfo}>
+              <BrandText weight="medium" color={Brand.inkSecondary} style={styles.unlockKicker}>
+                You&apos;ve unlocked
+              </BrandText>
+              <BrandText weight="bold" color={Brand.ink} style={styles.unlockName} numberOfLines={1}>
+                {hiddenSpot.name}
+              </BrandText>
+              <View style={styles.unlockActions}>
+                <BrandText weight="bold" color={Brand.purple} style={styles.unlockCheckin}>
+                  Check in now
+                </BrandText>
+                <BrandText weight="bold" color={Brand.inkSubtle} style={styles.unlockDot}>·</BrandText>
+                <TouchableOpacity
+                  onPress={() => router.push({ pathname: '/explore', params: { selectedId: hiddenSpot.id } })}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <BrandText weight="bold" color={Brand.inkSecondary} style={styles.unlockLink}>
+                    View on map
+                  </BrandText>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        ) : zone.status === 'warm' && hiddenDistance != null ? (
+          <HiddenNearbyBar distance={hiddenDistance} />
+        ) : (
+          // Calm, nav-bar-sized pill for the in-zone / nothing-nearby states.
+          <View style={[styles.zonePill, stampBorder, zonePillStyle]}>
+            <Ionicons name={zoneIcon} size={16} color={zoneColor} />
+            <BrandText weight="bold" style={[styles.zoneText, { color: zoneColor }]} numberOfLines={1}>
+              {zoneText}
+            </BrandText>
+          </View>
+        )}
       </SafeAreaView>
 
       {/* Bottom controls: centered white ring shutter, flash + flip on the right */}
       <View style={[styles.bottomBar, { paddingBottom: bottomPad }]} pointerEvents="box-none">
+        {nudge && (
+          <View style={styles.nudgePill} pointerEvents="none">
+            <Ionicons name="walk" size={15} color="#fff" />
+            <BrandText weight="bold" color="#fff" style={styles.nudgeText}>
+              Get closer to take the shot
+            </BrandText>
+          </View>
+        )}
         <View style={styles.shutterRow}>
           <View style={styles.sideSlot} />
-          <TouchableOpacity style={styles.shutterOuter} onPress={handleShutter} activeOpacity={0.8}>
-            <View style={styles.shutterInner} />
-          </TouchableOpacity>
+          {/* Skia shutter: rainbow sweep + real blurred glow (warm), green (ready). */}
+          <ShutterButton mode={shutterMode} onPress={handleShutter} />
           <View style={[styles.sideSlot, styles.sideSlotRight]}>
             <TouchableOpacity style={styles.smallGlassButton} onPress={toggleFlash}>
               <Ionicons name={flash === 'on' ? 'flash' : 'flash-off'} size={20} color="#fff" />
@@ -675,27 +853,69 @@ export default function CameraScreen() {
       </View>
     );
 
-  // Preview state.
+  // Preview / confirm state — the captured shot framed as a Polaroid. This makes
+  // the two-step nature explicit: you've TAKEN the photo, now you're confirming
+  // it's the one you'll check in with (no camera icon — you're not shooting again).
   if (flow === 'preview') {
     return (
       <View style={styles.fullScreen}>
         <FrozenPhoto />
-        <SafeAreaView style={styles.topBarLeft} edges={['top']} pointerEvents="box-none">
-          <TouchableOpacity style={styles.closeButton} onPress={resetToCapture} activeOpacity={0.8}>
-            <Ionicons name="close" size={24} color="#fff" />
-          </TouchableOpacity>
+        <View style={styles.previewScrim} />
+        <SafeAreaView style={styles.previewContainer} edges={['top', 'bottom']}>
+          {/* Discard + go back to the viewfinder */}
+          <View style={styles.previewTopRow}>
+            <TouchableOpacity style={styles.closeButton} onPress={resetToCapture} activeOpacity={0.8}>
+              <Ionicons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.previewCenter}>
+            <BrandText weight="bold" color={Brand.surface} style={styles.previewHeading}>
+              Use this shot?
+            </BrandText>
+            <BrandText weight="medium" color="rgba(255,255,255,0.82)" style={styles.previewSubheading}>
+              This is the photo you&apos;ll check in with.
+            </BrandText>
+
+            {/* Polaroid frame — slight tilt + chin caption for a printed feel. */}
+            <View style={styles.polaroid}>
+              {photoUri ? (
+                <Image source={{ uri: photoUri }} style={styles.polaroidPhoto} resizeMode="cover" />
+              ) : (
+                <View style={[styles.polaroidPhoto, styles.polaroidPlaceholder]}>
+                  <Ionicons name="image-outline" size={56} color={Brand.inkSubtle} />
+                </View>
+              )}
+              <View style={styles.polaroidCaption}>
+                <Ionicons name="location" size={14} color={Brand.purple} />
+                <BrandText weight="semibold" color={DARK_BROWN} style={styles.polaroidCaptionText} numberOfLines={1}>
+                  {targetName || 'Your check-in'}
+                </BrandText>
+              </View>
+            </View>
+          </View>
+
+          {/* Retake (back to camera) · Confirm check-in (→ verification) */}
+          <View style={[styles.previewActions, { paddingBottom: bottomPad }]}>
+            <TouchableOpacity
+              style={[styles.retakeButton, stampBorder]}
+              onPress={resetToCapture}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="camera-reverse-outline" size={20} color={Brand.ink} />
+              <BrandText weight="bold" color={Brand.ink} style={styles.previewActionText}>Retake</BrandText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.confirmButton, stampBorder]}
+              onPress={runVerification}
+              disabled={processingRef.current}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="checkmark-circle" size={20} color={Brand.ink} />
+              <BrandText weight="bold" color={Brand.ink} style={styles.previewActionText}>CHECK IN</BrandText>
+            </TouchableOpacity>
+          </View>
         </SafeAreaView>
-        <View style={[styles.bottomBar, { paddingBottom: bottomPad }]} pointerEvents="box-none">
-          <TouchableOpacity
-            style={[styles.pillCheckIn, stampBorder]}
-            onPress={runVerification}
-            disabled={processingRef.current}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="camera" size={20} color={Brand.ink} />
-            <BrandText weight="bold" color={Brand.ink} style={styles.pillText}>CHECK IN</BrandText>
-          </TouchableOpacity>
-        </View>
       </View>
     );
   }
@@ -706,17 +926,12 @@ export default function CameraScreen() {
       <View style={styles.fullScreen}>
         <FrozenPhoto />
         <View style={styles.dimOverlay} />
+        {/* Single centred verifying indicator (no duplicate bottom pill). */}
         <View style={styles.verifyingCenter} pointerEvents="none">
           <ActivityIndicator size="large" color="#fff" />
           <BrandText weight="bold" color="#fff" style={styles.verifyingText}>
             Verifying you&apos;re here…
           </BrandText>
-        </View>
-        <View style={[styles.bottomBar, { paddingBottom: bottomPad }]} pointerEvents="box-none">
-          <View style={[styles.pillCheckIn, styles.pillVerifying, stampBorder]}>
-            <ActivityIndicator size="small" color={Brand.ink} />
-            <BrandText weight="bold" color={Brand.ink} style={styles.pillText}>VERIFYING</BrandText>
-          </View>
         </View>
       </View>
     );
@@ -852,6 +1067,11 @@ export default function CameraScreen() {
                 {isDiscovery && (
                   <BrandText weight="bold" color={Brand.purple} style={styles.discoveryBonus}>
                     {DISCOVERY_MULTIPLIER}× first-find bonus!
+                  </BrandText>
+                )}
+                {explorerBonus && (
+                  <BrandText weight="bold" color={Brand.purple} style={styles.discoveryBonus}>
+                    +{NEARBY_ALERTS_BONUS_PCT}% explorer bonus 🧭
                   </BrandText>
                 )}
                 {leveledUp && stats && (
@@ -1036,21 +1256,22 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.four,
+    flexDirection: 'column',
+    // Floating full-width bar with 16px side margins to match the nav bar.
+    alignItems: 'stretch',
+    paddingHorizontal: 16,
     paddingTop: Spacing.two,
   },
-  // Game-y geofence status pill at the top of the viewfinder.
+  // Compact, full-width status bar at the top of the viewfinder.
+  // Wrapper lets the glow halo sit behind the bar (full-width floating bar).
+  // Fully-rounded, nav-bar-sized status pill (calm — no animation here).
   zonePill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.one + 2,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.one + 3,
+    paddingVertical: Spacing.two + 2,
     borderRadius: BrandRadius.pill,
-    maxWidth: '92%',
   },
   zonePillIn: {
     backgroundColor: Brand.sticker.green,
@@ -1068,12 +1289,63 @@ const styles = StyleSheet.create({
     backgroundColor: Brand.sticker.gold,
   },
   zoneText: {
-    fontSize: 13,
+    flex: 1,
+    fontSize: 14,
     color: Brand.ink,
-    flexShrink: 1,
   },
   zoneTextIn: {
     color: '#0f5132',
+  },
+  // Temperature + live distance as a readable dark chip on the right of the bar.
+  // Plain, clean distance readout on the right of the bar (no icon, no chip).
+  heatValue: {
+    fontSize: 13,
+    color: Brand.ink,
+  },
+  // "You've unlocked X" card — shown when standing within range of a hidden spot.
+  unlockCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two + 2,
+    backgroundColor: Brand.surface,
+    borderRadius: BrandRadius.sticker,
+    padding: Spacing.two,
+  },
+  unlockThumb: {
+    width: 46,
+    height: 46,
+    borderRadius: BrandRadius.control,
+    backgroundColor: Brand.bg,
+  },
+  unlockThumbFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unlockInfo: {
+    flex: 1,
+    gap: 1,
+  },
+  unlockKicker: {
+    fontSize: 11,
+  },
+  unlockName: {
+    fontSize: 15,
+  },
+  unlockActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 2,
+  },
+  unlockCheckin: {
+    fontSize: 12,
+  },
+  unlockDot: {
+    fontSize: 12,
+  },
+  unlockLink: {
+    fontSize: 12,
+    textDecorationLine: 'underline',
   },
   topBarLeft: {
     position: 'absolute',
@@ -1131,6 +1403,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     width: '100%',
   },
+  // Transient "get closer" nudge above the shutter when tapped out of range.
+  nudgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one + 2,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(20,16,14,0.82)',
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: BrandRadius.pill,
+    marginBottom: Spacing.three,
+  },
+  nudgeText: {
+    fontSize: 13,
+  },
   sideSlot: {
     width: 96,
     alignItems: 'flex-start',
@@ -1156,6 +1443,28 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 28,
     backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // The rainbow fill IS a circle (borderRadius on the gradient itself), so it
+  // stays round when rotated — Android won't clip a transformed child to a
+  // parent's rounded corners, which was the "square overlay" bug.
+  shutterGradient: {
+    flex: 1,
+    borderRadius: 999,
+  },
+  // Soft circular glow behind the shutter. The fill carries the borderRadius so
+  // it's always round even while the wrapper scales (no square bleed).
+  shutterGlow: {
+    position: 'absolute',
+    top: -8,
+    left: -8,
+    right: -8,
+    bottom: -8,
+  },
+  shutterGlowFill: {
+    flex: 1,
+    borderRadius: 999,
   },
 
   // Frozen photo
@@ -1171,6 +1480,100 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+
+  // ── Polaroid preview / confirm step ──
+  previewScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(20,16,14,0.8)',
+  },
+  previewContainer: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  previewTopRow: {
+    paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.two,
+  },
+  previewCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.four,
+  },
+  previewHeading: {
+    fontSize: 22,
+    textAlign: 'center',
+  },
+  previewSubheading: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: 2,
+    marginBottom: Spacing.four,
+  },
+  polaroid: {
+    backgroundColor: Brand.surface,
+    padding: 12,
+    paddingBottom: 16,
+    borderRadius: 6,
+    transform: [{ rotate: '-2deg' }],
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.4,
+    shadowRadius: 18,
+    elevation: 14,
+  },
+  polaroidPhoto: {
+    width: SCREEN_W * 0.66,
+    height: SCREEN_W * 0.66,
+    borderRadius: 2,
+    backgroundColor: Brand.bg,
+  },
+  polaroidPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  polaroidCaption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingTop: 14,
+    paddingBottom: 2,
+  },
+  polaroidCaptionText: {
+    fontSize: 14,
+    maxWidth: SCREEN_W * 0.5,
+  },
+  previewActions: {
+    flexDirection: 'row',
+    gap: Spacing.three,
+    paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.three,
+  },
+  retakeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    backgroundColor: Brand.surface,
+    paddingVertical: Spacing.three,
+    borderRadius: BrandRadius.pill,
+  },
+  confirmButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    backgroundColor: Brand.teal,
+    paddingVertical: Spacing.three,
+    borderRadius: BrandRadius.pill,
+  },
+  previewActionText: {
+    fontSize: 15,
+    letterSpacing: 0.4,
   },
 
   // Pills — teal stamp pill for CHECK IN / VERIFYING.

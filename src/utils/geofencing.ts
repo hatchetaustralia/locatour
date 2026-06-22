@@ -20,10 +20,11 @@
 import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
+import * as SQLite from 'expo-sqlite';
 import { Platform } from 'react-native';
 
 import { storage } from './storage';
-import { maxDiscoverableTier, unlockedTier, WARM_RADIUS_M } from './leveling';
+import { maxDiscoverableTier, unlockedTier, LOCK_TEASER_RANGE, WARM_RADIUS_M } from './leveling';
 
 export const GEOFENCE_TASK = 'locatour-geofence';
 const CHANNEL_ID = 'geofence-alerts';
@@ -31,6 +32,80 @@ const CHANNEL_ID = 'geofence-alerts';
 const SEP = '::';
 /** Android allows up to 100 active geofences per app; stay under it. */
 const MAX_REGIONS = 90;
+
+// ── Notification throttling (best-practice: a rare delight, never spam) ──
+/** Don't re-notify the SAME spot within this window (~1 month). */
+const NOTIFY_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
+/** Max nearby pings per calendar day. */
+const MAX_PER_DAY = 3;
+/** Quiet hours (local): suppress pings from 21:00 up to 08:00. */
+const QUIET_START_HOUR = 21;
+const QUIET_END_HOUR = 8;
+
+// A tiny, dedicated SQLite store for throttle state, separate from the main app
+// DB so it's safe to read/write from the HEADLESS geofence task. Holds one JSON
+// row: { lastBySpot: {id: ms}, day: 'YYYY-MM-DD', count }.
+type ThrottleState = { lastBySpot: Record<string, number>; day: string; count: number };
+let throttleDb: SQLite.SQLiteDatabase | null = null;
+function getThrottleDb(): SQLite.SQLiteDatabase {
+  if (!throttleDb) {
+    throttleDb = SQLite.openDatabaseSync('locatour-geofence.db');
+    throttleDb.execSync('CREATE TABLE IF NOT EXISTS throttle (key TEXT PRIMARY KEY, value TEXT)');
+  }
+  return throttleDb;
+}
+function readThrottle(): ThrottleState {
+  try {
+    const row = getThrottleDb().getFirstSync<{ value: string }>(
+      'SELECT value FROM throttle WHERE key = ?',
+      ['state']
+    );
+    if (row?.value) return JSON.parse(row.value) as ThrottleState;
+  } catch {
+    // ignore — fall through to a fresh state
+  }
+  return { lastBySpot: {}, day: '', count: 0 };
+}
+function writeThrottle(state: ThrottleState): void {
+  try {
+    getThrottleDb().runSync('INSERT OR REPLACE INTO throttle (key, value) VALUES (?, ?)', [
+      'state',
+      JSON.stringify(state),
+    ]);
+  } catch {
+    // ignore — worst case we under-throttle, never crash the headless task
+  }
+}
+
+/**
+ * Decide whether to fire a nearby-spot notification for `spotId` right now, and
+ * record it if so. Enforces: quiet hours, a per-spot ~30-day cooldown, and a
+ * per-day cap — so the feature stays a rare, exciting nudge, not a nag.
+ */
+function shouldNotify(spotId: string): boolean {
+  const now = new Date();
+  const hour = now.getHours();
+  // Quiet hours wrap past midnight (21:00 → 08:00).
+  const inQuiet =
+    QUIET_START_HOUR > QUIET_END_HOUR
+      ? hour >= QUIET_START_HOUR || hour < QUIET_END_HOUR
+      : hour >= QUIET_START_HOUR && hour < QUIET_END_HOUR;
+  if (inQuiet) return false;
+
+  const state = readThrottle();
+  const today = now.toISOString().slice(0, 10);
+  if (state.day !== today) {
+    state.day = today;
+    state.count = 0; // new day → reset the daily counter
+  }
+  if (state.count >= MAX_PER_DAY) return false;
+  if (now.getTime() - (state.lastBySpot[spotId] ?? 0) < NOTIFY_COOLDOWN_MS) return false;
+
+  state.lastBySpot[spotId] = now.getTime();
+  state.count += 1;
+  writeThrottle(state);
+  return true;
+}
 
 // ── Foreground display: show banners even while the app is open. SDK 53+ split
 // the old `shouldShowAlert` into `shouldShowBanner` / `shouldShowList`.
@@ -57,7 +132,11 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
   };
   if (eventType !== Location.GeofencingEventType.Enter) return;
 
-  const [type, name] = (region.identifier ?? '').split(SEP);
+  const [type, name, id] = (region.identifier ?? '').split(SEP);
+
+  // Throttle: quiet hours, per-spot ~30-day cooldown, daily cap — keep it a rare
+  // delight, not a nag (and a commuter passing the same park isn't pinged daily).
+  if (!shouldNotify(id ?? region.identifier ?? '')) return;
 
   let title: string;
   let body: string;
@@ -127,13 +206,17 @@ export async function syncGeofences(): Promise<void> {
     const level = user.stats.currentLevel;
     const maxUnlocked = unlockedTier(level);
     const maxDisc = maxDiscoverableTier(level);
+    const discoveryFloor = maxUnlocked + LOCK_TEASER_RANGE; // genuinely-hidden band is above this
     const visited = new Set(checkIns.map((c) => c.locationId));
 
     const regions: Location.LocationRegion[] = [];
     for (const loc of locations) {
       if (visited.has(loc.id)) continue; // only nudge for never-checked-in spots
       if (loc.tier > maxDisc) continue; // secret tier — never surface
-      const hidden = loc.tier > maxUnlocked; // discoverable but not yet unlocked
+      const hidden = loc.tier > discoveryFloor; // genuinely hidden (unlocked+3)
+      // Skip the visible-but-locked teaser band (maxUnlocked < tier <= discoveryFloor):
+      // a map pin, not checkable and not hidden — no geofence "hidden nearby" nudge.
+      if (loc.tier > maxUnlocked && ! hidden) continue;
       regions.push({
         // Pack everything the headless task needs; hide the name for hidden spots.
         identifier: `${hidden ? 'hidden' : 'unlocked'}${SEP}${hidden ? '' : loc.name}${SEP}${loc.id}`,
@@ -165,31 +248,48 @@ export async function setupGeofencing(): Promise<void> {
 }
 
 /**
- * Call on app focus. Prompts for permission exactly once (when still
- * undetermined) so existing users who skip the walkthrough still get asked;
- * afterwards it only re-syncs the monitored set — no repeated Settings trips.
+ * Call on app focus. OPT-IN ONLY: background geofencing runs solely when the user
+ * has enabled Nearby Alerts. We NEVER proactively prompt for "Allow all the time"
+ * location (an adoption killer + a Play-Store review hurdle) — that request only
+ * happens via enableNearbyAlerts(), behind a prominent in-app disclosure.
  */
 export async function refreshGeofencesOnFocus(): Promise<void> {
   if (Platform.OS === 'web') return;
+  if (!storage.getNearbyAlertsEnabled()) return; // not opted in → do nothing, no prompt
   try {
     const bg = await Location.getBackgroundPermissionsAsync();
     if (bg.status === 'granted') {
-      // Already authorized — just re-arm the monitored set.
-      await syncGeofences();
-      return;
+      await syncGeofences(); // re-arm the monitored set
+    } else {
+      // Permission revoked in Settings → reflect that the feature is now off.
+      storage.setNearbyAlertsEnabled(false);
     }
-    if (bg.status === 'undetermined') {
-      // We've never asked for "Allow all the time" yet — run the full prompt
-      // chain. Gating on BACKGROUND (not foreground) status is what fixes
-      // existing users: their foreground permission was already granted, so the
-      // old foreground-undetermined check never fired and geofences never armed.
-      // Once the user answers (granted/denied) the status is no longer
-      // undetermined, so we won't nag or bounce them to Settings again.
-      await setupGeofencing();
-      return;
-    }
-    // bg denied → respect it; background geofencing can't run without it.
   } catch (e) {
     console.warn('[geofence] refresh failed', (e as Error).message);
+  }
+}
+
+/**
+ * Turn ON background Nearby Alerts. The UI MUST show the prominent disclosure
+ * first; this then runs the OS permission chain (on Android 11+ that sends the
+ * user to Settings to pick "Allow all the time"). Returns true if background
+ * access was granted and geofences were armed.
+ */
+export async function enableNearbyAlerts(): Promise<boolean> {
+  const granted = await ensureGeofencePermissions();
+  storage.setNearbyAlertsEnabled(granted);
+  if (granted) await syncGeofences();
+  return granted;
+}
+
+/** Turn OFF Nearby Alerts: clear the preference + stop background monitoring. */
+export async function disableNearbyAlerts(): Promise<void> {
+  storage.setNearbyAlertsEnabled(false);
+  if (Platform.OS === 'web') return;
+  try {
+    const running = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK).catch(() => false);
+    if (running) await Location.stopGeofencingAsync(GEOFENCE_TASK).catch(() => {});
+  } catch (e) {
+    console.warn('[geofence] disable failed', (e as Error).message);
   }
 }

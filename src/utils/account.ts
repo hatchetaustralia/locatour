@@ -18,6 +18,7 @@ import { Platform } from 'react-native';
 
 import { API_URLS, API_TIMEOUT_MS } from '../constants/config';
 import { storage } from './storage';
+import { fetchPlaceCoordinates } from './places';
 import { User } from '../types';
 
 // Multipart check-in uploads carry a photo (hundreds of KB), so the quick
@@ -78,6 +79,10 @@ function profilePayload(user: User): Record<string, unknown> {
     avatar_url: user.avatarUrl ?? '',
     gender: user.gender ?? '',
     home_suburb: user.homeSuburb ?? '',
+    // Initial base coords (set at first register; ignored by sync/re-register —
+    // base changes go through changeBaseLocation()'s cooldown-guarded endpoint).
+    home_lat: user.homeCoordinates?.latitude ?? null,
+    home_lng: user.homeCoordinates?.longitude ?? null,
     interests: user.interests ?? [],
     total_xp: user.stats?.totalXP ?? 0,
     current_level: user.stats?.currentLevel ?? 1,
@@ -184,6 +189,87 @@ export async function syncAccount(): Promise<boolean> {
   } catch (e) {
     console.warn('[account] syncAccount failed (soft)', e);
     return false;
+  }
+}
+
+/**
+ * Backfill the user's base coordinates if we have a home suburb but no coords yet
+ * (e.g. profiles created before this feature). Geocodes the suburb via the server
+ * proxy and persists the result LOCALLY so the map can warm-start there. This is
+ * not a "change" — it's filling in the missing coords for the SAME suburb — so it
+ * never touches the cooldown. Fire-and-forget on app start; fail-soft.
+ */
+export async function ensureHomeCoordinates(): Promise<void> {
+  try {
+    const user = await storage.getUser();
+    if (!user || !user.homeSuburb || user.homeCoordinates) return;
+    const coords = await fetchPlaceCoordinates({ suburb: user.homeSuburb });
+    if (!coords) return;
+    const fresh = await storage.getUser();
+    if (fresh && !fresh.homeCoordinates) {
+      fresh.homeCoordinates = coords;
+      await storage.setUser(fresh);
+    }
+  } catch (e) {
+    console.warn('[account] ensureHomeCoordinates failed (soft)', e);
+  }
+}
+
+/** Result of a guarded base-location change. */
+export type BaseLocationResult =
+  | { ok: true; nextChangeAt?: string }
+  | { ok: false; reason: 'cooldown' | 'offline' | 'blocked' | 'error'; nextChangeAt?: string };
+
+/**
+ * Change the user's base/home location through the SERVER's cooldown-guarded
+ * endpoint (the only path allowed to move it after onboarding). Resolves the
+ * suburb to coordinates, then POSTs to /api/account/base-location. On success the
+ * local user is updated to match; on a 429 the server's cooldown is surfaced so
+ * the UI can say when the next change is allowed. Never throws.
+ */
+export async function changeBaseLocation(suburb: string, placeId?: string): Promise<BaseLocationResult> {
+  try {
+    const token = storage.getToken();
+    if (!token) return { ok: false, reason: 'error' };
+
+    const coords = await fetchPlaceCoordinates({ placeId, suburb });
+    if (!coords) return { ok: false, reason: 'error' };
+
+    const res = await fetchWithFallback('/api/account/base-location', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        home_suburb: suburb,
+        home_lat: coords.latitude,
+        home_lng: coords.longitude,
+      }),
+    });
+
+    if (!res) return { ok: false, reason: 'offline' };
+    if (noteBlockedIf403(res)) return { ok: false, reason: 'blocked' };
+
+    const body = (await res.json().catch(() => ({}))) as { next_change_at?: string; error?: string };
+
+    if (res.status === 429) {
+      return { ok: false, reason: 'cooldown', nextChangeAt: body.next_change_at };
+    }
+    if (!res.ok) return { ok: false, reason: 'error' };
+
+    // Mirror the accepted change locally so the map seeds from the new base.
+    const user = await storage.getUser();
+    if (user) {
+      user.homeSuburb = suburb;
+      user.homeCoordinates = coords;
+      await storage.setUser(user);
+    }
+    return { ok: true, nextChangeAt: body.next_change_at };
+  } catch (e) {
+    console.warn('[account] changeBaseLocation failed (soft)', e);
+    return { ok: false, reason: 'error' };
   }
 }
 

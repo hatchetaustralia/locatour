@@ -8,7 +8,7 @@ import {
   NativeScrollEvent,
   NativeSyntheticEvent,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -62,11 +62,24 @@ const SLIDES: Slide[] = [
 
 export default function WalkthroughScreen() {
   const router = useRouter();
+  // `?help=1` means the tour was re-opened from inside the app (Profile help
+  // button), so finishing should return to where we came from — NOT the login /
+  // onboarding flow.
+  const { help } = useLocalSearchParams<{ help?: string }>();
+  const isHelp = help === '1';
   const listRef = useRef<FlatList<Slide>>(null);
   const [index, setIndex] = useState(0);
 
-  // The story now runs up-front, so finishing it leads into account creation.
-  const finish = () => router.replace('/auth/login');
+  // The story runs up-front during onboarding (→ login). When re-opened as help,
+  // just pop back to the app.
+  const finish = () => {
+    if (isHelp) {
+      if (router.canGoBack()) router.back();
+      else router.replace('/profile');
+      return;
+    }
+    router.replace('/auth/login');
+  };
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const i = Math.round(e.nativeEvent.contentOffset.x / width);

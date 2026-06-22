@@ -17,7 +17,7 @@ import { Brand, BrandFonts, BrandRadius, stampBorder } from '@/constants/theme';
 import { storage } from '@/utils/storage';
 import { registerAccount } from '@/utils/account';
 import { INTERESTS } from '@/constants/interests';
-import { fetchSuburbs, SuburbSuggestion } from '@/utils/places';
+import { fetchSuburbs, fetchPlaceCoordinates, SuburbSuggestion } from '@/utils/places';
 
 // ---------------------------------------------------------------------------
 // Data
@@ -34,6 +34,8 @@ export default function CustomizeScreen() {
   const [showGenderDropdown, setShowGenderDropdown] = useState(false);
   const [suburbQuery, setSuburbQuery] = useState('');
   const [selectedSuburb, setSelectedSuburb] = useState('');
+  // placeId of the picked suggestion → lets us resolve precise base coordinates.
+  const [selectedPlaceId, setSelectedPlaceId] = useState('');
   const [showSuburbs, setShowSuburbs] = useState(false);
   const [suburbSuggestions, setSuburbSuggestions] = useState<SuburbSuggestion[]>([]);
   const [suburbLoading, setSuburbLoading] = useState(false);
@@ -64,8 +66,9 @@ export default function CustomizeScreen() {
     return () => clearTimeout(handle);
   }, [suburbQuery, selectedSuburb]);
 
-  const handleSuburbSelect = (suburb: string) => {
+  const handleSuburbSelect = (suburb: string, placeId?: string) => {
     setSelectedSuburb(suburb);
+    setSelectedPlaceId(placeId ?? '');
     setSuburbQuery(suburb);
     setShowSuburbs(false);
     setSuburbSuggestions([]);
@@ -102,11 +105,26 @@ export default function CustomizeScreen() {
       return;
     }
 
+    // Resolve the base suburb to coordinates so the map can warm-start at the
+    // user's home instead of a default city centre (fail-soft — onboarding must
+    // never block on a geocode; backfill on next launch covers a miss here).
+    let homeCoordinates;
+    try {
+      const coords = await fetchPlaceCoordinates({
+        placeId: selectedPlaceId || undefined,
+        suburb,
+      });
+      if (coords) homeCoordinates = coords;
+    } catch {
+      // ignore — coords are a nice-to-have
+    }
+
     // Save customised info
     const currentUser = await storage.getUser();
     if (currentUser) {
       currentUser.gender = gender;
       currentUser.homeSuburb = suburb;
+      if (homeCoordinates) currentUser.homeCoordinates = homeCoordinates;
       currentUser.interests = selectedInterests;
 
       // Auto-unlock the photographer star if photo is selected
@@ -117,7 +135,7 @@ export default function CustomizeScreen() {
       await storage.setUser(currentUser);
     } else {
       // Emergency creation
-      await storage.customizeInterests(gender, suburb, selectedInterests);
+      await storage.customizeInterests(gender, suburb, selectedInterests, homeCoordinates);
     }
 
     // Register the real, persistent server account now that the local user is
@@ -213,6 +231,7 @@ export default function CustomizeScreen() {
                     setShowGenderDropdown(false);
                     if (selectedSuburb && text !== selectedSuburb) {
                       setSelectedSuburb('');
+                      setSelectedPlaceId('');
                     }
                   }}
                   onFocus={() => {
@@ -241,7 +260,7 @@ export default function CustomizeScreen() {
                             styles.dropdownItem,
                             i !== suburbSuggestions.length - 1 && styles.dropdownItemBorder,
                           ]}
-                          onPress={() => handleSuburbSelect(s.description)}
+                          onPress={() => handleSuburbSelect(s.description, s.placeId)}
                         >
                           <Ionicons name="location-outline" size={16} color={Brand.purple} />
                           <BrandText weight="medium" style={styles.dropdownItemText}>

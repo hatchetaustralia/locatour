@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -11,18 +11,20 @@ import {
   Animated,
   PanResponder,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandText } from '@/components/brand';
+import { HiddenNearbyBar } from '@/components/hidden-nearby-bar';
+import { RainbowGlowMarker } from '@/components/rainbow-glow-marker';
 import { Brand, Spacing, stampBorder, BrandRadius } from '@/constants/theme';
 import { storage } from '@/utils/storage';
-import { unlockedTier, levelForTier, VICINITY_RADIUS_M } from '@/utils/leveling';
+import { unlockedTier, levelForTier, VICINITY_RADIUS_M, CHECK_IN_RADIUS_M, WARM_RADIUS_M } from '@/utils/leveling';
 import { formatDistance, openDirections, isWithinVicinity } from '@/utils/geo';
 import { avatarUri } from '@/utils/avatar';
-import { ExploreLocation, CheckIn } from '@/types';
+import { ExploreLocation, CheckIn, Coordinates } from '@/types';
 
 // Native Map imports (conditionally rendered)
 let MapView: any = null;
@@ -81,19 +83,35 @@ export default function ExploreScreen() {
   const searchParams = useLocalSearchParams<{ selectedId?: string }>();
 
   const [locations, setLocations] = useState<ExploreLocation[]>([]);
+  // Hidden spots the user has unlocked by reaching them — always shown on the map.
+  const [unlockedIds, setUnlockedIds] = useState<Set<string>>(() => new Set(storage.getUnlockedLocationIds()));
   const [selectedLoc, setSelectedLoc] = useState<ExploreLocation | null>(null);
   const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
   const [userLevel, setUserLevel] = useState(1);
-  // react-native-maps on Android won't paint a remote-image custom marker unless
-  // tracksViewChanges stays true until the image loads — flipped off via onLoad.
-  const [trackUserMarker, setTrackUserMarker] = useState(true);
+  // react-native-maps snapshots a custom marker to a bitmap; we must keep
+  // tracksViewChanges TRUE until the avatar image has actually painted, else the
+  // marker freezes as an empty ring. Driven by load state (not a guess timer).
+  const [avatarLoaded, setAvatarLoaded] = useState(false);
+  // If the remote avatar image fails (or never loads), fall back to an icon so the
+  // "you are here" marker still shows something (never an empty ring).
+  const [avatarFailed, setAvatarFailed] = useState(false);
+  // Live map heading (degrees) — drives the compass rose's north needle.
+  const [mapHeading, setMapHeading] = useState(0);
   const [visitedLogs, setVisitedLogs] = useState<CheckIn[]>([]);
   const [showAnnouncement, setShowAnnouncement] = useState(true);
   const [activeSlide, setActiveSlide] = useState(0);
   // Standard vs satellite (hybrid) basemap. Online-only for now; offline tiles
   // are a future MapLibre migration (see docs/locatour/02-map-stack-decision.md).
   const [satellite, setSatellite] = useState(false);
+  // Captured ONCE at mount (synchronously) so the very first paint can already be
+  // centred on home; null on a cold start before the profile finished loading.
+  const initialHome = useRef(storage.getCachedUser()?.homeCoordinates ?? null).current;
+  // The user's base/home coordinates (geocoded from their suburb at onboarding).
+  // Warm-starts the map at home so it doesn't flash a broad default set and then
+  // narrow once GPS resolves. Seeded synchronously from initialHome so the very
+  // first render's vicinity filter already uses it; GPS takes over once it arrives.
+  const [homeCoords, setHomeCoords] = useState<Coordinates | null>(initialHome);
 
   const flatListRef = useRef<FlatList>(null);
   const mapRef = useRef<any>(null);
@@ -136,11 +154,21 @@ export default function ExploreScreen() {
       const user = await storage.getUser();
       const level = user?.stats.currentLevel ?? 1;
       setUserLevel(level);
+      // Refresh unlocked spots (a just-reached hidden spot should appear now).
+      setUnlockedIds(new Set(storage.getUnlockedLocationIds()));
+      // Warm-start at the user's base: seed the slice + camera from their home
+      // coordinates so pins are already local on the first paint, instead of
+      // loading a broad set and snapping once GPS arrives.
+      const home = user?.homeCoordinates ?? null;
+      if (home) setHomeCoords(home);
       // Pull the tier-relevant slice (≤ unlockedTier+3 within reach + majors).
       // We DON'T cap at unlockedTier here: the map render below only draws ≤
       // unlocked pins, but keeping the wider slice lets a tapped locked teaser
       // (from Home) open its sheet, and the camera detect the +3 hidden band.
-      const allLocs = await storage.getLocations({ level });
+      // Seed it localized to home when we have it (else the broad set).
+      const allLocs = home
+        ? await storage.getLocations({ latitude: home.latitude, longitude: home.longitude, level })
+        : await storage.getLocations({ level });
       setLocations(allLocs);
       // Capture the user's avatar for the live "you are here" map marker.
       setUserAvatar(avatarUri(user?.avatarUrl, user?.username));
@@ -212,6 +240,15 @@ export default function ExploreScreen() {
     };
   }, [searchParams.selectedId]);
 
+  // Refresh unlocked spots every time the map regains focus — so a spot just
+  // unlocked on the camera screen appears the moment the user returns here, even
+  // if this tab was already mounted (so init() didn't re-run).
+  useFocusEffect(
+    useCallback(() => {
+      setUnlockedIds(new Set(storage.getUnlockedLocationIds()));
+    }, [])
+  );
+
   // Whenever a spot is opened (via a marker tap or a deep-link selectedId),
   // glide the camera to it and nudge it upward so the pin sits clear above the
   // detail sheet (which covers the lower portion of the screen).
@@ -220,8 +257,8 @@ export default function ExploreScreen() {
     const latitudeDelta = 0.02;
     mapRef.current.animateToRegion(
       {
-        // Centre south of the pin so the pin renders in the upper third.
-        latitude: selectedLoc.coordinates.latitude - latitudeDelta * 0.22,
+        // Centre well south of the pin so it renders high, clear above the sheet.
+        latitude: selectedLoc.coordinates.latitude - latitudeDelta * 0.3,
         longitude: selectedLoc.coordinates.longitude,
         latitudeDelta,
         longitudeDelta: latitudeDelta,
@@ -229,6 +266,36 @@ export default function ExploreScreen() {
       450
     );
   }, [selectedLoc]);
+
+  // Keep the avatar marker re-rendering until its image actually paints (driven by
+  // onLoad, not a guess timer — the old 3s timer froze the snapshot before slow
+  // images arrived). A 6s backstop falls back to the icon so it can never be stuck
+  // blank. Reset whenever the avatar URL changes.
+  const avatarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!userAvatar) return;
+    setAvatarLoaded(false);
+    setAvatarFailed(false);
+    if (avatarTimer.current) clearTimeout(avatarTimer.current);
+    avatarTimer.current = setTimeout(() => {
+      setAvatarFailed(true);
+      setAvatarLoaded(true);
+    }, 6000);
+    return () => {
+      if (avatarTimer.current) clearTimeout(avatarTimer.current);
+    };
+  }, [userAvatar]);
+
+  // Centre the map on the user's base once we know it AND the map is mounted, so
+  // a cold start that resolves home after first paint still seeds there. Skipped
+  // once GPS has centred the camera (didCenterRef), so GPS always wins.
+  useEffect(() => {
+    if (!homeCoords || didCenterRef.current || Platform.OS === 'web') return;
+    mapRef.current?.animateToRegion(
+      { latitude: homeCoords.latitude, longitude: homeCoords.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 },
+      0
+    );
+  }, [homeCoords]);
 
   const handleMarkerSelect = async (loc: ExploreLocation) => {
     translateY.setValue(0);
@@ -300,6 +367,42 @@ export default function ExploreScreen() {
     return Math.round(d);
   };
 
+  // Nearest UNDISCOVERED hidden spot (tier above the user's level, not yet
+  // checked-in or unlocked). Lets explorers hunt a secret from the lower-battery
+  // map view — same "Something's hidden nearby" guide as the camera.
+  const nearestHidden = (() => {
+    if (!userLocation) return null;
+    const visited = new Set(visitedLogs.map((c) => c.locationId));
+    let bestId: string | null = null;
+    let bestDist = Infinity;
+    for (const loc of locations) {
+      if (loc.tier <= unlockedTier(userLevel)) continue;
+      if (visited.has(loc.id) || unlockedIds.has(loc.id)) continue;
+      const d = getDistanceToLocation(loc.coordinates);
+      if (d != null && d < bestDist) {
+        bestDist = d;
+        bestId = loc.id;
+      }
+    }
+    return bestId ? { id: bestId, distance: bestDist } : null;
+  })();
+  // Within warm range → show the guide bar; within check-in range → unlock it.
+  const hiddenNearbyDist = nearestHidden && nearestHidden.distance <= WARM_RADIUS_M ? nearestHidden.distance : null;
+  const hiddenInReachId =
+    nearestHidden && nearestHidden.distance <= CHECK_IN_RADIUS_M ? nearestHidden.id : null;
+
+  useEffect(() => {
+    // Reaching a hidden spot on the map unlocks it (persists on the map) AND
+    // opens its slide card right there — so the explorer can read about it and
+    // check in without switching to the camera.
+    if (hiddenInReachId && storage.unlockLocation(hiddenInReachId)) {
+      setUnlockedIds(new Set(storage.getUnlockedLocationIds()));
+      const found = locations.find((l) => l.id === hiddenInReachId);
+      if (found) handleMarkerSelect(found);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hiddenInReachId]);
+
   // Brand-styled map pin: rounded badge with a dark stamp border. Checked-in
   // locations get a gold XP badge; not-yet-visited show the category icon.
   const renderPinBadge = (loc: ExploreLocation, isSelected: boolean) => {
@@ -350,23 +453,30 @@ export default function ExploreScreen() {
   // Effective radius mirrors camera.tsx: the location's own geofence (default
   // 150m) floored at 50m so the tolerance is never unreasonably tight.
   const selectedDistance = selectedLoc ? getDistanceToLocation(selectedLoc.coordinates) : null;
-  const selectedRadius = selectedLoc
-    ? Math.max(50, selectedLoc.geofenceRadius ?? 150)
-    : 150;
+  // Hard 20m check-in radius for ALL spots (shared with the camera gate).
+  const selectedRadius = CHECK_IN_RADIUS_M;
   const tooFar = selectedDistance != null && selectedDistance > selectedRadius;
   // Hard tier-lock: a surfaced spot above your tier requires leveling up — no
-  // check-in even if you're standing on it (the camera enforces this too).
-  const selectedLocked = !!selectedLoc && selectedLoc.tier > unlockedTier(userLevel);
+  // check-in even if you're standing on it (the camera enforces this too). EXCEPT
+  // a hidden spot the user has physically UNLOCKED, which becomes checkable.
+  const selectedLocked =
+    !!selectedLoc &&
+    selectedLoc.tier > unlockedTier(userLevel) &&
+    !unlockedIds.has(selectedLoc.id);
   const checkInDisabled = !!cooldownUntil || tooFar || selectedLocked;
 
   // Local-first vicinity gate (layered on top of the tier filter already applied
   // to `locations` in init): a spot shows if it's a major destination, OR we have
-  // no GPS fix yet, OR it's within VICINITY_RADIUS_M of the user. `userCoords` is
-  // null until the watch delivers a fix, so the world stays visible pre-fix.
+  // neither a GPS fix nor a known base, OR it's within VICINITY_RADIUS_M. We fall
+  // back to the user's home base before GPS so the map stays local from the first
+  // paint instead of showing the whole world, then GPS refines it.
   const userCoords = userLocation
     ? { latitude: userLocation.coords.latitude, longitude: userLocation.coords.longitude }
-    : null;
+    : homeCoords;
   const visibleLocations = locations.filter((loc) => {
+    // A hidden spot the user has physically UNLOCKED (reached within range) is
+    // always on their map from then on — it bypasses the tier + vicinity gates.
+    if (unlockedIds.has(loc.id)) return true;
     // The map draws only your UNLOCKED pins (+ always-visible majors + a spot you
     // explicitly opened, e.g. a "Worth the trip" teaser tapped on Home). The
     // +1/+2 locked teasers and the +3 hidden band are never normal pins.
@@ -392,8 +502,16 @@ export default function ExploreScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Announcement Overlay Banner — gold stamp card with dismiss */}
-      {showAnnouncement && (
+      {/* Top overlay: while a hidden spot is nearby, the guide bar takes over so
+          the user can hunt it from the (lower-battery) map; otherwise the gold
+          announcement shows — and comes back here once they leave the area,
+          unless they'd already dismissed it. */}
+      {hiddenNearbyDist != null ? (
+        <HiddenNearbyBar
+          distance={hiddenNearbyDist}
+          style={[styles.topOverlay, Platform.OS !== 'web' && { top: insets.top + 8 }]}
+        />
+      ) : showAnnouncement ? (
         <View
           style={[
             styles.announcement,
@@ -411,7 +529,7 @@ export default function ExploreScreen() {
             <Ionicons name="close" size={18} color={Brand.ink} />
           </TouchableOpacity>
         </View>
-      )}
+      ) : null}
 
       {/* Map View Section */}
       <View style={styles.mapContainer}>
@@ -452,8 +570,10 @@ export default function ExploreScreen() {
             ref={mapRef}
             style={styles.map}
             initialRegion={{
-              latitude: -31.953,
-              longitude: 115.845,
+              // Open at the user's base if we have it cached at mount; else a
+              // sensible default (GPS / the init seed refine it immediately).
+              latitude: initialHome?.latitude ?? -31.953,
+              longitude: initialHome?.longitude ?? 115.845,
               latitudeDelta: 0.05,
               longitudeDelta: 0.05,
             }}
@@ -465,6 +585,14 @@ export default function ExploreScreen() {
             showsMyLocationButton={false}
             showsCompass={false}
             toolbarEnabled={false}
+            // Track the camera heading so our compass needle points to true north
+            // and we know whether the map is already north-up.
+            onRegionChangeComplete={async () => {
+              try {
+                const cam = await mapRef.current?.getCamera();
+                if (cam && typeof cam.heading === 'number') setMapHeading(cam.heading);
+              } catch {}
+            }}
           >
             {/* Soft "your reach" bubble: the VICINITY_RADIUS_M radius around the
                 user, in low-opacity brand teal, drawn once we have a fix. */}
@@ -488,7 +616,8 @@ export default function ExploreScreen() {
               </Marker>
             ))}
 
-            {/* "You are here" — the user's avatar in a teal ring. */}
+            {/* "You are here" — the user's avatar in a teal ring; a pink glow ring
+                appears around it while a hidden spot is nearby. */}
             {userLocation && userAvatar && (
               <Marker
                 coordinate={{
@@ -496,65 +625,89 @@ export default function ExploreScreen() {
                   longitude: userLocation.coords.longitude,
                 }}
                 anchor={{ x: 0.5, y: 0.5 }}
-                tracksViewChanges={trackUserMarker}
+                // Track until the avatar paints; also while a hidden spot is near
+                // so the glow renders. Frozen otherwise (perf).
+                tracksViewChanges={!avatarLoaded || hiddenNearbyDist != null}
               >
-                <View style={styles.userMarkerRing}>
-                  <Image
-                    source={{ uri: userAvatar }}
-                    style={styles.userMarkerAvatar}
-                    // Keep redrawing for a beat AFTER the avatar loads so it
-                    // actually paints into the marker before we freeze it —
-                    // otherwise Android snapshots an empty circle.
-                    onLoad={() => setTimeout(() => setTrackUserMarker(false), 800)}
-                  />
+                <View style={styles.userMarkerWrap}>
+                  {/* Static rainbow halo (matches the camera shutter glow) shown
+                      only while a hidden spot is near. It's a plain <Image> of a
+                      Skia-rasterized PNG so it survives the marker bitmap snapshot;
+                      a live Skia <Canvas> renders blank inside an Android Marker. */}
+                  {hiddenNearbyDist != null && <RainbowGlowMarker />}
+                  <View style={[styles.userMarkerRing, hiddenNearbyDist != null && styles.userMarkerRingHot]}>
+                    {avatarFailed ? (
+                      <Ionicons name="person" size={20} color={Brand.purple} />
+                    ) : (
+                      <Image
+                        source={{ uri: userAvatar }}
+                        style={styles.userMarkerAvatar}
+                        onLoad={() => {
+                          setAvatarLoaded(true);
+                          if (avatarTimer.current) clearTimeout(avatarTimer.current);
+                        }}
+                        onError={() => {
+                          setAvatarFailed(true);
+                          setAvatarLoaded(true);
+                          if (avatarTimer.current) clearTimeout(avatarTimer.current);
+                        }}
+                      />
+                    )}
+                  </View>
                 </View>
               </Marker>
             )}
           </MapView>
         )}
 
-        {/* Standard / satellite toggle (top-right over the map) */}
-        <TouchableOpacity
-          style={[
-            styles.mapTypeToggle,
-            stampBorder,
-            Platform.OS !== 'web' && { top: insets.top + (showAnnouncement ? 56 : 8) },
-          ]}
-          onPress={() => setSatellite((s) => !s)}
-          activeOpacity={0.85}
-        >
-          <Ionicons
-            name={satellite ? 'map' : 'globe-outline'}
-            size={18}
-            color={Brand.ink}
-          />
-          <BrandText weight="bold" color={Brand.ink} style={styles.mapTypeToggleText}>
-            {satellite ? 'Standard' : 'Satellite'}
-          </BrandText>
-        </TouchableOpacity>
-
-        {/* Recenter / my-location button (native only). Sits above the floating
-            pill tab bar, clear of the bottom inset. */}
+        {/* Satellite + reset-north compass + recenter buttons (native only). Three
+            equal-size icon buttons stacked above the floating pill tab bar, clear
+            of the bottom inset (Google-Maps style). */}
         {Platform.OS !== 'web' && MapView && (
-          <TouchableOpacity
-            style={[styles.recenterBtn, stampBorder, { bottom: insets.bottom + 88 }]}
-            onPress={() => {
-              if (userLocation) {
-                mapRef.current?.animateToRegion(
-                  {
-                    latitude: userLocation.coords.latitude,
-                    longitude: userLocation.coords.longitude,
-                    latitudeDelta: 0.02,
-                    longitudeDelta: 0.02,
-                  },
-                  500
-                );
+          <>
+            {/* Satellite / standard toggle — icon only, top of the stack. */}
+            <TouchableOpacity
+              style={[styles.recenterBtn, stampBorder, { bottom: insets.bottom + 192 }]}
+              onPress={() => setSatellite((s) => !s)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name={satellite ? 'map' : 'globe-outline'} size={20} color={Brand.ink} />
+            </TouchableOpacity>
+            {/* Reset-to-north compass. Red half = north; the rose counter-rotates
+                with the map so it always points at true north. Tap = rotate to N. */}
+            <TouchableOpacity
+              style={[styles.recenterBtn, stampBorder, { bottom: insets.bottom + 140 }]}
+              onPress={() =>
+                // Re-orient the camera to true north (and flatten any pitch).
+                mapRef.current?.animateCamera({ heading: 0, pitch: 0 }, { duration: 300 })
               }
-            }}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="locate" size={20} color={Brand.ink} />
-          </TouchableOpacity>
+              activeOpacity={0.85}
+            >
+              <View style={[styles.compassRose, { transform: [{ rotate: `${-mapHeading}deg` }] }]}>
+                <View style={styles.compassNeedleN} />
+                <View style={styles.compassNeedleS} />
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.recenterBtn, stampBorder, { bottom: insets.bottom + 88 }]}
+              onPress={() => {
+                if (userLocation) {
+                  mapRef.current?.animateToRegion(
+                    {
+                      latitude: userLocation.coords.latitude,
+                      longitude: userLocation.coords.longitude,
+                      latitudeDelta: 0.02,
+                      longitudeDelta: 0.02,
+                    },
+                    500
+                  );
+                }
+              }}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="locate" size={20} color={Brand.ink} />
+            </TouchableOpacity>
+          </>
         )}
       </View>
 
@@ -775,6 +928,15 @@ const styles = StyleSheet.create({
   },
 
   // Announcement banner (native `top` is applied inline from safe-area insets)
+  // Positioning for the hidden-nearby guide bar (overlays where the announcement
+  // sits; the bar carries its own pink/rounded visuals).
+  topOverlay: {
+    position: 'absolute',
+    top: Platform.OS === 'web' ? Spacing.three : 52,
+    left: Spacing.three,
+    right: Spacing.three,
+    zIndex: 20,
+  },
   announcement: {
     position: 'absolute',
     top: Platform.OS === 'web' ? Spacing.three : 52,
@@ -804,20 +966,32 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   // Satellite toggle (native `top` is applied inline from safe-area insets)
-  mapTypeToggle: {
-    position: 'absolute',
-    top: Platform.OS === 'web' ? 72 : 96,
-    right: Spacing.three,
-    flexDirection: 'row',
+  // Compass rose inside the reset-north button: a diamond needle, red half = N.
+  compassRose: {
+    width: 22,
+    height: 22,
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: Brand.surface,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.one + 2,
-    zIndex: 20,
+    justifyContent: 'center',
   },
-  mapTypeToggleText: {
-    fontSize: 12,
+  compassNeedleN: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderBottomWidth: 9,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderBottomColor: '#ef4444', // north — red
+  },
+  compassNeedleS: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 9,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: Brand.ink, // south — dark
   },
   // Recenter / my-location button (native only; `bottom` applied inline).
   recenterBtn: {
@@ -852,6 +1026,18 @@ const styles = StyleSheet.create({
     height: 34,
     borderRadius: 17,
     backgroundColor: Brand.surface,
+  },
+  // Wrapper gives the pink "hidden nearby" glow room around the avatar ring.
+  // Sized to fit the rainbow halo Image (90x90) so the marker bitmap isn't clipped.
+  userMarkerWrap: {
+    width: 90,
+    height: 90,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  userMarkerRingHot: {
+    // White ring around the rainbow halo — echoes the camera shutter button.
+    borderColor: '#fff',
   },
   webMapBackground: {
     flex: 1,
@@ -957,6 +1143,9 @@ const styles = StyleSheet.create({
     bottom: Platform.OS === 'web' ? Spacing.six + 20 : 0,
     top: 0,
     justifyContent: 'flex-end',
+    // Sit above the map's floating controls (satellite/compass/recenter, zIndex 20)
+    // so the card covers them instead of the buttons poking through it.
+    zIndex: 30,
   },
   bottomSheet: {
     marginHorizontal: 0,
@@ -966,6 +1155,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: BrandRadius.sticker,
     overflow: 'hidden',
     maxHeight: '85%',
+    // Android stacks by elevation; the buttons have none, so this floats the card
+    // above them (and gives it a natural lift shadow).
+    elevation: 12,
   },
   // Draggable grabber zone (handle + title) at the top of the sheet.
   sheetGrabber: {

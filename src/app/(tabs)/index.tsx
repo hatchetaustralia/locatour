@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Location from 'expo-location';
 
 import { BrandAssets, BrandText } from '@/components/brand';
@@ -38,6 +38,7 @@ function distanceMeters(
 
 export default function HomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [user, setUser] = useState<User | null>(null);
   const [locations, setLocations] = useState<ExploreLocation[]>([]);
@@ -60,9 +61,18 @@ export default function HomeScreen() {
         }
         setUser(currentUser);
         // Surface unlocked spots + the +1/+2 locked teasers (and majors). The
-        // +3 hidden band is never shown here (it's discover-only). Instant load
-        // from cache/bundle; the located fetch below re-syncs the real slice.
-        const allLocs = await storage.getLocations();
+        // +3 hidden band is never shown here (it's discover-only). Seed the slice
+        // localized to the user's base when we have it (so the lists open with
+        // their actual nearby spots, not a default set); the located fetch below
+        // re-syncs from GPS once it resolves.
+        const home = currentUser.homeCoordinates ?? null;
+        const allLocs = home
+          ? await storage.getLocations({
+              latitude: home.latitude,
+              longitude: home.longitude,
+              level: currentUser.stats.currentLevel,
+            })
+          : await storage.getLocations();
         const cap = unlockedTier(currentUser.stats.currentLevel) + LOCK_TEASER_RANGE;
         setLocations(allLocs.filter((loc) => loc.isMajorDestination || loc.tier <= cap));
 
@@ -133,14 +143,17 @@ export default function HomeScreen() {
   if (!user) return null;
 
   const unlocked = unlockedTier(user.stats.currentLevel);
+  // Distance reference: live GPS when we have it, else the user's base so the
+  // lists are sensibly ordered/filtered from the first paint (not unordered).
+  const activeCoords = userCoords ?? user.homeCoordinates ?? null;
   // Per-card helpers. A spot is LOCKED if it's above the player's tier (surfaced
   // +1/+2 teasers + any above-tier major) — hard-locked, level up to reach it.
   // "Worth the trip" = a real trip beyond the 10km local bubble.
   const isLocked = (loc: ExploreLocation) => loc.tier > unlocked;
   const isWorthTrip = (loc: ExploreLocation) =>
-    !!userCoords &&
+    !!activeCoords &&
     !loc.isMajorDestination &&
-    distanceMeters(userCoords, loc.coordinates) > VICINITY_RADIUS_M;
+    distanceMeters(activeCoords, loc.coordinates) > VICINITY_RADIUS_M;
 
   // The home lists work at the 200km REACH range (the map stays a tight local
   // bubble — that's separate): your local spots PLUS a taste of what's further
@@ -148,8 +161,8 @@ export default function HomeScreen() {
   const reachLocations = locations.filter(
     (loc) =>
       loc.isMajorDestination ||
-      !userCoords ||
-      distanceMeters(userCoords, loc.coordinates) <= REACH_RADIUS_M
+      !activeCoords ||
+      distanceMeters(activeCoords, loc.coordinates) <= REACH_RADIUS_M
   );
 
   // Split reachable spots into what you can VISIT NOW (accessible at your tier)
@@ -159,8 +172,8 @@ export default function HomeScreen() {
   // wall of locks (the old `points >= 300` top-pick rule only ever matched
   // Tier 3+, which are all locked for a beginner).
   const byDistance = (a: ExploreLocation, b: ExploreLocation) =>
-    userCoords
-      ? distanceMeters(userCoords, a.coordinates) - distanceMeters(userCoords, b.coordinates)
+    activeCoords
+      ? distanceMeters(activeCoords, a.coordinates) - distanceMeters(activeCoords, b.coordinates)
       : 0;
   const byValue = (a: ExploreLocation, b: ExploreLocation) => b.points - a.points;
   const byNearestThenValue = (a: ExploreLocation, b: ExploreLocation) => byDistance(a, b) || byValue(a, b);
@@ -229,7 +242,10 @@ export default function HomeScreen() {
 
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingTop: Spacing.two, paddingBottom: insets.bottom + 110 },
+          ]}
         >
           {/* ── This month's challenges ── */}
           <View style={styles.section}>
@@ -330,7 +346,7 @@ export default function HomeScreen() {
 
           {/* ── This week's top picks (below challenges) ── */}
           <View style={styles.section}>
-            <View style={styles.sectionTitleRow}>
+            <View style={[styles.sectionTitleRow, { marginBottom: Spacing.three }]}>
               <Ionicons name="medal-outline" size={18} color={Brand.ink} />
               <BrandText weight="semibold" style={styles.sectionTitle}>
                 This weeks top picks
@@ -572,6 +588,7 @@ const styles = StyleSheet.create({
   challengeMeta: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: Spacing.two,
     marginTop: 2,
   },

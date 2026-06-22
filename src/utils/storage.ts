@@ -867,6 +867,10 @@ class StorageManager {
   private achievementsFetched = false;
   private locations: ExploreLocation[] = INITIAL_LOCATIONS;
   private offlineQueue: SQLiteQueueItem[] = [];
+  // Hidden/locked spots the user has UNLOCKED by physically reaching them (within
+  // CHECK_IN_RADIUS_M). Once unlocked a spot stays on their map permanently, even
+  // before they check in. Persisted as a JSON array of location ids.
+  private unlockedLocationIds: Set<string> = new Set();
   private db: any = null;
 
   constructor() {
@@ -933,6 +937,7 @@ class StorageManager {
       const storedUser = this.readKey('locatour_user');
       const storedCheckins = this.readKey('locatour_checkins');
       const storedUnlocked = this.readKey('locatour_ach_unlocked');
+      const storedUnlockedLocs = this.readKey('locatour_unlocked_locations');
       const storedQueue = this.readKey('locatour_queue');
 
       if (storedUser) {
@@ -945,6 +950,7 @@ class StorageManager {
       }
       if (storedCheckins) this.checkIns = JSON.parse(storedCheckins);
       if (storedUnlocked) this.unlocked = JSON.parse(storedUnlocked) || {};
+      if (storedUnlockedLocs) this.unlockedLocationIds = new Set(JSON.parse(storedUnlockedLocs) || []);
       if (storedQueue) this.offlineQueue = JSON.parse(storedQueue);
 
       // Hydrate the last good API location result (if any) so an offline launch
@@ -961,6 +967,7 @@ class StorageManager {
     try {
       if (this.user) this.writeKey('locatour_user', JSON.stringify(this.user));
       this.writeKey('locatour_checkins', JSON.stringify(this.checkIns));
+      this.writeKey('locatour_unlocked_locations', JSON.stringify([...this.unlockedLocationIds]));
       this.writeKey('locatour_queue', JSON.stringify(this.offlineQueue));
     } catch (e) {
       console.error('Failed to save storage state', e);
@@ -970,6 +977,51 @@ class StorageManager {
   // --- Profile Operations ---
   public async getUser(): Promise<User | null> {
     return this.user;
+  }
+
+  /**
+   * Synchronous read of the in-memory profile (already loaded at app start).
+   * Lets a screen seed its first render — e.g. the map's initial region from the
+   * user's base coordinates — without awaiting. Null before load completes.
+   */
+  public getCachedUser(): User | null {
+    return this.user;
+  }
+
+  // --- Unlocked-location Operations ---
+  // A spot becomes "unlocked" the moment the user physically reaches it (within
+  // CHECK_IN_RADIUS_M). It then stays on their map forever, even before they
+  // check in. Distinct from a check-in (which earns points via a photo).
+  public getUnlockedLocationIds(): string[] {
+    return [...this.unlockedLocationIds];
+  }
+
+  public isLocationUnlocked(id: string): boolean {
+    return this.unlockedLocationIds.has(id);
+  }
+
+  /** Mark a spot unlocked + persist. Returns true if this was a NEW unlock. */
+  public unlockLocation(id: string): boolean {
+    if (this.unlockedLocationIds.has(id)) return false;
+    this.unlockedLocationIds.add(id);
+    this.writeKey('locatour_unlocked_locations', JSON.stringify([...this.unlockedLocationIds]));
+    return true;
+  }
+
+  // --- Nearby-alerts (background geofence notifications) opt-in ---
+  // Off by default (store-friendly: we never request "all the time" location
+  // until the user deliberately enables this). Also gates the explorer point
+  // multiplier, as an incentive to turn it on.
+  public getNearbyAlertsEnabled(): boolean {
+    try {
+      return this.readKey('locatour_nearby_alerts') === '1';
+    } catch {
+      return false;
+    }
+  }
+
+  public setNearbyAlertsEnabled(enabled: boolean): void {
+    this.writeKey('locatour_nearby_alerts', enabled ? '1' : '0');
   }
 
   public async setUser(user: User): Promise<void> {
@@ -987,7 +1039,7 @@ class StorageManager {
     this.writeKey('locatour_user', '');
   }
 
-  public async updateProfile(displayName: string, username: string, bio: string, avatarUrl: string, interests?: string[]): Promise<User | null> {
+  public async updateProfile(displayName: string, username: string, bio: string, avatarUrl: string, interests?: string[], homeCoordinates?: Coordinates): Promise<User | null> {
     if (!this.user) return null;
     this.user = {
       ...this.user,
@@ -996,12 +1048,13 @@ class StorageManager {
       bio,
       avatarUrl,
       ...(interests ? { interests } : {}),
+      ...(homeCoordinates ? { homeCoordinates } : {}),
     };
     this.saveState();
     return this.user;
   }
 
-  public async customizeInterests(gender: string, homeSuburb: string, interests: string[]): Promise<User | null> {
+  public async customizeInterests(gender: string, homeSuburb: string, interests: string[], homeCoordinates?: Coordinates): Promise<User | null> {
     if (!this.user) {
       // Create empty profile template if not authenticated yet
       this.user = {
@@ -1012,6 +1065,7 @@ class StorageManager {
         avatarUrl: 'https://api.dicebear.com/7.x/adventurer/png?seed=Explorer&backgroundColor=c0aede',
         gender,
         homeSuburb,
+        ...(homeCoordinates ? { homeCoordinates } : {}),
         interests,
         stats: {
           dayStreak: 0,
@@ -1029,6 +1083,7 @@ class StorageManager {
         ...this.user,
         gender,
         homeSuburb,
+        ...(homeCoordinates ? { homeCoordinates } : {}),
         interests
       };
     }

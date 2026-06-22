@@ -11,6 +11,7 @@ import {
   FlatList,
   Dimensions,
   Alert,
+  Switch,
   type ListRenderItemInfo,
 } from 'react-native';
 import {
@@ -26,12 +27,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BrandText, StampButton } from '@/components/brand';
+import { BrandText } from '@/components/brand';
 import { Brand, BrandFonts, BrandRadius, stampBorder, Spacing } from '@/constants/theme';
 import { storage } from '@/utils/storage';
 import { checkUsernameAvailable, UsernameStatus } from '@/utils/account';
+import { enableNearbyAlerts, disableNearbyAlerts } from '@/utils/geofencing';
+import { NEARBY_ALERTS_BONUS_PCT } from '@/utils/leveling';
 import { avatarUri } from '@/utils/avatar';
 import { User, Achievement, CheckIn, ExploreLocation } from '@/types';
 import { INTERESTS } from '@/constants/interests';
@@ -222,8 +225,12 @@ const DIFFICULTY_COLOR: Record<string, string> = {
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   const [user, setUser] = useState<User | null>(null);
+  // Background "Nearby alerts" opt-in (off by default). Initialised synchronously
+  // from storage so the switch reflects the saved preference on first paint.
+  const [nearbyAlerts, setNearbyAlerts] = useState(() => storage.getNearbyAlertsEnabled());
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -311,6 +318,13 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (!isEditing || !user) return;
     const u = editUsername.trim();
+    // No feedback when the handle is unchanged from the user's current one —
+    // they haven't made a change, so don't flash "that one's free".
+    const current = user.username.startsWith('@') ? user.username.slice(1) : user.username;
+    if (u.toLowerCase() === current.toLowerCase()) {
+      setUsernameStatus(null);
+      return;
+    }
     if (u.length < 3) {
       setUsernameStatus(u.length === 0 ? null : 'too_short');
       return;
@@ -409,6 +423,37 @@ export default function ProfileScreen() {
     );
   };
 
+  // Toggle background Nearby Alerts. Turning ON shows the required prominent
+  // disclosure BEFORE the OS permission request (Google Play background-location
+  // policy); turning OFF stops monitoring immediately.
+  const handleToggleAlerts = (value: boolean) => {
+    if (!value) {
+      void disableNearbyAlerts();
+      setNearbyAlerts(false);
+      return;
+    }
+    Alert.alert(
+      'Turn on Nearby Alerts?',
+      `Locatour will use your location in the background — even when the app is closed — to notify you when you wander near a hidden spot, so you discover places as you go about your day.\n\n• You earn +${NEARBY_ALERTS_BONUS_PCT}% points on every check-in while it's on.\n• It only checks your location against nearby spots (battery-light) — never tracked or shared.\n• Turn it off anytime here.`,
+      [
+        { text: 'Not now', style: 'cancel' },
+        {
+          text: 'Turn on',
+          onPress: async () => {
+            const ok = await enableNearbyAlerts();
+            setNearbyAlerts(ok);
+            if (!ok) {
+              Alert.alert(
+                'Allow location “All the time”',
+                'To get nearby alerts, set Locatour’s location permission to “Allow all the time” in your phone’s Settings.'
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleLogout = () => {
     Alert.alert('Log out', 'Are you sure you want to log out?', [
       { text: 'Cancel', style: 'cancel' },
@@ -495,7 +540,7 @@ export default function ProfileScreen() {
         </View>
 
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 110 }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
@@ -649,13 +694,8 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {/* Auto-save handles persistence; "Done" just leaves edit mode. */}
-          <StampButton
-            variant="primary"
-            label="DONE"
-            onPress={exitEditMode}
-            style={styles.saveButton}
-          />
+          {/* No save/done button: edits auto-save as you type, and the back arrow
+              (top-left) leaves edit mode. */}
         </ScrollView>
       </SafeAreaView>
     );
@@ -666,9 +706,18 @@ export default function ProfileScreen() {
   // ---------------------------------------------------------------------------
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Settings gear top-right */}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 110 }]}
+      >
+        {/* Top bar: help/walkthrough top-left, settings gear top-right */}
         <View style={styles.topBar}>
+          <TouchableOpacity
+            style={[styles.iconSquare, stampBorder]}
+            onPress={() => router.push('/auth/walkthrough?help=1')}
+          >
+            <Ionicons name="help-circle-outline" size={22} color={Brand.ink} />
+          </TouchableOpacity>
           <TouchableOpacity style={[styles.iconSquare, stampBorder]} onPress={enterEditMode}>
             <Ionicons name="settings-outline" size={20} color={Brand.ink} />
           </TouchableOpacity>
@@ -767,6 +816,28 @@ export default function ProfileScreen() {
               <StatCard icon="flash" color={Brand.sticker.gold} value={stats.totalXP} label="Total XP" />
               <StatCard icon="location" color={Brand.purple} value={stats.uniqueLocations} label="Unique locations" />
               <StatCard icon="map" color={Brand.sticker.green} value={stats.totalCheckIns} label="Total check-ins" />
+            </View>
+
+            {/* Nearby alerts opt-in — incentivised with a points multiplier. */}
+            <View style={[styles.alertsCard, stampBorder]}>
+              <View style={styles.alertsInfo}>
+                <View style={styles.alertsTitleRow}>
+                  <Ionicons name="notifications" size={16} color={Brand.purple} />
+                  <BrandText weight="semibold" style={styles.blockTitle}>Nearby alerts</BrandText>
+                  <View style={styles.alertsBonusPill}>
+                    <BrandText weight="bold" color={Brand.bg} style={styles.alertsBonusText}>+{NEARBY_ALERTS_BONUS_PCT}% pts</BrandText>
+                  </View>
+                </View>
+                <BrandText weight="medium" color={Brand.inkSecondary} style={styles.alertsSubtitle}>
+                  Get pinged when you wander near a hidden spot — and earn +{NEARBY_ALERTS_BONUS_PCT}% points on every check-in.
+                </BrandText>
+              </View>
+              <Switch
+                value={nearbyAlerts}
+                onValueChange={handleToggleAlerts}
+                trackColor={{ true: Brand.purple, false: 'rgba(42,36,33,0.2)' }}
+                thumbColor="#fff"
+              />
             </View>
 
             {/* Interests */}
@@ -1063,7 +1134,8 @@ const styles = StyleSheet.create({
   // Top bar
   topBar: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingTop: Spacing.two,
   },
   iconSquare: {
@@ -1187,6 +1259,38 @@ const styles = StyleSheet.create({
   blockTitle: {
     fontSize: 16,
     color: Brand.ink,
+  },
+  // Nearby-alerts opt-in card
+  alertsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    backgroundColor: Brand.surface,
+    borderRadius: BrandRadius.sticker,
+    padding: Spacing.three,
+  },
+  alertsInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  alertsTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one + 2,
+  },
+  alertsBonusPill: {
+    backgroundColor: Brand.purple,
+    paddingHorizontal: Spacing.one + 2,
+    paddingVertical: 1,
+    borderRadius: BrandRadius.pill,
+  },
+  alertsBonusText: {
+    fontSize: 10,
+    letterSpacing: 0.2,
+  },
+  alertsSubtitle: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   bioText: {
     fontSize: 14,

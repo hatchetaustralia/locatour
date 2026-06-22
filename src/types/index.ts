@@ -19,6 +19,10 @@ export interface User {
   avatarUrl: string;
   gender: string;
   homeSuburb: string;
+  // Geocoded coordinates of homeSuburb. Used to warm-start the map at the user's
+  // base so it opens localized instead of defaulting to a city centre and snapping
+  // once GPS resolves. Optional so profiles saved before this feature still parse.
+  homeCoordinates?: Coordinates;
   interests: string[];
   stats: UserStats;
   createdAt: string;

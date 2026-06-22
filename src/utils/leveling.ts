@@ -10,7 +10,7 @@
 /** The authentic OSRS level cap. */
 export const MAX_LEVEL = 99;
 
-/** Number of location tiers (1..10). Tier 10 unlocks at level 91. */
+/** Number of location tiers (1..10). Tier 10 (Apex) unlocks at level 90. */
 export const MAX_TIER = 10;
 
 /** A user cannot re-check the same location within this many hours. */
@@ -27,6 +27,17 @@ export const HIDDEN_TIER_RANGE = 3;
 export const DISCOVERY_MULTIPLIER = 3;
 
 /**
+ * "Explorer bonus" multiplier on every check-in for users who have opted into
+ * background Nearby Alerts — a modest carrot (kept deliberately small so the
+ * incentive never feels like a dark pattern) that makes opting in worthwhile.
+ */
+export const NEARBY_ALERTS_POINT_MULTIPLIER = 1.2;
+
+/** The Nearby-Alerts bonus as a whole-number percent — the single source of
+ * truth for all UI copy ("+20%"), derived so it can never drift from the math. */
+export const NEARBY_ALERTS_BONUS_PCT = Math.round((NEARBY_ALERTS_POINT_MULTIPLIER - 1) * 100);
+
+/**
  * Tiers ABOVE your unlocked tier that are SURFACED in the home lists as LOCKED
  * teasers (lock icon + "level up"). These are HARD-locked — you must level up,
  * you can't discover-bypass them. Only the band BETWEEN this and HIDDEN_TIER_RANGE
@@ -36,6 +47,23 @@ export const LOCK_TEASER_RANGE = 2;
 
 /** Proximity (metres) at which the camera goes "warm" near an undiscovered hidden spot. */
 export const WARM_RADIUS_M = 500;
+
+/**
+ * Hard check-in radius (metres) for ALL spots: you must be this close to the
+ * real coordinates to take the check-in photo. Tight on purpose — it brings
+ * people to the actual location instead of checking in from afar — but kept at
+ * 20m (not less) to tolerate normal consumer-GPS error.
+ */
+export const CHECK_IN_RADIUS_M = 20;
+
+/**
+ * Radius (metres) at which you're considered to have REACHED an undiscovered
+ * hidden spot (the camera flips to the "found it" state and unlocks it). Looser
+ * than CHECK_IN_RADIUS_M because hidden spots have no map pin to aim at, so 20m
+ * proved too restrictive in field testing — 50m tolerates consumer-GPS error
+ * while still requiring you to genuinely be there.
+ */
+export const HIDDEN_RADIUS_M = 50;
 
 /**
  * Local-first reach radius (metres). Once we have the user's location, only spots
@@ -133,22 +161,23 @@ export function xpForNextLevel(level: number): number {
 }
 
 /**
- * The highest location tier a user of the given level can see.
- *   unlockedTier(level) = min(10, floor((level−1)/10) + 1)
- * L1..10 → 1, L11..20 → 2, … , L91..99 → 10.
+ * The highest location tier a user of the given level can see. Tiers unlock on
+ * round decades:
+ *   unlockedTier(level) = min(10, floor(level/10) + 1)
+ * L1..9 → 1, L10..19 → 2, … , L80..89 → 9, L90..99 → 10.
  */
 export function unlockedTier(level: number): number {
   const lvl = Math.max(1, Math.min(level, MAX_LEVEL));
-  return Math.min(MAX_TIER, Math.floor((lvl - 1) / 10) + 1);
+  return Math.min(MAX_TIER, Math.floor(lvl / 10) + 1);
 }
 
 /**
  * The player level at which a given tier (1..MAX_TIER) unlocks — the inverse of
- * {@link unlockedTier}. Tier 1 → level 1, tier 2 → level 11, …, tier 10 → level 91.
+ * {@link unlockedTier}. Tier 1 → level 1, tier 2 → level 10, …, tier 10 → level 90.
  */
 export function levelForTier(tier: number): number {
   const t = Math.max(1, Math.min(Math.floor(tier) || 1, MAX_TIER));
-  return (t - 1) * 10 + 1;
+  return t <= 1 ? 1 : (t - 1) * 10;
 }
 
 /**
@@ -248,13 +277,18 @@ export function checkLevelingInvariants(): string[] {
   expect('levelForXP(13034431)', levelForXP(13034431), 99);
   expect('levelForXP(99e9)', levelForXP(99e9), 99); // clamps at cap
 
-  // Tier gating (spec §1).
+  // Tier gating — round decades (T_n unlocks at (n-1)*10; Apex/T10 at L90).
   expect('unlockedTier(1)', unlockedTier(1), 1);
-  expect('unlockedTier(10)', unlockedTier(10), 1);
-  expect('unlockedTier(11)', unlockedTier(11), 2);
-  expect('unlockedTier(40)', unlockedTier(40), 4);
-  expect('unlockedTier(91)', unlockedTier(91), 10);
+  expect('unlockedTier(9)', unlockedTier(9), 1);
+  expect('unlockedTier(10)', unlockedTier(10), 2);
+  expect('unlockedTier(40)', unlockedTier(40), 5);
+  expect('unlockedTier(89)', unlockedTier(89), 9);
+  expect('unlockedTier(90)', unlockedTier(90), 10);
   expect('unlockedTier(99)', unlockedTier(99), 10);
+  // levelForTier is the exact inverse for tiers ≥ 2 (tier 1 floors to L1).
+  expect('levelForTier(1)', levelForTier(1), 1);
+  expect('levelForTier(2)', levelForTier(2), 10);
+  expect('levelForTier(10)', levelForTier(10), 90);
 
   // Tier point defaults.
   expect('defaultPointsForTier(1)', defaultPointsForTier(1), 100);
