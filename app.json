@@ -46,7 +46,8 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Locatour needs camera access so you can take a photo to check in at a location."
+          "cameraPermission": "Locatour needs camera access so you can take a photo to check in at a location.",
+          "recordAudioAndroid": false
         }
       ],
       [
