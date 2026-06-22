@@ -12,6 +12,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useIsFocused } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions, type CameraType, type FlashMode } from 'expo-camera';
 import * as Location from 'expo-location';
@@ -160,6 +161,14 @@ export default function CameraScreen() {
 
   const cameraRef = useRef<CameraView>(null);
   const [permission, requestPermission] = useCameraPermissions();
+
+  // Tie the live preview to screen focus. expo-camera (v55) allows only ONE active
+  // preview at a time and requires it to be UNMOUNTED when the screen is unfocused —
+  // a CameraView left mounted across a tab switch comes back BLACK on Android (the
+  // `active` prop that would pause it is iOS-only). Gating the mount on isFocused
+  // unmounts on blur and remounts a fresh native session on return, killing the
+  // black-screen-on-tab-return bug.
+  const isFocused = useIsFocused();
 
   // Live geofence status for the capture screen. 'in' = inside an unlocked zone,
   // 'hidden' = standing on an undiscovered hidden spot, 'warm' = within ~500m of one.
@@ -807,7 +816,7 @@ export default function CameraScreen() {
 
   // Capture: live camera (or web/permission fallback).
   if (flow === 'capture') {
-    const canShowCamera = !isWeb && permission?.granted;
+    const canShowCamera = !isWeb && permission?.granted && isFocused;
 
     return (
       <View style={styles.fullScreen}>
