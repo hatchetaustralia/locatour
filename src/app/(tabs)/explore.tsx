@@ -21,7 +21,8 @@ import { HiddenNearbyBar } from '@/components/hidden-nearby-bar';
 import { RainbowGlowMarker } from '@/components/rainbow-glow-marker';
 import { Brand, Spacing, stampBorder, BrandRadius } from '@/constants/theme';
 import { storage } from '@/utils/storage';
-import { unlockedTier, levelForTier, VICINITY_RADIUS_M, CHECK_IN_RADIUS_M, WARM_RADIUS_M } from '@/utils/leveling';
+import { unlockedTier, levelForTier, VICINITY_RADIUS_M, CHECK_IN_RADIUS_M } from '@/utils/leveling';
+import { findNearestHiddenSpot } from '@/utils/hidden-detection';
 import { formatDistance, openDirections, isWithinVicinity } from '@/utils/geo';
 import { avatarUri } from '@/utils/avatar';
 import { ExploreLocation, CheckIn, Coordinates } from '@/types';
@@ -363,29 +364,21 @@ export default function ExploreScreen() {
     return Math.round(d);
   };
 
-  // Nearest UNDISCOVERED hidden spot (tier above the user's level, not yet
-  // checked-in or unlocked). Lets explorers hunt a secret from the lower-battery
-  // map view — same "Something's hidden nearby" guide as the camera.
-  const nearestHidden = (() => {
-    if (!userLocation) return null;
-    const visited = new Set(visitedLogs.map((c) => c.locationId));
-    let bestId: string | null = null;
-    let bestDist = Infinity;
-    for (const loc of locations) {
-      if (loc.tier <= unlockedTier(userLevel)) continue;
-      if (visited.has(loc.id) || unlockedIds.has(loc.id)) continue;
-      const d = getDistanceToLocation(loc.coordinates);
-      if (d != null && d < bestDist) {
-        bestDist = d;
-        bestId = loc.id;
-      }
-    }
-    return bestId ? { id: bestId, distance: bestDist } : null;
-  })();
-  // Within warm range → show the guide bar; within check-in range → unlock it.
-  const hiddenNearbyDist = nearestHidden && nearestHidden.distance <= WARM_RADIUS_M ? nearestHidden.distance : null;
-  const hiddenInReachId =
-    nearestHidden && nearestHidden.distance <= CHECK_IN_RADIUS_M ? nearestHidden.id : null;
+  // Nearest UNDISCOVERED hidden spot — via the SHARED detector so the map agrees
+  // with the camera + home. (This used to have its own looser rules: it treated
+  // visible locked teasers AND secret tiers as "hidden" and used the 20m check-in
+  // radius, so a spot could read as hidden here but not in the camera.)
+  const hiddenNearby = userLocation
+    ? findNearestHiddenSpot(
+        { latitude: userLocation.coords.latitude, longitude: userLocation.coords.longitude },
+        locations,
+        userLevel,
+        { visitedIds: new Set(visitedLogs.map((c) => c.locationId)), unlockedIds },
+      )
+    : null;
+  // Within warm range → show the guide bar; within reach (HIDDEN_RADIUS_M) → unlock it.
+  const hiddenNearbyDist = hiddenNearby?.warm ? hiddenNearby.distanceM : null;
+  const hiddenInReachId = hiddenNearby?.inRange ? hiddenNearby.spot.id : null;
 
   useEffect(() => {
     // Reaching a hidden spot on the map unlocks it (persists on the map) AND

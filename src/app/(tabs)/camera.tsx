@@ -24,6 +24,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BrandText } from '@/components/brand';
 import { HiddenNearbyBar } from '@/components/hidden-nearby-bar';
 import { ShutterButton, ShutterMode } from '@/components/shutter-button';
+import { PassportStamp } from '@/components/passport-stamp';
 import { Brand, BrandFonts, BrandRadius, stampBorder, Spacing } from '@/constants/theme';
 import { storage } from '@/utils/storage';
 import { uploadCheckInNow, uploadPendingCheckIns } from '@/utils/account';
@@ -39,6 +40,7 @@ import {
   LOCK_TEASER_RANGE,
   levelForTier,
 } from '@/utils/leveling';
+import { classifyNearby } from '@/utils/hidden-detection';
 import { formatDistance } from '@/utils/geo';
 import { ExploreLocation, CheckIn, User, Coordinates, Achievement } from '@/types';
 
@@ -263,43 +265,22 @@ export default function CameraScreen() {
           storage.getCheckIns(),
         ]);
         const level = user?.stats.currentLevel ?? 1;
-        const maxTier = unlockedTier(level);
-        const maxDisc = maxDiscoverableTier(level);
-        // Genuinely-hidden band sits ABOVE the hard-locked teasers (tier >
-        // maxTier+LOCK_TEASER_RANGE = unlocked+3). Teasers (unlocked+1/+2) are
-        // visible-but-locked map pins — NOT hidden — so they must never drive the
-        // "something hidden nearby" detection.
-        const discoveryFloor = maxTier + LOCK_TEASER_RANGE;
         const visited = new Set(checkIns.map((c) => c.locationId));
+        const unlocked = new Set(storage.getUnlockedLocationIds());
 
-        // Recompute the zone (and the live distance to the nearest hidden spot)
-        // on every position update so the temperature gauge heats up as the
-        // explorer walks/drives closer.
+        // Recompute the zone (and the live distance to the nearest hidden spot) on
+        // every position update so the temperature gauge heats up as the explorer
+        // closes in. Detection routes through the SHARED classifier so the camera,
+        // the map and home all agree on what's hidden — see utils/hidden-detection.
         const evaluate = (here: Coordinates) => {
-          // Nearest CHECKABLE spot (unlocked, or a hidden one already discovered),
-          // and separately the nearest UNDISCOVERED hidden spot (secret tiers ignored).
-          let nearestCheckable: ExploreLocation | null = null;
-          let nearestCheckableDist = Infinity;
-          let nearestHidden: ExploreLocation | null = null;
-          let nearestHiddenDist = Infinity;
-          for (const loc of locations) {
-            if (loc.tier > maxDisc) continue; // secret — never surfaced
-            const d = getDistance(here, loc.coordinates);
-            if (loc.tier > discoveryFloor) {
-              // Genuinely hidden (unlocked+3). Undiscovered → a hidden target;
-              // once discovered it becomes a normal checkable spot.
-              if (!visited.has(loc.id)) {
-                if (d < nearestHiddenDist) { nearestHiddenDist = d; nearestHidden = loc; }
-              } else if (d < nearestCheckableDist) {
-                nearestCheckableDist = d; nearestCheckable = loc;
-              }
-            } else if (loc.tier <= maxTier) {
-              // Unlocked → checkable.
-              if (d < nearestCheckableDist) { nearestCheckableDist = d; nearestCheckable = loc; }
-            }
-            // else: locked teaser band (maxTier < tier <= discoveryFloor) — a
-            // visible map pin, but neither checkable nor hidden; ignore here.
-          }
+          const { checkable, hidden } = classifyNearby(here, locations, level, {
+            visitedIds: visited,
+            unlockedIds: unlocked,
+          });
+          const nearestCheckable = checkable?.spot ?? null;
+          const nearestCheckableDist = checkable?.distanceM ?? Infinity;
+          const nearestHidden = hidden?.spot ?? null;
+          const nearestHiddenDist = hidden?.distanceM ?? Infinity;
           if (cancelled) return;
 
           // One-shot "you've arrived" success haptic when crossing INTO range.
@@ -1096,6 +1077,15 @@ export default function CameraScreen() {
                     </BrandText>
                   </View>
                 )}
+              </View>
+
+              {/* Passport stamp — the rubber-stamp keepsake for this check-in. */}
+              <View style={{ alignItems: 'center', marginTop: Spacing.two, marginBottom: Spacing.one }}>
+                <PassportStamp
+                  locationName={matchedLocation?.name ?? targetName ?? 'Unknown spot'}
+                  dateISO={new Date().toISOString()}
+                  status={isDiscovery ? 'Discovered' : explorerBonus ? 'Explorer' : 'Checked In'}
+                />
               </View>
 
               {/* XP / level progress section: badges flanking the bar */}

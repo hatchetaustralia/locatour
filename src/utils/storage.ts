@@ -1501,6 +1501,37 @@ class StorageManager {
     if (dirty) this.writeKey('locatour_ach_unlocked', JSON.stringify(this.unlocked));
   }
 
+  // The next achievable achievements (closest to unlocking) for the home grid —
+  // up to `limit` not-yet-unlocked badges, each with a 0..1 progress. Sorted by
+  // most-complete first, then by easiest threshold, to keep the focus on "what's
+  // next" rather than the locked wall.
+  public async getNextAchievements(
+    limit = 4,
+  ): Promise<{ title: string; iconName: string; progress: number; difficulty: string }[]> {
+    if (!this.achievementsFetched) {
+      const remote = await this.fetchRemoteAchievements();
+      if (remote && remote.length) this.achievementDefs = remote;
+      this.achievementsFetched = true;
+      this.evaluateAchievements();
+    }
+    const metrics = this.computeMetrics();
+    return this.achievementDefs
+      .filter((def) => !this.unlocked[def.id])
+      .map((def) => {
+        const value = metrics[def.metric] ?? 0;
+        const progress = def.threshold > 0 ? Math.min(1, value / def.threshold) : 0;
+        return { def, progress };
+      })
+      .sort((a, b) => b.progress - a.progress || a.def.threshold - b.def.threshold)
+      .slice(0, limit)
+      .map(({ def, progress }) => ({
+        title: def.title,
+        iconName: def.iconName,
+        progress,
+        difficulty: def.difficulty,
+      }));
+  }
+
   // The full catalogue (live or bundled) merged with the user's unlock state.
   public async getAchievements(): Promise<Achievement[]> {
     if (!this.achievementsFetched) {
