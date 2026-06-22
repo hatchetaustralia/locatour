@@ -209,7 +209,6 @@ export default function HomeScreen() {
     switch (category) {
       case 'parks': return 'leaf-outline';
       case 'scenic': return 'camera-outline';
-      case 'food': return 'restaurant-outline';
       default: return 'compass-outline';
     }
   };
@@ -218,7 +217,6 @@ export default function HomeScreen() {
     switch (category) {
       case 'parks': return Brand.sticker.green;
       case 'scenic': return Brand.sticker.pink;
-      case 'food': return Brand.sticker.gold;
       default: return Brand.sticker.purple;
     }
   };

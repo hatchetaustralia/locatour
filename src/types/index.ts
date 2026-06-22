@@ -28,7 +28,7 @@ export interface User {
   createdAt: string;
 }
 
-export type LocationCategory = 'parks' | 'scenic' | 'food';
+export type LocationCategory = 'parks' | 'scenic';
 
 export interface Coordinates {
   latitude: number;

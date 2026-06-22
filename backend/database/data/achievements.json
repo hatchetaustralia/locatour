@@ -288,18 +288,6 @@
     "sort": 23
   },
   {
-    "key": "first-bite",
-    "title": "First Bite",
-    "description": "Check in at a food spot for the first time.",
-    "difficulty": "Easy",
-    "category": "Collector",
-    "metric": "category_checkins_food",
-    "threshold": 1,
-    "points": 25,
-    "icon_name": "restaurant-outline",
-    "sort": 24
-  },
-  {
     "key": "day-one-devotee",
     "title": "Day-One Devotee",
     "description": "Earn your first 50 XP on day one.",
@@ -564,30 +552,6 @@
     "sort": 46
   },
   {
-    "key": "local-foodie",
-    "title": "Local Foodie",
-    "description": "Check into food spots 8 times.",
-    "difficulty": "Medium",
-    "category": "Collector",
-    "metric": "category_checkins_food",
-    "threshold": 8,
-    "points": 50,
-    "icon_name": "restaurant-outline",
-    "sort": 47
-  },
-  {
-    "key": "flavour-tracker",
-    "title": "Flavour Tracker",
-    "description": "Reach 12 food check-ins.",
-    "difficulty": "Medium",
-    "category": "Collector",
-    "metric": "category_checkins_food",
-    "threshold": 12,
-    "points": 50,
-    "icon_name": "fast-food-outline",
-    "sort": 48
-  },
-  {
     "key": "trailblazers-tally",
     "title": "Trailblazer's Tally",
     "description": "Rack up 50 lifetime check-ins across the wild.",
@@ -792,30 +756,6 @@
     "sort": 65
   },
   {
-    "key": "gourmand-on-the-go",
-    "title": "Gourmand on the Go",
-    "description": "Devour 25 food-location check-ins.",
-    "difficulty": "Hard",
-    "category": "Collector",
-    "metric": "category_checkins_food",
-    "threshold": 25,
-    "points": 100,
-    "icon_name": "restaurant-outline",
-    "sort": 66
-  },
-  {
-    "key": "epicurean-explorer",
-    "title": "Epicurean Explorer",
-    "description": "Feast your way to 40 food check-ins.",
-    "difficulty": "Hard",
-    "category": "Collector",
-    "metric": "category_checkins_food",
-    "threshold": 40,
-    "points": 100,
-    "icon_name": "fast-food-outline",
-    "sort": 67
-  },
-  {
     "key": "elite-the-hundred-club",
     "title": "The Hundred Club",
     "description": "Amass 150 lifetime check-ins across the wild.",
@@ -960,18 +900,6 @@
     "sort": 79
   },
   {
-    "key": "elite-roadside-gourmet",
-    "title": "Roadside Gourmet",
-    "description": "Rack up 70 food-location check-ins.",
-    "difficulty": "Medium",
-    "category": "Collector",
-    "metric": "category_checkins_food",
-    "threshold": 70,
-    "points": 50,
-    "icon_name": "restaurant-outline",
-    "sort": 80
-  },
-  {
     "key": "elite-marathon-marauder",
     "title": "Marathon Marauder",
     "description": "Pack 18 check-ins into a single relentless day.",
@@ -1090,18 +1018,6 @@
     "points": 400,
     "icon_name": "sparkles-outline",
     "sort": 90
-  },
-  {
-    "key": "master-connoisseur-of-the-realm",
-    "title": "Connoisseur of the Realm",
-    "description": "Complete 175 check-ins at food spots. Every table in the kingdom has set a place for you.",
-    "difficulty": "Master",
-    "category": "Collector",
-    "metric": "category_checkins_food",
-    "threshold": 175,
-    "points": 400,
-    "icon_name": "ribbon-outline",
-    "sort": 91
   },
   {
     "key": "master-the-relentless-daymarch",

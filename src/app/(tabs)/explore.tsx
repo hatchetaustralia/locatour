@@ -312,8 +312,6 @@ export default function ExploreScreen() {
         return Brand.sticker.green;
       case 'scenic':
         return Brand.teal;
-      case 'food':
-        return Brand.sticker.gold;
       default:
         return Brand.sticker.purple;
     }
@@ -325,8 +323,6 @@ export default function ExploreScreen() {
         return 'leaf';
       case 'scenic':
         return 'camera';
-      case 'food':
-        return 'restaurant';
       default:
         return 'compass';
     }

@@ -46,6 +46,10 @@ class DatabaseSeeder extends Seeder
         // Categories + tags must exist before LocationSeeder attaches them.
         $this->call([
             CategorySeeder::class,
+            // The achievement catalogue (from data/achievements.json). Registered
+            // here so a re-seed restores it — it was missing before, which left the
+            // table empty after the DB recovery so /api/achievements returned [].
+            AchievementSeeder::class,
             LocationSeeder::class,
             // Bulk real WA locations, by region — each idempotent on `name`, so a
             // re-seed / migrate:fresh restores the full ~1,100-spot catalogue

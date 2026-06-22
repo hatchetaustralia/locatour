@@ -40,22 +40,6 @@ const INITIAL_LOCATIONS: ExploreLocation[] = [
     isMajorDestination: true
   },
   {
-    id: 'locatour_hq_cafe',
-    name: 'Locatour HQ Cafe',
-    category: 'food',
-    coordinates: { latitude: -31.9530, longitude: 115.8570 },
-    address: '45 St Georges Terrace, Perth WA 6000',
-    points: 150,
-    description: 'Step into our cozy local cafe! Fuel up with premium coffee, enjoy hot bagels, and plan your next street exploration adventure.',
-    imageUrls: [
-      'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=600&q=80'
-    ],
-    verificationTags: ['coffee', 'cafe', 'neon sign', 'espresso', 'barista'],
-    createdAt: '2026-01-15T12:00:00Z',
-    tier: 1
-  },
-  {
     id: 'st_georges_terrace',
     name: "St George's Terrace",
     category: 'scenic',
@@ -638,7 +622,7 @@ const INITIAL_LOCATIONS: ExploreLocation[] = [
   {
     id: 'wa_margaret_river',
     name: 'Margaret River',
-    category: 'food',
+    category: 'scenic',
     coordinates: { latitude: -33.9535468, longitude: 115.0629667 },
     address: 'Margaret River WA 6285, Australia',
     points: 200,
@@ -1347,7 +1331,7 @@ class StorageManager {
 
     const byDay: Record<string, number> = {};
     let maxInDay = 0;
-    let parks = 0, scenic = 0, food = 0, maxTier = 0;
+    let parks = 0, scenic = 0, maxTier = 0;
     const cats = new Set<string>();
 
     for (const c of this.checkIns) {
@@ -1360,7 +1344,6 @@ class StorageManager {
       cats.add(loc.category);
       if (loc.category === 'parks') parks++;
       else if (loc.category === 'scenic') scenic++;
-      else if (loc.category === 'food') food++;
       if ((loc.tier || 1) > maxTier) maxTier = loc.tier || 1;
     }
 
@@ -1375,7 +1358,6 @@ class StorageManager {
       checkins_in_day: maxInDay,
       category_checkins_parks: parks,
       category_checkins_scenic: scenic,
-      category_checkins_food: food,
     };
   }
 
