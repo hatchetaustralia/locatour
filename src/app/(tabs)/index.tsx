@@ -6,6 +6,7 @@ import {
   Image,
   TouchableOpacity,
   ActivityIndicator,
+  Modal,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,10 +14,15 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as Location from 'expo-location';
 
 import { BrandAssets, BrandText } from '@/components/brand';
+import { WeeklyStreakCard } from '@/components/weekly-streak-card';
+import { HiddenHeroCard } from '@/components/hidden-hero-card';
+import { AchievementGrid } from '@/components/achievement-grid';
 import { Brand, BrandRadius, Spacing, stampBorder } from '@/constants/theme';
 import { storage } from '@/utils/storage';
-import { unlockedTier, levelForTier, rarityForTier, VICINITY_RADIUS_M, REACH_RADIUS_M, LOCK_TEASER_RANGE } from '@/utils/leveling';
+import { unlockedTier, rarityForTier, VICINITY_RADIUS_M, REACH_RADIUS_M, LOCK_TEASER_RANGE } from '@/utils/leveling';
 import { refreshGeofencesOnFocus } from '@/utils/geofencing';
+import { computeWeeklyStreak, WeeklyStreak } from '@/utils/streak';
+import { findNearestHiddenSpot, formatDistanceAway } from '@/utils/hidden-detection';
 import { User, ExploreLocation } from '@/types';
 
 // Straight-line distance (metres) between two coordinates — for the "nearest
@@ -42,10 +48,28 @@ export default function HomeScreen() {
 
   const [user, setUser] = useState<User | null>(null);
   const [locations, setLocations] = useState<ExploreLocation[]>([]);
+  // The UNFILTERED server slice (includes the hidden band that `locations` drops
+  // at the tier cap) — used only for nearest-hidden-spot detection.
+  const [allReachable, setAllReachable] = useState<ExploreLocation[]>([]);
   const [userCoords, setUserCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   // Location ids the user has checked in at THIS calendar month — shown as
   // "done" in the monthly challenge list (which resets each month).
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
+  // Every location id the user has ever checked in at — a discovered hidden spot
+  // is no longer "hidden", so we feed these to the detector.
+  const [visitedIds, setVisitedIds] = useState<Set<string>>(new Set());
+  // Weekly exploration streak, derived from the check-in history.
+  const [weeklyStreak, setWeeklyStreak] = useState<WeeklyStreak>({
+    streakWeeks: 0,
+    thisWeekActive: false,
+    weeks: [],
+  });
+  // The four achievements closest to unlocking, for the grid.
+  const [nextAch, setNextAch] = useState<
+    { title: string; iconName: string; progress: number; difficulty?: string }[]
+  >([]);
+  // A locked card the user tapped — drives the "not quite ready" popup.
+  const [lockedInfo, setLockedInfo] = useState<ExploreLocation | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Authentication check and data loader
@@ -73,6 +97,9 @@ export default function HomeScreen() {
               level: currentUser.stats.currentLevel,
             })
           : await storage.getLocations();
+        // Keep the UNFILTERED list for hidden-spot detection (the tier filter
+        // below strips the hidden band the detector needs).
+        setAllReachable(allLocs);
         const cap = unlockedTier(currentUser.stats.currentLevel) + LOCK_TEASER_RANGE;
         setLocations(allLocs.filter((loc) => loc.isMajorDestination || loc.tier <= cap));
 
@@ -86,6 +113,12 @@ export default function HomeScreen() {
               .map((c) => c.locationId)
           )
         );
+        // Every spot ever checked in at, plus the weekly streak — both derived
+        // from the same check-in history.
+        setVisitedIds(new Set(checkIns.map((c) => c.locationId)));
+        setWeeklyStreak(computeWeeklyStreak(checkIns));
+        // The four achievements closest to unlocking, for the grid.
+        setNextAch(await storage.getNextAchievements(4));
       } catch (e) {
         console.error('Failed to load user or locations in Home', e);
       } finally {
@@ -114,6 +147,8 @@ export default function HomeScreen() {
         const u = await storage.getUser();
         const level = u?.stats.currentLevel ?? 1;
         const slice = await storage.getLocations({ ...coords, level });
+        // Keep the UNFILTERED slice for hidden-spot detection before the cap.
+        setAllReachable(slice);
         const cap = unlockedTier(level) + LOCK_TEASER_RANGE;
         setLocations(slice.filter((l) => l.isMajorDestination || l.tier <= cap));
       } catch {
@@ -146,6 +181,14 @@ export default function HomeScreen() {
   // Distance reference: live GPS when we have it, else the user's base so the
   // lists are sensibly ordered/filtered from the first paint (not unordered).
   const activeCoords = userCoords ?? user.homeCoordinates ?? null;
+  // Nearest undiscovered hidden spot, off the UNFILTERED list (the hidden band
+  // is dropped from `locations` at the tier cap). Only teased when "warm".
+  const hiddenNearby = activeCoords
+    ? findNearestHiddenSpot(activeCoords, allReachable, user.stats.currentLevel, {
+        visitedIds,
+        unlockedIds: new Set(storage.getUnlockedLocationIds()),
+      })
+    : null;
   // Per-card helpers. A spot is LOCKED if it's above the player's tier (surfaced
   // +1/+2 teasers + any above-tier major) — hard-locked, level up to reach it.
   // "Worth the trip" = a real trip beyond the 10km local bubble.
@@ -224,18 +267,9 @@ export default function HomeScreen() {
   return (
     <View style={styles.screen}>
       <SafeAreaView style={styles.safeArea} edges={['top']}>
-        {/* App header: logo wordmark + streak chip + settings gear */}
+        {/* App header: logo wordmark (profile + map live in the bottom nav). */}
         <View style={styles.header}>
           <Image source={BrandAssets.logo} style={styles.logo} resizeMode="contain" />
-          <View style={styles.headerRight}>
-            {/* Streak chip (profile + map live in the bottom nav, not here) */}
-            <View style={styles.streakChip}>
-              <Ionicons name="flame" size={14} color="#ef4444" />
-              <BrandText weight="semibold" style={styles.streakText}>
-                {user.stats.dayStreak}d Streak
-              </BrandText>
-            </View>
-          </View>
         </View>
 
         <ScrollView
@@ -245,6 +279,21 @@ export default function HomeScreen() {
             { paddingTop: Spacing.two, paddingBottom: insets.bottom + 110 },
           ]}
         >
+          {/* ── Hidden hero (only when a hidden spot is warm-close) ── */}
+          {hiddenNearby?.warm && (
+            <View style={styles.heroSection}>
+              <HiddenHeroCard
+                distanceM={hiddenNearby.distanceM}
+                onPress={() => router.push('/camera')}
+              />
+            </View>
+          )}
+
+          {/* ── Weekly streak (replaces the old day-streak chip) ── */}
+          <View style={styles.section}>
+            <WeeklyStreakCard streakWeeks={weeklyStreak.streakWeeks} weeks={weeklyStreak.weeks} />
+          </View>
+
           {/* ── This month's challenges ── */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -273,7 +322,9 @@ export default function HomeScreen() {
                   style={[styles.challengeCard, (done || locked) && styles.challengeCardDim]}
                   activeOpacity={0.85}
                   onPress={() =>
-                    router.push({ pathname: '/explore', params: { selectedId: item.id } })
+                    locked
+                      ? setLockedInfo(item)
+                      : router.push({ pathname: '/explore', params: { selectedId: item.id } })
                   }
                 >
                   <Image source={{ uri: item.imageUrls[0] }} style={styles.challengeImage} />
@@ -310,9 +361,14 @@ export default function HomeScreen() {
                       <View style={styles.tierBadge}>
                         <BrandText weight="bold" style={styles.tierBadgeText}>{rarityForTier(item.tier)}</BrandText>
                       </View>
-                      <BrandText weight="semibold" style={styles.challengeXp}>
-                        +{item.points} XP
-                      </BrandText>
+                      {activeCoords && (
+                        <View style={styles.distanceChip}>
+                          <Ionicons name="navigate-outline" size={10} color={Brand.inkSecondary} />
+                          <BrandText weight="semibold" style={styles.distanceChipText}>
+                            {formatDistanceAway(distanceMeters(activeCoords, item.coordinates))}
+                          </BrandText>
+                        </View>
+                      )}
                       {worthTrip && (
                         <View style={styles.reachBadge}>
                           <Ionicons name="airplane" size={9} color={Brand.purple} />
@@ -326,7 +382,6 @@ export default function HomeScreen() {
                   {locked ? (
                     <View style={styles.lockBadge}>
                       <Ionicons name="lock-closed" size={16} color={Brand.inkSubtle} />
-                      <BrandText weight="bold" style={styles.lockBadgeText}>Lv {levelForTier(item.tier)}</BrandText>
                     </View>
                   ) : done ? (
                     <View style={styles.doneBadge}>
@@ -361,7 +416,9 @@ export default function HomeScreen() {
                   style={[styles.pickCard, locked && styles.challengeCardDim]}
                   activeOpacity={0.85}
                   onPress={() =>
-                    router.push({ pathname: '/explore', params: { selectedId: item.id } })
+                    locked
+                      ? setLockedInfo(item)
+                      : router.push({ pathname: '/explore', params: { selectedId: item.id } })
                   }
                 >
                   <Image source={{ uri: item.imageUrls[0] }} style={styles.pickImage} />
@@ -388,7 +445,6 @@ export default function HomeScreen() {
                       {locked && (
                         <View style={styles.lockBadge}>
                           <Ionicons name="lock-closed" size={12} color={Brand.inkSubtle} />
-                          <BrandText weight="bold" style={styles.lockBadgeText}>Lv {levelForTier(item.tier)}</BrandText>
                         </View>
                       )}
                     </View>
@@ -398,7 +454,47 @@ export default function HomeScreen() {
               })}
             </View>
           </View>
+
+          {/* ── Achievements: the stamps you're closing in on ── */}
+          <View style={styles.section}>
+            <View style={[styles.sectionTitleRow, { marginBottom: Spacing.three }]}>
+              <Ionicons name="ribbon-outline" size={18} color={Brand.ink} />
+              <BrandText weight="semibold" style={styles.sectionTitle}>
+                Closing in on
+              </BrandText>
+            </View>
+            <AchievementGrid items={nextAch} />
+          </View>
         </ScrollView>
+
+        {/* Locked-spot nudge — no level/tier numbers, just encouragement. */}
+        <Modal
+          visible={lockedInfo !== null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setLockedInfo(null)}
+        >
+          <View style={styles.confirmOverlay}>
+            <View style={[styles.confirmCard, stampBorder]}>
+              <BrandText weight="semibold" style={styles.confirmTitle}>
+                Not quite ready
+              </BrandText>
+              <BrandText weight="medium" color={Brand.inkSecondary} style={styles.confirmBody}>
+                {lockedInfo?.name} is still locked. Keep getting out there and checking in, and as
+                you level up spots like this open for you to discover.
+              </BrandText>
+              <TouchableOpacity
+                style={[styles.confirmButton, styles.confirmKeep, stampBorder]}
+                activeOpacity={0.85}
+                onPress={() => setLockedInfo(null)}
+              >
+                <BrandText weight="bold" color="#FFFFFF" style={styles.confirmButtonText}>
+                  Keep exploring
+                </BrandText>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </View>
   );
@@ -431,32 +527,6 @@ const styles = StyleSheet.create({
     width: 130,
     height: 28,
   },
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.two,
-  },
-  streakChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Brand.surface,
-    paddingHorizontal: Spacing.two + 2,
-    paddingVertical: 5,
-    ...stampBorder,
-  },
-  streakText: {
-    fontSize: 12,
-    color: Brand.ink,
-  },
-  gearButton: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Brand.surface,
-    ...stampBorder,
-  },
 
   // ── Scroll content ───────────────────────────────────────────────────────────
   scrollContent: {
@@ -466,6 +536,9 @@ const styles = StyleSheet.create({
 
   // ── Sections ─────────────────────────────────────────────────────────────────
   section: {
+    marginBottom: Spacing.four,
+  },
+  heroSection: {
     marginBottom: Spacing.four,
   },
   sectionHeader: {
@@ -601,9 +674,18 @@ const styles = StyleSheet.create({
   categoryChipText: {
     fontSize: 9,
   },
-  challengeXp: {
-    fontSize: 12,
-    color: Brand.sticker.purple,
+  distanceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(42,36,33,0.06)',
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 2,
+    borderRadius: BrandRadius.pill,
+  },
+  distanceChipText: {
+    fontSize: 9,
+    color: Brand.inkSecondary,
   },
   reachBadge: {
     flexDirection: 'row',
@@ -664,8 +746,42 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 2,
   },
-  lockBadgeText: {
-    fontSize: 9,
-    color: Brand.inkSubtle,
+
+  // ── Locked-spot nudge modal (matches profile's confirm modal language) ───────
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.four,
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: Brand.surface,
+    borderRadius: BrandRadius.sticker,
+    padding: Spacing.four,
+    gap: Spacing.two,
+  },
+  confirmTitle: {
+    fontSize: 18,
+    color: Brand.ink,
+  },
+  confirmBody: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  confirmButton: {
+    height: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: BrandRadius.control,
+  },
+  confirmKeep: {
+    marginTop: Spacing.three,
+    backgroundColor: Brand.sticker.pink,
+  },
+  confirmButtonText: {
+    fontSize: 15,
   },
 });
