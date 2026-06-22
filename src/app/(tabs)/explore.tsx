@@ -19,8 +19,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandText } from '@/components/brand';
 import { HiddenNearbyBar } from '@/components/hidden-nearby-bar';
 import { RainbowGlowMarker } from '@/components/rainbow-glow-marker';
+import { SuggestLocationSheet } from '@/components/suggest-location-sheet';
 import { Brand, Spacing, stampBorder, BrandRadius } from '@/constants/theme';
 import { storage } from '@/utils/storage';
+import { submitSuggestion } from '@/utils/account';
 import { unlockedTier, levelForTier, VICINITY_RADIUS_M, CHECK_IN_RADIUS_M } from '@/utils/leveling';
 import { findNearestHiddenSpot } from '@/utils/hidden-detection';
 import { formatDistance, openDirections, isWithinVicinity } from '@/utils/geo';
@@ -42,6 +44,10 @@ if (Platform.OS !== 'web') {
   }
 }
 
+// You must be within this many metres of a spot to suggest it (mirrors the
+// server's 150m enforcement; the client pre-check just saves a round-trip).
+const SUGGEST_RADIUS_M = 150;
+
 // Custom Map Skin — warm cream/paper tones to match the brand aesthetic.
 const LIGHT_MAP_STYLE = [
   { featureType: 'poi', elementType: 'all', stylers: [{ visibility: 'off' }] },
@@ -54,6 +60,22 @@ const LIGHT_MAP_STYLE = [
   { featureType: 'landscape.man_made', elementType: 'geometry.fill', stylers: [{ color: '#EAE3DB' }] },
   { featureType: 'transit', elementType: 'all', stylers: [{ visibility: 'off' }] },
 ];
+
+// Great-circle distance (metres) between two arbitrary points. Used by the
+// suggest-a-location flow to gate on the user's CURRENT GPS vs the picked spot
+// (getDistanceToLocation is bound to userLocation; this takes both points).
+const haversineMeters = (a: Coordinates, b: Coordinates) => {
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  const R = 6371000; // Earth radius in metres
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLon = toRad(b.longitude - a.longitude);
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+  const h =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h)));
+};
 
 // "3rd March 2024" style date — matches the Previous Check-ins design.
 const formatDate = (iso: string) => {
@@ -113,6 +135,16 @@ export default function ExploreScreen() {
   // narrow once GPS resolves. Seeded synchronously from initialHome so the very
   // first render's vicinity filter already uses it; GPS takes over once it arrives.
   const [homeCoords, setHomeCoords] = useState<Coordinates | null>(initialHome);
+
+  // Community "Suggest a location" flow (#2). A POI tap or long-press picks a
+  // spot that isn't on Locatour yet and opens the sheet; the user confirms a name
+  // (+ notes) and submits while standing near it. The server re-checks proximity.
+  const [suggestCoord, setSuggestCoord] = useState<Coordinates | null>(null);
+  const [suggestName, setSuggestName] = useState('');
+  const [suggestVisible, setSuggestVisible] = useState(false);
+  const [suggestSubmitting, setSuggestSubmitting] = useState(false);
+  const [suggestSubmitted, setSuggestSubmitted] = useState(false);
+  const [suggestError, setSuggestError] = useState<string | null>(null);
 
   const flatListRef = useRef<FlatList>(null);
   const mapRef = useRef<any>(null);
@@ -305,6 +337,74 @@ export default function ExploreScreen() {
     // Reload check-ins
     const checkins = await storage.getCheckIns();
     setVisitedLogs(checkins);
+  };
+
+  // Open the "Suggest a location" sheet on a picked point. A Google POI tap
+  // carries a name to prefill; an arbitrary long-press starts the name empty.
+  const openSuggestSheet = (coordinate: Coordinates, name?: string) => {
+    setSuggestCoord(coordinate);
+    setSuggestName(name ?? '');
+    setSuggestError(null);
+    setSuggestSubmitted(false);
+    setSuggestVisible(true);
+  };
+
+  const closeSuggestSheet = () => {
+    setSuggestVisible(false);
+    setSuggestError(null);
+    setSuggestSubmitted(false);
+  };
+
+  // Submit the picked spot. Read a CURRENT GPS fix (the live watch if we have one,
+  // else a one-shot read), enforce the 150m radius client-side, then POST. The
+  // server re-checks within 150m and answers 422 with a message we surface inline.
+  const handleSuggestSubmit = async ({ name, notes }: { name: string; notes: string }) => {
+    if (!suggestCoord || suggestSubmitting) return;
+    setSuggestSubmitting(true);
+    setSuggestError(null);
+    try {
+      // Prefer the live watch fix; fall back to a fresh one-shot read.
+      let coords = userLocation?.coords ?? null;
+      if (!coords) {
+        try {
+          const fix = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+          coords = fix.coords;
+        } catch {
+          coords = null;
+        }
+      }
+      if (!coords) {
+        setSuggestError('We could not read your location. Turn on GPS and try again.');
+        return;
+      }
+
+      const distance = haversineMeters(
+        { latitude: coords.latitude, longitude: coords.longitude },
+        suggestCoord,
+      );
+      if (distance > SUGGEST_RADIUS_M) {
+        setSuggestError(
+          `You are about ${formatDistance(distance)} away. Get within ${SUGGEST_RADIUS_M} m of the spot to suggest it.`,
+        );
+        return;
+      }
+
+      const result = await submitSuggestion({
+        name: name || undefined,
+        latitude: suggestCoord.latitude,
+        longitude: suggestCoord.longitude,
+        notes: notes || undefined,
+        userLat: coords.latitude,
+        userLng: coords.longitude,
+      });
+      if (result.ok) {
+        setSuggestSubmitted(true);
+      } else {
+        setSuggestError(result.message ?? 'We could not submit that suggestion. Please try again.');
+      }
+    } finally {
+      setSuggestSubmitting(false);
+    }
   };
 
   const getPinColor = (category: string) => {
@@ -574,6 +674,16 @@ export default function ExploreScreen() {
             showsMyLocationButton={false}
             showsCompass={false}
             toolbarEnabled={false}
+            // Tapping a Google POI suggests THAT place (its name prefills the
+            // sheet); long-pressing anywhere suggests an arbitrary spot. Both are
+            // for places not yet on Locatour — markers/check-in keep their own taps.
+            onPoiClick={(e: { nativeEvent: { name?: string; coordinate: Coordinates } }) => {
+              const { coordinate, name } = e.nativeEvent;
+              openSuggestSheet(coordinate, name);
+            }}
+            onLongPress={(e: { nativeEvent: { coordinate: Coordinates } }) => {
+              openSuggestSheet(e.nativeEvent.coordinate);
+            }}
             // Track the camera heading so our compass needle points to true north
             // and we know whether the map is already north-up.
             onRegionChangeComplete={async () => {
@@ -902,6 +1012,18 @@ export default function ExploreScreen() {
           </Animated.View>
         </View>
       )}
+
+      {/* Community "Suggest a location" sheet — opened by a POI tap / long-press. */}
+      <SuggestLocationSheet
+        visible={suggestVisible}
+        coordinate={suggestCoord}
+        prefilledName={suggestName}
+        submitting={suggestSubmitting}
+        submitted={suggestSubmitted}
+        errorMessage={suggestError}
+        onSubmit={handleSuggestSubmit}
+        onClose={closeSuggestSheet}
+      />
     </View>
   );
 }

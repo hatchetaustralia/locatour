@@ -413,6 +413,65 @@ export async function deleteCheckInNow(serverId: string | number): Promise<boole
   }
 }
 
+/** Outcome of a community location suggestion. `message` carries the server's
+ *  422 text (e.g. the "within 150 metres" rejection) so the UI can show it inline. */
+export interface SuggestionResult {
+  ok: boolean;
+  message?: string;
+}
+
+/**
+ * Suggest a new community location the user is standing at (backlog #2). POSTs
+ * JSON to /api/suggestions (auth:sanctum). Mirrors uploadCheckInNow /
+ * deleteCheckInNow: bearer token + fallback base URLs + fail-soft (never throws).
+ *
+ * The server re-checks proximity from `user_lat`/`user_lng` and answers 422 with
+ * a message when the submitter is further than 150m from the suggested point;
+ * that text is returned as `message` so the sheet can surface it. On a 2xx the
+ * suggestion is pending staff review. No-ops (returns ok:false) without a token.
+ */
+export async function submitSuggestion(input: {
+  name?: string;
+  latitude: number;
+  longitude: number;
+  notes?: string;
+  userLat: number;
+  userLng: number;
+}): Promise<SuggestionResult> {
+  const token = storage.getToken();
+  if (!token) return { ok: false };
+  try {
+    const res = await fetchWithFallback('/api/suggestions', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        name: input.name,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        notes: input.notes,
+        user_lat: input.userLat,
+        user_lng: input.userLng,
+      }),
+    });
+    if (!res) return { ok: false };
+    if (noteBlockedIf403(res)) return { ok: false };
+    // 422 = the server's proximity (or validation) rejection — return its message.
+    if (res.status === 422) {
+      const body = (await res.json().catch(() => ({}))) as { message?: string };
+      return { ok: false, message: body.message };
+    }
+    if (!res.ok) return { ok: false };
+    return { ok: true };
+  } catch (e) {
+    console.warn('[account] submitSuggestion failed (soft)', e);
+    return { ok: false };
+  }
+}
+
 /**
  * Flush every locally-queued check-in to the server, removing each item only on
  * a confirmed upload (so a mid-flush network drop keeps the rest queued for the
