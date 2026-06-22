@@ -68,6 +68,10 @@ export interface CheckIn {
   coordinatesChecked: Coordinates;
   verifiedOffline: boolean;
   syncedAt?: string;
+  // Server check-in PK, set once the upload succeeds. Lets the app delete the row
+  // server-side (DELETE /api/checkins/{serverId}). Absent for offline-queued
+  // check-ins that haven't synced yet — they have no server row to delete.
+  serverId?: string | number;
 }
 
 export type AchievementDifficulty = 'Easy' | 'Medium' | 'Hard' | 'Elite' | 'Master' | 'Grandmaster';

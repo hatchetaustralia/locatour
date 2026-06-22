@@ -647,7 +647,12 @@ export default function CameraScreen() {
           verifiedOffline: false,
           checkedInAt: checkIn.timestamp,
         });
-        if (!uploaded) {
+        if (uploaded.ok) {
+          // Record the server id so this check-in can be deleted server-side later.
+          if (uploaded.serverId != null) {
+            await storage.setCheckInServerId(checkIn.id, uploaded.serverId);
+          }
+        } else {
           await storage.queueOfflineCheckIn(target.id, checkIn.photoUrl, coords, earned);
         }
       } else {

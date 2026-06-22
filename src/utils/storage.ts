@@ -1303,6 +1303,127 @@ class StorageManager {
     this.saveState();
   }
 
+  /**
+   * Attach the server check-in id to a local history check-in after a successful
+   * upload, so it can later be deleted server-side (DELETE /api/checkins/{id}).
+   * No-op if the local id isn't in the history list.
+   */
+  public async setCheckInServerId(localId: string, serverId: string | number): Promise<void> {
+    const ci = this.checkIns.find((c) => c.id === localId);
+    if (!ci) return;
+    ci.serverId = serverId;
+    ci.syncedAt = new Date().toISOString();
+    this.saveState();
+  }
+
+  // Recompute the count + XP stats from the current check-in list. Used after a
+  // deletion: totalCheckIns / uniqueLocations come straight from what's left, and
+  // totalXP is the sum of points earned across the remaining check-ins (then the
+  // level fields are re-derived via the OSRS curve). dayStreak is recomputed from
+  // the distinct days that still have a check-in. Achievements are NOT re-locked
+  // (unlocks are permanent), but newly-failing thresholds simply won't re-award.
+  private recomputeStatsFromCheckIns(): void {
+    if (!this.user) return;
+    const stats = { ...this.user.stats };
+
+    stats.totalCheckIns = this.checkIns.length;
+    stats.uniqueLocations = new Set(this.checkIns.map((c) => c.locationId)).size;
+    stats.totalXP = this.checkIns.reduce((sum, c) => sum + (c.pointsEarned || 0), 0);
+    Object.assign(stats, deriveLevelStats(stats.totalXP));
+
+    // Day streak: count consecutive days back from the most recent check-in day.
+    const days = [...new Set(this.checkIns.map((c) => new Date(c.timestamp).toDateString()))]
+      .map((d) => new Date(d).getTime())
+      .sort((a, b) => b - a);
+    if (days.length === 0) {
+      stats.dayStreak = 0;
+    } else {
+      let streak = 1;
+      const ONE_DAY = 24 * 60 * 60 * 1000;
+      for (let i = 1; i < days.length; i++) {
+        if (days[i - 1] - days[i] <= ONE_DAY + 60 * 1000) streak += 1;
+        else break;
+      }
+      stats.dayStreak = streak;
+    }
+
+    this.user.stats = stats;
+  }
+
+  // Best-effort: remove a local photo file (file:// only) once its check-in is
+  // deleted, so we don't leak captured images on the device. Remote/bundled
+  // (https) and web blob URIs are left alone. Never throws.
+  private async deleteLocalPhoto(photoUrl?: string | null): Promise<void> {
+    if (Platform.OS === 'web') return;
+    if (!photoUrl || !photoUrl.startsWith('file://')) return;
+    try {
+      const { File } = require('expo-file-system');
+      const file = new File(photoUrl);
+      if (file.exists) file.delete();
+    } catch (e) {
+      console.warn('Failed to delete local check-in photo (soft)', e);
+    }
+  }
+
+  /**
+   * Delete a single check-in by its LOCAL id. Removes the record from both the
+   * synced list and the offline queue (so an unsynced check-in is handled too),
+   * deletes its local photo file when applicable, recomputes cached stats, and
+   * persists. Returns the removed CheckIn (so the caller can read any server id
+   * off it to also delete it server-side), or null if nothing matched.
+   */
+  public async deleteCheckIn(id: string): Promise<CheckIn | null> {
+    let removed: CheckIn | null = null;
+
+    // Synced/local history list.
+    const idx = this.checkIns.findIndex((c) => c.id === id);
+    if (idx !== -1) {
+      removed = this.checkIns[idx];
+      this.checkIns.splice(idx, 1);
+    }
+
+    // Offline upload queue (id like "offline_..."). Remove both the row and any
+    // in-memory fallback copy. getQueuedCheckIns() maps these to CheckIn shape.
+    const queued = this.offlineQueue.find((i) => i.id === id);
+    if (queued && !removed) {
+      removed = {
+        id: queued.id,
+        userId: this.user?.uid || 'anonymous',
+        locationId: queued.locationId,
+        photoUrl: queued.photoUrl,
+        pointsEarned: queued.points,
+        timestamp: queued.timestamp,
+        coordinatesChecked: { latitude: queued.latitude, longitude: queued.longitude },
+        verifiedOffline: true,
+      };
+    }
+    await this.removeQueuedUpload(id);
+
+    if (!removed) return null;
+
+    await this.deleteLocalPhoto(removed.photoUrl);
+    this.recomputeStatsFromCheckIns();
+    this.saveState();
+    return removed;
+  }
+
+  /**
+   * Delete every check-in (synced history + offline queue) and reset the derived
+   * stats. Dev/testing affordance — clears local photos too. Returns the removed
+   * records so a caller can also delete any server-side counterparts.
+   */
+  public async clearAllCheckIns(): Promise<CheckIn[]> {
+    const removed = [...this.checkIns];
+    for (const c of removed) {
+      await this.deleteLocalPhoto(c.photoUrl);
+    }
+    this.checkIns = [];
+    await this.clearQueue();
+    this.recomputeStatsFromCheckIns();
+    this.saveState();
+    return removed;
+  }
+
   // Best-effort fetch of the live achievement catalogue (falls back to the
   // bundled ACHIEVEMENTS_CATALOGUE on any failure/timeout/offline).
   private async fetchRemoteAchievements(): Promise<AchievementDef[] | null> {

@@ -308,10 +308,17 @@ export interface PendingUpload {
   checkedInAt: string;
 }
 
+/** Result of a check-in upload: ok + the server check-in id when the 2xx body
+ *  carried one (so the local record can be deleted server-side later). */
+export interface UploadResult {
+  ok: boolean;
+  serverId?: string | number;
+}
+
 // POST one check-in as multipart/form-data with the optional photo file. Returns
-// true on a 2xx, false on any failure. A 403 (blocked) is treated as a permanent
-// failure for THIS item but does not throw.
-async function uploadCheckIn(item: PendingUpload, token: string): Promise<boolean> {
+// { ok, serverId } — ok on a 2xx, serverId from the response body when present.
+// A 403 (blocked) is treated as a permanent failure for THIS item but does not throw.
+async function uploadCheckIn(item: PendingUpload, token: string): Promise<UploadResult> {
   try {
     const form = new FormData();
     form.append('location_id', item.locationId);
@@ -344,12 +351,23 @@ async function uploadCheckIn(item: PendingUpload, token: string): Promise<boolea
       },
       body: form,
     }, UPLOAD_TIMEOUT_MS);
-    if (!res) return false;
-    if (noteBlockedIf403(res)) return false;
-    return res.ok;
+    if (!res) return { ok: false };
+    if (noteBlockedIf403(res)) return { ok: false };
+    if (!res.ok) return { ok: false };
+    // Capture the created check-in's server id so it can be deleted server-side
+    // later (DELETE /api/checkins/{id}). The body is optional — a 2xx without a
+    // parseable id still counts as uploaded.
+    let serverId: string | number | undefined;
+    try {
+      const body = (await res.json()) as { check_in?: { id?: string | number } };
+      if (body?.check_in?.id != null) serverId = body.check_in.id;
+    } catch {
+      // No/!JSON body — fine, just no serverId to record.
+    }
+    return { ok: true, serverId };
   } catch (e) {
     console.warn('[account] uploadCheckIn failed (soft)', e);
-    return false;
+    return { ok: false };
   }
 }
 
@@ -357,12 +375,42 @@ async function uploadCheckIn(item: PendingUpload, token: string): Promise<boolea
  * Upload a single, just-recorded check-in immediately. Fire-and-forget after a
  * successful local check-in. On failure the caller has ALREADY queued it locally
  * (offline path) OR it is reconstructable from local history; either way
- * uploadPendingCheckIns() retries on the next launch. Returns true if uploaded.
+ * uploadPendingCheckIns() retries on the next launch. Returns { ok, serverId }.
  */
-export async function uploadCheckInNow(item: PendingUpload): Promise<boolean> {
+export async function uploadCheckInNow(item: PendingUpload): Promise<UploadResult> {
+  const token = storage.getToken();
+  if (!token) return { ok: false };
+  return uploadCheckIn(item, token);
+}
+
+/**
+ * Delete one check-in on the server (owner-scoped, auth:sanctum). `serverId` is
+ * the SERVER check-in id. Mirrors uploadCheckInNow: bearer token + fallback base
+ * URLs + fail-soft (never throws). Returns true on a confirmed delete (2xx, or a
+ * 404 — already gone server-side counts as deleted), false otherwise. The local
+ * record is removed regardless by storage.deleteCheckIn; this is best-effort so a
+ * stale row never lingers on the backend.
+ */
+export async function deleteCheckInNow(serverId: string | number): Promise<boolean> {
   const token = storage.getToken();
   if (!token) return false;
-  return uploadCheckIn(item, token);
+  try {
+    const res = await fetchWithFallback(`/api/checkins/${encodeURIComponent(String(serverId))}`, {
+      method: 'DELETE',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!res) return false;
+    if (noteBlockedIf403(res)) return false;
+    // 404 = the server already has no such check-in; treat as deleted.
+    if (res.status === 404) return true;
+    return res.ok;
+  } catch (e) {
+    console.warn('[account] deleteCheckInNow failed (soft)', e);
+    return false;
+  }
 }
 
 /**
@@ -379,8 +427,8 @@ export async function uploadPendingCheckIns(): Promise<void> {
 
     const queued = await storage.getQueuedUploads();
     for (const q of queued) {
-      const ok = await uploadCheckIn(q.payload, token);
-      if (ok) {
+      const r = await uploadCheckIn(q.payload, token);
+      if (r.ok) {
         await storage.removeQueuedUpload(q.id);
       } else {
         // Stop on the first failure that isn't a permanent block — likely

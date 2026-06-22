@@ -32,7 +32,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BrandText } from '@/components/brand';
 import { Brand, BrandFonts, BrandRadius, stampBorder, Spacing } from '@/constants/theme';
 import { storage } from '@/utils/storage';
-import { checkUsernameAvailable, UsernameStatus } from '@/utils/account';
+import { checkUsernameAvailable, deleteCheckInNow, UsernameStatus } from '@/utils/account';
 import { enableNearbyAlerts, disableNearbyAlerts } from '@/utils/geofencing';
 import { NEARBY_ALERTS_BONUS_PCT } from '@/utils/leveling';
 import { avatarUri } from '@/utils/avatar';
@@ -57,7 +57,7 @@ const AVATAR_PRESETS = [
   'https://api.dicebear.com/7.x/adventurer/png?seed=Mia&backgroundColor=d1f4c9',
 ];
 
-type ProfileTab = 'overview' | 'gallery' | 'achievements';
+type ProfileTab = 'overview' | 'checkins' | 'achievements';
 
 // A check-in joined with its resolved location (lifted from the standalone
 // History tab, which this screen now folds in as a "Recent check-ins" section).
@@ -239,6 +239,11 @@ export default function ProfileScreen() {
   // Full-screen photo viewer: the tapped photo's index into `viewerPhotos`,
   // or null when the viewer is closed.
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  // Delete-check-in confirmation. Holds the entry to remove, the literal 'all'
+  // (the dev clear-everything action), or null when the modal is closed.
+  const [pendingDelete, setPendingDelete] = useState<HistoryEntry | 'all' | null>(null);
+  // True while a delete/clear is in flight, to disable the modal's buttons.
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Edit-mode form state
   const [editDisplayName, setEditDisplayName] = useState('');
@@ -453,6 +458,37 @@ export default function ProfileScreen() {
       ]
     );
   };
+
+  // Run the pending delete (a single check-in, or 'all' for the dev clear). The
+  // server delete is best-effort (DELETE /api/checkins/{id} when we have a server
+  // id); the local removal + stats refresh always happen via storage. An unsynced
+  // check-in (no server id) is simply deleted locally.
+  const confirmDelete = useCallback(async () => {
+    if (!pendingDelete) return;
+    setIsDeleting(true);
+    try {
+      if (pendingDelete === 'all') {
+        const removed = await storage.clearAllCheckIns();
+        // Fire-and-forget the server-side deletes for any that carry a server id.
+        for (const c of removed) {
+          const serverId = (c as { serverId?: string | number }).serverId;
+          if (serverId != null) void deleteCheckInNow(serverId);
+        }
+      } else {
+        const serverId = (pendingDelete.checkIn as { serverId?: string | number }).serverId;
+        if (serverId != null) void deleteCheckInNow(serverId);
+        await storage.deleteCheckIn(pendingDelete.checkIn.id);
+      }
+      // Close the viewer if it was open (indices have shifted) and refresh.
+      setViewerIndex(null);
+      await loadData();
+    } catch (e) {
+      console.error('Failed to delete check-in', e);
+    } finally {
+      setIsDeleting(false);
+      setPendingDelete(null);
+    }
+  }, [pendingDelete, loadData]);
 
   const handleLogout = () => {
     Alert.alert('Log out', 'Are you sure you want to log out?', [
@@ -755,7 +791,7 @@ export default function ProfileScreen() {
 
         {/* Tabs */}
         <View style={styles.tabsRow}>
-          {(['overview', 'gallery', 'achievements'] as ProfileTab[]).map((tab) => {
+          {(['overview', 'checkins', 'achievements'] as ProfileTab[]).map((tab) => {
             const isActive = activeTab === tab;
             return (
               <TouchableOpacity
@@ -768,7 +804,7 @@ export default function ProfileScreen() {
                   color={isActive ? Brand.purple : Brand.ink}
                   style={styles.tabText}
                 >
-                  {tab === 'overview' ? 'Overview' : tab === 'gallery' ? 'Gallery' : 'Achievements'}
+                  {tab === 'overview' ? 'Overview' : tab === 'checkins' ? 'Check-ins' : 'Achievements'}
                 </BrandText>
               </TouchableOpacity>
             );
@@ -977,7 +1013,7 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        ) : activeTab === 'gallery' ? (
+        ) : activeTab === 'checkins' ? (
           <View style={styles.tabContent}>
             {entries.length === 0 ? (
               <View style={[styles.emptyCard, stampBorder]}>
@@ -986,33 +1022,65 @@ export default function ProfileScreen() {
                   No check-ins yet — go explore!
                 </BrandText>
                 <BrandText weight="medium" color={Brand.inkSecondary} style={styles.emptyText}>
-                  Check in at a location to start your gallery.
+                  Check in at a location to start your collection.
                 </BrandText>
               </View>
             ) : (
-              <View style={styles.galleryGrid}>
-                {entries.map((entry, idx) => (
+              <>
+                {/* Hint so the tap-to-view / long-press-to-delete is discoverable. */}
+                <BrandText weight="medium" color={Brand.inkSecondary} style={styles.checkinsHint}>
+                  Tap a photo to view it, or long-press to delete.
+                </BrandText>
+                <View style={styles.galleryGrid}>
+                  {entries.map((entry, idx) => (
+                    <TouchableOpacity
+                      key={entry.checkIn.id}
+                      activeOpacity={0.85}
+                      style={[styles.galleryItem, stampBorder]}
+                      onPress={() => openViewer(idx)}
+                      onLongPress={() => setPendingDelete(entry)}
+                      delayLongPress={300}
+                    >
+                      <Image
+                        source={{ uri: entry.checkIn.photoUrl || entry.location?.imageUrls[0] }}
+                        style={styles.galleryImage}
+                      />
+                      {/* Tap-target delete badge (long-press still works too). */}
+                      <TouchableOpacity
+                        style={styles.galleryDeleteBadge}
+                        onPress={() => setPendingDelete(entry)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons name="trash" size={12} color={Brand.bg} />
+                      </TouchableOpacity>
+                      <View style={styles.galleryCaption}>
+                        <BrandText weight="semibold" color={Brand.bg} style={styles.galleryName} numberOfLines={1}>
+                          {entry.location?.name ?? 'Unknown'}
+                        </BrandText>
+                        <BrandText weight="medium" color={Brand.bg} style={styles.galleryDate} numberOfLines={1}>
+                          {formatDate(entry.checkIn.timestamp)}
+                        </BrandText>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Developer-only: wipe every check-in (server + local) while
+                    testing. __DEV__ is false in production builds, so this never
+                    ships to users. */}
+                {__DEV__ ? (
                   <TouchableOpacity
-                    key={entry.checkIn.id}
+                    style={[styles.devClearButton, stampBorder]}
                     activeOpacity={0.85}
-                    style={[styles.galleryItem, stampBorder]}
-                    onPress={() => openViewer(idx)}
+                    onPress={() => setPendingDelete('all')}
                   >
-                    <Image
-                      source={{ uri: entry.checkIn.photoUrl || entry.location?.imageUrls[0] }}
-                      style={styles.galleryImage}
-                    />
-                    <View style={styles.galleryCaption}>
-                      <BrandText weight="semibold" color={Brand.bg} style={styles.galleryName} numberOfLines={1}>
-                        {entry.location?.name ?? 'Unknown'}
-                      </BrandText>
-                      <BrandText weight="medium" color={Brand.bg} style={styles.galleryDate} numberOfLines={1}>
-                        {formatDate(entry.checkIn.timestamp)}
-                      </BrandText>
-                    </View>
+                    <Ionicons name="bug-outline" size={16} color={Brand.sticker.pink} />
+                    <BrandText weight="bold" color={Brand.sticker.pink} style={styles.devClearText}>
+                      Clear all check-ins (dev)
+                    </BrandText>
                   </TouchableOpacity>
-                ))}
-              </View>
+                ) : null}
+              </>
             )}
           </View>
         ) : (
@@ -1051,26 +1119,28 @@ export default function ProfileScreen() {
 
                     <Ionicons
                       name={ach.iconName as keyof typeof Ionicons.glyphMap}
-                      size={30}
+                      size={36}
                       color={ach.isUnlocked ? diffColor : Brand.inkSubtle}
                       style={styles.achievementIcon}
                     />
-                    <View style={[styles.difficultyChip, { backgroundColor: diffColor }]}>
-                      <BrandText weight="bold" color={Brand.bg} style={styles.difficultyChipText}>
-                        {ach.difficulty}
+                    <View style={styles.achievementBody}>
+                      <View style={[styles.difficultyChip, { backgroundColor: diffColor }]}>
+                        <BrandText weight="bold" color={Brand.bg} style={styles.difficultyChipText}>
+                          {ach.difficulty}
+                        </BrandText>
+                      </View>
+                      <BrandText weight="semibold" style={styles.achievementTitle} numberOfLines={1}>
+                        {ach.title}
                       </BrandText>
-                    </View>
-                    <BrandText weight="semibold" style={styles.achievementTitle} numberOfLines={1}>
-                      {ach.title}
-                    </BrandText>
-                    <BrandText weight="medium" color={Brand.inkSecondary} style={styles.achievementDesc} numberOfLines={2}>
-                      {ach.description}
-                    </BrandText>
-                    <View style={styles.achievementPoints}>
-                      <Ionicons name="trophy" size={12} color={Brand.sticker.gold} />
-                      <BrandText weight="semibold" color={Brand.sticker.gold} style={styles.achievementPointsText}>
-                        {ach.points}
+                      <BrandText weight="medium" color={Brand.inkSecondary} style={styles.achievementDesc}>
+                        {ach.description}
                       </BrandText>
+                      <View style={styles.achievementPoints}>
+                        <Ionicons name="trophy" size={12} color={Brand.sticker.gold} />
+                        <BrandText weight="semibold" color={Brand.sticker.gold} style={styles.achievementPointsText}>
+                          {ach.points}
+                        </BrandText>
+                      </View>
                     </View>
                   </View>
                 );
@@ -1087,6 +1157,53 @@ export default function ProfileScreen() {
           onClose={() => setViewerIndex(null)}
         />
       ) : null}
+
+      {/* Delete confirmation — single check-in or the dev "clear all". */}
+      <Modal
+        visible={pendingDelete !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => (isDeleting ? null : setPendingDelete(null))}
+      >
+        <View style={styles.confirmOverlay}>
+          <View style={[styles.confirmCard, stampBorder]}>
+            <BrandText weight="semibold" style={styles.confirmTitle}>
+              {pendingDelete === 'all' ? 'Clear all check-ins?' : 'Delete check-in?'}
+            </BrandText>
+            <BrandText weight="medium" color={Brand.inkSecondary} style={styles.confirmBody}>
+              {pendingDelete === 'all'
+                ? "This removes every check-in from your collection. This can't be undone."
+                : "This removes it from your check-ins. This can't be undone."}
+            </BrandText>
+            <View style={styles.confirmButtons}>
+              <TouchableOpacity
+                style={[styles.confirmButton, styles.confirmCancel, stampBorder]}
+                activeOpacity={0.85}
+                disabled={isDeleting}
+                onPress={() => setPendingDelete(null)}
+              >
+                <BrandText weight="bold" color={Brand.ink} style={styles.confirmButtonText}>
+                  Cancel
+                </BrandText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmButton, styles.confirmDelete, stampBorder]}
+                activeOpacity={0.85}
+                disabled={isDeleting}
+                onPress={confirmDelete}
+              >
+                {isDeleting ? (
+                  <ActivityIndicator size="small" color={Brand.bg} />
+                ) : (
+                  <BrandText weight="bold" color={Brand.bg} style={styles.confirmButtonText}>
+                    Delete
+                  </BrandText>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1559,7 +1676,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
 
-  // Gallery
+  // Check-ins grid (the photo collection)
   galleryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1593,6 +1710,83 @@ const styles = StyleSheet.create({
     fontSize: 8,
     opacity: 0.85,
   },
+  // Discoverability hint above the check-ins grid.
+  checkinsHint: {
+    fontSize: 12,
+    marginBottom: Spacing.one,
+  },
+  // Small trash badge overlaid top-right of each check-in thumbnail.
+  galleryDeleteBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(42,36,33,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  // Dev-only "Clear all check-ins" button (gated by __DEV__).
+  devClearButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    backgroundColor: Brand.surface,
+    paddingVertical: Spacing.three,
+    borderRadius: BrandRadius.control,
+    marginTop: Spacing.three,
+  },
+  devClearText: {
+    fontSize: 14,
+  },
+  // Delete confirmation modal.
+  confirmOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.four,
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: Brand.surface,
+    borderRadius: BrandRadius.sticker,
+    padding: Spacing.four,
+    gap: Spacing.two,
+  },
+  confirmTitle: {
+    fontSize: 18,
+    color: Brand.ink,
+  },
+  confirmBody: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  confirmButtons: {
+    flexDirection: 'row',
+    gap: Spacing.three,
+    marginTop: Spacing.three,
+  },
+  confirmButton: {
+    flex: 1,
+    height: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: BrandRadius.control,
+  },
+  confirmCancel: {
+    backgroundColor: Brand.surface,
+  },
+  confirmDelete: {
+    backgroundColor: Brand.sticker.pink,
+  },
+  confirmButtonText: {
+    fontSize: 15,
+  },
 
   // Achievements grid
   achievementsHeader: {
@@ -1624,37 +1818,38 @@ const styles = StyleSheet.create({
     fontSize: 9,
     letterSpacing: 0.3,
   },
+  // Single-column, full-width vertical list of taller achievement cards.
   achievementsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: Spacing.three,
   },
   achievementCard: {
-    width: '47%',
-    flexGrow: 1,
-    padding: Spacing.three,
+    width: '100%',
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.one,
+    gap: Spacing.three,
+    padding: Spacing.three,
     position: 'relative',
     backgroundColor: Brand.surface,
+  },
+  achievementBody: {
+    flex: 1,
+    gap: Spacing.one,
+    alignItems: 'flex-start',
   },
   achievementLocked: {
     opacity: 0.55,
     backgroundColor: Brand.bg,
   },
   achievementIcon: {
-    marginTop: Spacing.one,
-    marginBottom: Spacing.one,
+    marginHorizontal: Spacing.one,
   },
   achievementTitle: {
-    fontSize: 14,
+    fontSize: 15,
     color: Brand.ink,
-    textAlign: 'center',
   },
   achievementDesc: {
-    fontSize: 12,
-    textAlign: 'center',
-    minHeight: 32,
+    fontSize: 13,
+    lineHeight: 18,
   },
   achievementPoints: {
     flexDirection: 'row',
