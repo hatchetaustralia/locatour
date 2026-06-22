@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AppCheckIn;
 use App\Models\AppUser;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * Records mobile-app check-ins (multipart, optional photo upload). Blocked
@@ -58,5 +60,28 @@ class CheckInController extends Controller
         return response()->json([
             'check_in' => $checkIn,
         ], 201);
+    }
+
+    /**
+     * DELETE /api/checkins/{checkIn}  (auth:sanctum, EnsureAppUserNotBlocked)
+     * Deletes the authenticated user's own check-in (403 if it belongs to another user).
+     * Removes the photo from the public disk when one was uploaded.
+     */
+    public function destroy(Request $request, AppCheckIn $checkIn): JsonResponse
+    {
+        /** @var AppUser $appUser */
+        $appUser = $request->user();
+
+        if ($checkIn->app_user_id !== $appUser->id) {
+            return response()->json(['error' => 'forbidden'], 403);
+        }
+
+        if ($checkIn->photo_path) {
+            Storage::disk('public')->delete($checkIn->photo_path);
+        }
+
+        $checkIn->delete();
+
+        return response()->json(null, 204);
     }
 }

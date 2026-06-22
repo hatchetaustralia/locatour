@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\CheckInController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\PlacesController;
+use App\Http\Controllers\Api\SuggestionController;
 use App\Http\Middleware\EnsureAppUserNotBlocked;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -22,7 +23,13 @@ Route::get('/account/username-available', [AccountController::class, 'usernameAv
 
 Route::middleware(['auth:sanctum', EnsureAppUserNotBlocked::class])->group(function () {
     Route::post('/account/sync', [AccountController::class, 'sync']);
+    // The cooldown-guarded base-location change endpoint (server-authoritative).
+    Route::post('/account/base-location', [AccountController::class, 'baseLocation']);
     Route::post('/checkins', [CheckInController::class, 'store']);
+    Route::delete('/checkins/{checkIn}', [CheckInController::class, 'destroy']);
+    // Community location suggestions submitted by app users from the map.
+    // Proximity check (haversine <= 150 m) enforced in SuggestionController.
+    Route::post('/suggestions', [SuggestionController::class, 'store']);
 });
 
 // Public read-only Locations API (no auth for the prototype).
@@ -50,3 +57,7 @@ Route::get('/announcement', [AnnouncementController::class, 'current']);
 // Server-side Google Places (New) suburb autocomplete proxy for onboarding —
 // keeps the Maps key off the client. Returns { suggestions: [{description, placeId}] }.
 Route::get('/places/suburbs', [PlacesController::class, 'suburbs']);
+
+// Resolve a suburb (placeId or free text) to { lat, lng } so the app can store
+// the user's base coordinates and warm-start the map there.
+Route::get('/places/coordinates', [PlacesController::class, 'coordinates']);

@@ -19,6 +19,9 @@ class AccountFlag extends Model
     /** Raised by MonitorLocationQueries when implausible query movement is detected. */
     public const TYPE_SCRAPING = 'scraping';
 
+    /** Raised when an account repeatedly tries to change its base location during a cooldown. */
+    public const TYPE_BASE_LOCATION_CHURN = 'base_location_churn';
+
     protected $fillable = [
         'app_user_id',
         'type',

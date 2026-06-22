@@ -94,6 +94,7 @@ class AdminPanelProvider extends PanelProvider
                 'Content',
                 'Gamification',
                 'Engagement',
+                'Contributions',
                 'Management',
                 'Filament Shield',
             ])

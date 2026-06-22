@@ -74,4 +74,69 @@ class PlacesController extends Controller
             return response()->json(['suggestions' => [], 'error' => 'lookup unavailable'], 200);
         }
     }
+
+    /**
+     * GET /api/places/coordinates?placeId=…  OR  ?suburb=…
+     *
+     * Resolves a suburb to { lat, lng } so the app can store the user's base
+     * coordinates and warm-start the map there. Prefers Place Details (New) by
+     * placeId (precise, matches the autocomplete pick); falls back to the
+     * Geocoding API for a free-typed suburb string. Keeps the Maps key server-side.
+     * Fail-soft: returns { error } (200) so the caller can degrade gracefully.
+     */
+    public function coordinates(Request $request): JsonResponse
+    {
+        $placeId = trim((string) $request->query('placeId', ''));
+        $suburb = trim((string) $request->query('suburb', ''));
+
+        if ($placeId === '' && $suburb === '') {
+            return response()->json(['error' => 'placeId or suburb required'], 200);
+        }
+
+        $key = config('services.google_maps_key');
+        if (! $key) {
+            return response()->json(['error' => 'maps key not configured'], 200);
+        }
+
+        try {
+            // 1) Precise: Place Details (New) by placeId → location.latitude/longitude.
+            if ($placeId !== '') {
+                $details = Http::timeout(6)
+                    ->withHeaders([
+                        'X-Goog-Api-Key' => $key,
+                        'X-Goog-FieldMask' => 'location',
+                    ])
+                    ->get("https://places.googleapis.com/v1/places/{$placeId}");
+
+                $loc = $details->successful() ? $details->json('location') : null;
+                if (is_array($loc) && isset($loc['latitude'], $loc['longitude'])) {
+                    return response()->json([
+                        'lat' => (float) $loc['latitude'],
+                        'lng' => (float) $loc['longitude'],
+                    ]);
+                }
+            }
+
+            // 2) Fallback: Geocoding API for a free-typed suburb (AU-biased).
+            if ($suburb !== '') {
+                $geo = Http::timeout(6)->get('https://maps.googleapis.com/maps/api/geocode/json', [
+                    'address' => $suburb,
+                    'components' => 'country:AU',
+                    'key' => $key,
+                ]);
+
+                $result = $geo->successful() ? $geo->json('results.0.geometry.location') : null;
+                if (is_array($result) && isset($result['lat'], $result['lng'])) {
+                    return response()->json([
+                        'lat' => (float) $result['lat'],
+                        'lng' => (float) $result['lng'],
+                    ]);
+                }
+            }
+
+            return response()->json(['error' => 'not found'], 200);
+        } catch (\Throwable $e) {
+            return response()->json(['error' => 'lookup unavailable'], 200);
+        }
+    }
 }

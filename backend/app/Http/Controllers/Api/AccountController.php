@@ -3,10 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AccountFlag;
 use App\Models\AppUser;
 use App\Support\Leveling;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 /**
@@ -16,6 +19,15 @@ use Illuminate\Validation\Rule;
  */
 class AccountController extends Controller
 {
+    /** Cooldown (seconds) imposed AFTER the 1st base-location change: 24 hours. */
+    private const BASE_COOLDOWN_FIRST = 86400;
+
+    /** Cooldown (seconds) AFTER every subsequent base-location change: ~30 days. */
+    private const BASE_COOLDOWN_RECURRING = 2592000;
+
+    /** Rejected change attempts during a cooldown before we flag the account. */
+    private const BASE_CHURN_FLAG_ATTEMPTS = 3;
+
     /**
      * POST /api/account/register  (public)
      * Upserts the AppUser by device_id and returns a fresh Sanctum token.
@@ -24,13 +36,38 @@ class AccountController extends Controller
     {
         $data = $this->validateProfile($request, registering: true, ignoreDeviceId: $request->input('device_id'));
 
+        // Age gate: if date_of_birth is provided, the user must be at least 13.
+        // Nullable — legacy callers without DOB are allowed through unchanged.
+        if (isset($data['date_of_birth'])) {
+            $dob = Carbon::parse($data['date_of_birth']);
+            if ($dob->age < 13) {
+                return response()->json([
+                    'message' => 'Locatour is currently available for users aged 13 and above.',
+                ], 422);
+            }
+        }
+
         $deviceId = $data['device_id'];
         unset($data['device_id']);
 
-        $appUser = AppUser::updateOrCreate(
-            ['device_id' => $deviceId],
-            $data,
-        );
+        $existing = AppUser::where('device_id', $deviceId)->first();
+
+        if ($existing) {
+            // Re-register (self-heal when the token was lost). NEVER let a
+            // re-register silently move the base location — that is only allowed
+            // through the cooldown-guarded /account/base-location endpoint.
+            unset($data['home_suburb'], $data['home_lat'], $data['home_lng']);
+            $existing->update($data);
+            $appUser = $existing;
+        } else {
+            // First registration = the initial base set (free, no cooldown).
+            // Stamp home_changed_at so the FIRST later change computes its
+            // cooldown window from now.
+            if (array_key_exists('home_suburb', $data) || array_key_exists('home_lat', $data)) {
+                $data['home_changed_at'] = now();
+            }
+            $appUser = AppUser::create(['device_id' => $deviceId] + $data);
+        }
 
         $token = $appUser->createToken('app')->plainTextToken;
 
@@ -72,6 +109,11 @@ class AccountController extends Controller
 
         $data = $this->validateProfile($request, registering: false, ignoreDeviceId: $appUser->device_id);
 
+        // Base location is trust-sensitive and cooldown-guarded: sync must never
+        // change it, even if the client includes it in the profile payload. The
+        // ONLY path that mutates it is baseLocation() below.
+        unset($data['home_suburb'], $data['home_lat'], $data['home_lng']);
+
         // XP reconciliation. Both the app (earning) and an admin (granting) can
         // change XP, so neither may blindly clobber the other: keep the HIGHER of
         // the app's reported total and the stored total. An admin "grant points"
@@ -91,6 +133,90 @@ class AccountController extends Controller
         return response()->json([
             'user' => $appUser->fresh(),
         ]);
+    }
+
+    /**
+     * POST /api/account/base-location  (auth:sanctum)
+     *
+     * The ONLY path that changes a user's base/home location after the initial
+     * onboarding set. Server-authoritative so a tampered client can't bypass it.
+     *
+     * Escalating, PIN-lockout-style cooldown: the 1st change is free, then a 24h
+     * lock, then a ~30-day lock for every change after that. Trying to change
+     * while locked is rejected (429) and counts as an attempt; repeated attempts
+     * raise a base_location_churn flag for admin review. No auto-ban — the
+     * cooldown itself is the enforcement (genuine movers/travellers are never
+     * auto-banned, only briefly throttled).
+     */
+    public function baseLocation(Request $request): JsonResponse
+    {
+        /** @var AppUser $appUser */
+        $appUser = $request->user();
+
+        $data = $request->validate([
+            'home_suburb' => ['required', 'string', 'max:255'],
+            'home_lat' => ['required', 'numeric', 'between:-90,90'],
+            'home_lng' => ['required', 'numeric', 'between:-180,180'],
+        ]);
+
+        // Serialize concurrent change requests with a row lock so two near-
+        // simultaneous POSTs can't both read the same pre-change state and slip
+        // past the cooldown (lockForUpdate is a real row lock on MySQL/Postgres
+        // and a harmless no-op on SQLite).
+        return DB::transaction(function () use ($appUser, $data) {
+            /** @var AppUser $user */
+            $user = AppUser::whereKey($appUser->getKey())->lockForUpdate()->first();
+
+            $now = now();
+            $count = (int) $user->home_change_count;
+            $last = $user->home_changed_at;
+
+            // Cooldown required BEFORE this change, based on how many changes
+            // already happened: 0 → free (first change), 1 → 24h, 2+ → 30 days.
+            $cooldown = $count === 0
+                ? 0
+                : ($count === 1 ? self::BASE_COOLDOWN_FIRST : self::BASE_COOLDOWN_RECURRING);
+
+            if ($cooldown > 0 && $last !== null && $last->diffInSeconds($now) < $cooldown) {
+                // Locked. Record the rejected attempt; repeated hammering flags
+                // the account for review (idempotent flag; never auto-blocks).
+                $attempts = (int) $user->home_change_attempts + 1;
+                $user->update(['home_change_attempts' => $attempts]);
+
+                if ($attempts >= self::BASE_CHURN_FLAG_ATTEMPTS) {
+                    $user->flagFor(
+                        AccountFlag::TYPE_BASE_LOCATION_CHURN,
+                        'Repeated base-location change attempts during cooldown',
+                        ['attempts' => $attempts, 'change_count' => $count],
+                        block: false,
+                    );
+                }
+
+                return response()->json([
+                    'error' => 'cooldown',
+                    'next_change_at' => $last->copy()->addSeconds($cooldown)->toIso8601String(),
+                    'attempts' => $attempts,
+                ], 429);
+            }
+
+            // Allowed — apply the change and open the next cooldown window.
+            $newCount = $count + 1;
+            $user->update([
+                'home_suburb' => $data['home_suburb'],
+                'home_lat' => $data['home_lat'],
+                'home_lng' => $data['home_lng'],
+                'home_changed_at' => $now,
+                'home_change_count' => $newCount,
+                'home_change_attempts' => 0,
+            ]);
+
+            $nextCooldown = $newCount === 1 ? self::BASE_COOLDOWN_FIRST : self::BASE_COOLDOWN_RECURRING;
+
+            return response()->json([
+                'user' => $user->fresh(),
+                'next_change_at' => $now->copy()->addSeconds($nextCooldown)->toIso8601String(),
+            ]);
+        });
     }
 
     /**
@@ -115,10 +241,18 @@ class AccountController extends Controller
             'avatar_url' => ['nullable', 'string', 'max:2048'],
             'gender' => ['nullable', 'string', 'max:255'],
             'home_suburb' => ['nullable', 'string', 'max:255'],
+            // Accepted on first register (initial base set); ignored on sync and
+            // re-register (base changes go through baseLocation() only).
+            'home_lat' => ['nullable', 'numeric', 'between:-90,90'],
+            'home_lng' => ['nullable', 'numeric', 'between:-180,180'],
             'interests' => ['nullable', 'array'],
             'total_xp' => ['nullable', 'integer'],
             'current_level' => ['nullable', 'integer'],
             'day_streak' => ['nullable', 'integer'],
+            // Age verification. Nullable — existing callers without DOB still work.
+            // When provided at registration the age gate (>= 13) is enforced above
+            // before this method returns; sync ignores it (account already exists).
+            'date_of_birth' => ['nullable', 'date', 'before:today'],
         ];
 
         if ($registering) {

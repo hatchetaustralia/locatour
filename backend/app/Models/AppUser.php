@@ -34,6 +34,13 @@ class AppUser extends Authenticatable
         'avatar_url',
         'gender',
         'home_suburb',
+        // Base/home coordinates (geocoded from home_suburb) + change-throttling.
+        // Base changes are guarded by an escalating cooldown — see baseLocation().
+        'home_lat',
+        'home_lng',
+        'home_changed_at',
+        'home_change_count',
+        'home_change_attempts',
         'interests',
         'total_xp',
         'current_level',
@@ -43,15 +50,23 @@ class AppUser extends Authenticatable
         // counting window's start; suspicious_query_count = queries in that window.
         'last_location_query_at',
         'suspicious_query_count',
+        // Age verification (13+). Nullable — legacy callers without DOB still work.
+        'date_of_birth',
     ];
 
     protected $casts = [
         'interests' => 'array',
+        'home_lat' => 'float',
+        'home_lng' => 'float',
+        'home_changed_at' => 'datetime',
+        'home_change_count' => 'integer',
+        'home_change_attempts' => 'integer',
         'total_xp' => 'integer',
         'current_level' => 'integer',
         'day_streak' => 'integer',
         'last_location_query_at' => 'datetime',
         'suspicious_query_count' => 'integer',
+        'date_of_birth' => 'date',
     ];
 
     /** Check-ins recorded by this app user. */
