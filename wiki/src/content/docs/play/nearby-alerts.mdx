@@ -3,13 +3,20 @@ title: Nearby alerts
 description: An optional, opt-in feature that gives you a gentle heads-up when you wander near a Locatour spot — even with the app closed — plus a permanent +20% points bonus. Off by default, easy to turn off, and private by design.
 ---
 
+import { Badge, Aside, Steps } from '@astrojs/starlight/components';
+import flow from '../../../assets/diagrams/nearby-alerts-flow.svg';
+
 **Nearby alerts** turn everyday life into passive treasure-hunting. With it
 switched on, Locatour can give you a gentle nudge when you happen to wander near
 a spot you haven't found yet — even when the app is closed and tucked away in
-your pocket.
+your pocket. <Badge text="+20% pts" variant="success" size="medium" />
 
 It's completely **optional and off by default.** This page explains exactly what
 it does, the bonus you get for using it, and how we keep it private and rare.
+
+<figure class="diagram">
+  <img src={flow.src} alt="How nearby alerts work: opt in from your profile, go about your day, wander near a spot, get a gentle nudge even with the app closed, then detour and check in for a +20% bonus." />
+</figure>
 
 ## What it does
 
@@ -42,8 +49,7 @@ them back with strict limits:
 
 - **At most a few a day** — a small daily cap means you'll never be flooded.
 - **Never overnight** — alerts are silenced through the evening and night
-  (roughly 9pm to 8am, your local time), so your phone stays quiet while you
-  rest.
+  (roughly 9pm to 8am, your local time), so your phone stays quiet while you rest.
 - **No repeats** — once you've been alerted to a spot, Locatour won't ping you
   about that same spot again for about a month.
 
@@ -72,23 +78,30 @@ battery, not gulp it.
 
 ## Turning it on (and off)
 
+<Steps>
+
 1. Go to **Profile → Overview** and find the **Nearby alerts** toggle (with its
    "+20% pts" badge).
+
 2. Tap it on. Locatour first shows you a **plain-language explanation** of what
    background location does, the points bonus, and the privacy promises above —
    so you can make an informed choice **before** any system permission appears.
+
 3. After you accept, your phone asks for permission. On many Android phones,
    you'll be taken to **Settings** to choose **"Allow all the time"** for
    location — this is the system's own step for background location, and it's
    required for alerts to work while the app is closed.
+
 4. To turn it off, flip the toggle back any time — or change the location
    permission in your device settings. Background location use stops right away.
 
-:::note
+</Steps>
+
+<Aside type="caution" title="Needs a supported build">
 Nearby alerts need a supported, installed build of Locatour and a real phone —
 they don't work in preview/simulator environments. If you don't see the toggle,
 your build may not support it yet.
-:::
+</Aside>
 
 ## In short
 

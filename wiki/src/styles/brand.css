@@ -62,3 +62,54 @@
   background: var(--loca-red);
   border-color: var(--loca-red);
 }
+
+/* --- Imagery helpers ------------------------------------------------------ */
+
+/* Phone screenshots: a rounded, softly-shadowed device-ish frame. */
+.app-screenshot {
+  border-radius: 18px;
+  box-shadow: 0 8px 28px rgba(42, 26, 20, 0.16);
+  border: 1px solid var(--sl-color-gray-5);
+  display: block;
+  height: auto;
+}
+
+/* A responsive row of screenshots that wraps on small screens. */
+.screens-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  justify-content: center;
+  align-items: flex-start;
+  margin: 1.5rem 0;
+}
+.screens-row figure {
+  margin: 0;
+  max-width: 220px;
+  text-align: center;
+}
+.screens-row figure img {
+  width: 100%;
+}
+.screens-row figcaption {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--sl-color-gray-3);
+}
+
+/* Full-width brand diagrams sit in a softly framed figure. */
+.diagram {
+  margin: 1.75rem 0;
+}
+.diagram img {
+  width: 100%;
+  height: auto;
+  border-radius: 16px;
+  box-shadow: 0 4px 18px rgba(42, 26, 20, 0.1);
+}
+.diagram figcaption {
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--sl-color-gray-3);
+  text-align: center;
+}

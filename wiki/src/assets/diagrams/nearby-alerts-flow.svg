@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 230" width="920" height="230" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-label="How nearby alerts work: opt in from your profile, go about your day, and when you wander near a spot your phone sends a gentle nudge so you can make a detour and check in for a twenty percent bonus.">
+  <rect x="0" y="0" width="920" height="230" rx="20" fill="#FFFDFB"/>
+  <text x="460" y="38" text-anchor="middle" font-size="20" font-weight="700" fill="#2a1a14">How nearby alerts work</text>
+
+  <!-- 1 Opt in -->
+  <rect x="22" y="74" width="166" height="104" rx="14" fill="#FCF0E8" stroke="#d1453b" stroke-width="2"/>
+  <text x="105" y="112" text-anchor="middle" font-size="26">🔔</text>
+  <text x="105" y="140" text-anchor="middle" font-size="14" font-weight="700" fill="#2a1a14">Opt in</text>
+  <text x="105" y="158" text-anchor="middle" font-size="12" fill="#6b5a50">(Profile toggle)</text>
+
+  <!-- 2 Day -->
+  <rect x="210" y="74" width="166" height="104" rx="14" fill="#FCF0E8" stroke="#b46c00" stroke-width="2"/>
+  <text x="293" y="112" text-anchor="middle" font-size="26">🚶</text>
+  <text x="293" y="140" text-anchor="middle" font-size="14" font-weight="700" fill="#2a1a14">Go about</text>
+  <text x="293" y="158" text-anchor="middle" font-size="14" font-weight="700" fill="#2a1a14">your day</text>
+
+  <!-- 3 Near -->
+  <rect x="398" y="74" width="166" height="104" rx="14" fill="#FCF0E8" stroke="#208aef" stroke-width="2"/>
+  <text x="481" y="112" text-anchor="middle" font-size="26">📡</text>
+  <text x="481" y="140" text-anchor="middle" font-size="14" font-weight="700" fill="#2a1a14">Wander near</text>
+  <text x="481" y="158" text-anchor="middle" font-size="14" font-weight="700" fill="#2a1a14">a spot</text>
+
+  <!-- 4 Nudge -->
+  <rect x="586" y="74" width="166" height="104" rx="14" fill="#FCF0E8" stroke="#ea739c" stroke-width="2"/>
+  <text x="669" y="112" text-anchor="middle" font-size="26">🔍</text>
+  <text x="669" y="140" text-anchor="middle" font-size="14" font-weight="700" fill="#2a1a14">Gentle nudge</text>
+  <text x="669" y="158" text-anchor="middle" font-size="12" fill="#6b5a50">even app-closed</text>
+
+  <!-- 5 Detour -->
+  <rect x="774" y="74" width="166" height="104" rx="14" fill="#e8f6ea" stroke="#3aa05a" stroke-width="2"/>
+  <text x="857" y="112" text-anchor="middle" font-size="26">🎉</text>
+  <text x="857" y="140" text-anchor="middle" font-size="14" font-weight="700" fill="#2a1a14">Detour &amp; check in</text>
+  <text x="857" y="158" text-anchor="middle" font-size="13" font-weight="700" fill="#d1453b">+20% bonus</text>
+
+  <g stroke="#caa" stroke-width="2.5" fill="none" marker-end="url(#a3)">
+    <line x1="192" y1="126" x2="206" y2="126"/>
+    <line x1="380" y1="126" x2="394" y2="126"/>
+    <line x1="568" y1="126" x2="582" y2="126"/>
+    <line x1="756" y1="126" x2="770" y2="126"/>
+  </g>
+  <text x="460" y="206" text-anchor="middle" font-size="12.5" font-style="italic" fill="#6b5a50">Optional &amp; off by default · strictly throttled so it's a rare delight, never spam</text>
+  <defs><marker id="a3" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#caa"/></marker></defs>
+</svg>

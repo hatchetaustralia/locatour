@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 220" width="920" height="220" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-label="How a check-in works: arrive at the place, your phone confirms you are there with GPS, take a live in-app photo, and you are checked in with experience awarded.">
+  <rect x="0" y="0" width="920" height="220" rx="20" fill="#FFFDFB"/>
+  <text x="460" y="38" text-anchor="middle" font-size="20" font-weight="700" fill="#2a1a14">How a check-in works</text>
+
+  <!-- 1 Arrive -->
+  <rect x="28" y="74" width="180" height="104" rx="14" fill="#FCF0E8" stroke="#b46c00" stroke-width="2"/>
+  <text x="118" y="112" text-anchor="middle" font-size="28">📍</text>
+  <text x="118" y="142" text-anchor="middle" font-size="15" font-weight="700" fill="#2a1a14">Arrive at</text>
+  <text x="118" y="160" text-anchor="middle" font-size="15" font-weight="700" fill="#2a1a14">the place</text>
+
+  <!-- 2 Confirm -->
+  <rect x="256" y="74" width="180" height="104" rx="14" fill="#FCF0E8" stroke="#208aef" stroke-width="2"/>
+  <text x="346" y="112" text-anchor="middle" font-size="28">🛰️</text>
+  <text x="346" y="142" text-anchor="middle" font-size="15" font-weight="700" fill="#2a1a14">Phone confirms</text>
+  <text x="346" y="160" text-anchor="middle" font-size="13" fill="#6b5a50">you're really there</text>
+
+  <!-- 3 Photo -->
+  <rect x="484" y="74" width="180" height="104" rx="14" fill="#FCF0E8" stroke="#7c5cff" stroke-width="2"/>
+  <text x="574" y="112" text-anchor="middle" font-size="28">📸</text>
+  <text x="574" y="142" text-anchor="middle" font-size="15" font-weight="700" fill="#2a1a14">Take a live</text>
+  <text x="574" y="160" text-anchor="middle" font-size="13" fill="#6b5a50">in-app photo</text>
+
+  <!-- 4 Done -->
+  <rect x="712" y="74" width="180" height="104" rx="14" fill="#e8f6ea" stroke="#3aa05a" stroke-width="2"/>
+  <text x="802" y="112" text-anchor="middle" font-size="28">✅</text>
+  <text x="802" y="142" text-anchor="middle" font-size="15" font-weight="700" fill="#2a1a14">Checked in!</text>
+  <text x="802" y="160" text-anchor="middle" font-size="13" font-weight="700" fill="#d1453b">+ XP earned</text>
+
+  <g stroke="#caa" stroke-width="2.5" fill="none" marker-end="url(#a2)">
+    <line x1="212" y1="126" x2="252" y2="126"/>
+    <line x1="440" y1="126" x2="480" y2="126"/>
+    <line x1="668" y1="126" x2="708" y2="126"/>
+  </g>
+  <defs><marker id="a2" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#caa"/></marker></defs>
+</svg>

@@ -21,6 +21,8 @@ next **level**. Like the RPGs that inspired it:
 
 ## Location tiers
 
+![Tier ladder: low tiers are robust places open to everyone for a modest reward; middle tiers unlock as you level; high tiers are fragile, hidden, level-gated gems with the greatest reward.](../../../assets/diagrams/tiers.svg)
+
 Every place has a **tier** that reflects how robust or fragile it is — from
 open-to-everyone all the way up to the most delicate hidden gems. (Tier is
 about protection and carrying capacity, **not** how nice a place is — a famous

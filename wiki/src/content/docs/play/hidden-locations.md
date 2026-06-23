@@ -9,6 +9,8 @@ most rewarding parts of the game.
 
 ## What makes a location "hidden"
 
+![Tier ladder: robust, well-serviced places sit low and open to everyone; fragile, unpublicised places sit high, level-gated, with the greatest reward.](../../../assets/diagrams/tiers.svg)
+
 It's not about how famous or pretty a place is. It's about how much it can
 handle. Locatour sorts places by how robust they are:
 

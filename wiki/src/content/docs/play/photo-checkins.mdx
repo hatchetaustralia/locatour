@@ -1,0 +1,68 @@
+---
+title: Photo check-ins
+description: How checking in works in Locatour — why you take a photo at each place, what your phone confirms, and how it keeps the game fair for everyone.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import { Image } from 'astro:assets';
+import flow from '../../../assets/diagrams/checkin-flow.svg';
+import checkin from '../../../assets/screens/checkin.png';
+import checkedIn from '../../../assets/screens/checked-in.png';
+
+A **check-in** is how you prove you made it. It's the single action at the
+centre of the whole game: you're at a place, you check in, you earn experience.
+
+<figure class="diagram">
+  <img src={flow.src} alt="How a check-in works: arrive at the place, your phone confirms you're there, take a live in-app photo, and you're checked in with XP awarded." />
+</figure>
+
+## How a check-in works
+
+1. **You arrive at the place.** Check-ins are proximity-based — you have to
+   actually be there.
+2. **Your phone confirms you're there.** Locatour uses your device's location to
+   check that you're at the spot, not somewhere else.
+3. **You take a photo.** You snap a quick photo, live, in the app — a little
+   memento of the moment and your visit.
+4. **You're checked in.** Experience is awarded, your streak ticks over, and the
+   moment is saved to your history.
+
+<div class="screens-row">
+  <figure><Image src={checkin} alt="The in-app camera with a Check in button" width={220} class="app-screenshot" /><figcaption>Snap a photo, then tap Check in</figcaption></figure>
+  <figure><Image src={checkedIn} alt="A successful check-in awarding 300 XP and advancing the level bar" width={220} class="app-screenshot" /><figcaption>Checked in — XP added to your level</figcaption></figure>
+</div>
+
+## Why a photo?
+
+Three reasons, in order of importance:
+
+- **It's the memory.** The photo is the souvenir — the thing you'll scroll back
+  through later. Locatour is about [creating memorable
+  experiences](/start/memorable-experiences/), and the photo is how each one
+  gets saved.
+- **It marks that you were present.** Taking a photo on the spot is part of being
+  *there*, not just passing through.
+- **It keeps the game fair.** Real check-ins from real visits are what make
+  levels and achievements mean something.
+
+## Keeping it fair
+
+Locatour is a game of genuine visits, so we take fairness seriously. The app is
+designed to recognise a real, in-person check-in and to gently discourage ways
+of faking one. We keep the exact details of those checks under the hood — partly
+so they keep working, and partly because honest players never need to think
+about them. If you actually went, you're fine.
+
+<Aside type="note" title="If a check-in doesn't work">
+- **"You're not close enough."** Get a bit nearer to the exact spot and try again.
+- **"We can't pin down your location."** Step into the open, away from tall
+  buildings or dense tree cover, and retry — your phone needs a clear view of the sky.
+- **Location is turned off.** Make sure location services and Locatour's location
+  permission are enabled.
+- **You're offline.** No signal? No problem — Locatour can save your check-in and
+  finish it when you're back online.
+</Aside>
+
+Want the plain-language technical version? See [How photo check-in
+works](/trust/photo-checkin-tech/). Curious what we do with the photo and your
+location data? See [Your data & security](/trust/data-and-security/).
