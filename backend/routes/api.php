@@ -2,13 +2,14 @@
 
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AchievementController;
-use App\Http\Controllers\ShareController;
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\CheckInController;
 use App\Http\Controllers\Api\ConfigController;
 use App\Http\Controllers\Api\LocationController;
 use App\Http\Controllers\Api\PlacesController;
 use App\Http\Controllers\Api\SuggestionController;
+use App\Http\Controllers\ShareController;
 use App\Http\Middleware\EnsureAppUserNotBlocked;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -22,6 +23,10 @@ Route::get('/user', function (Request $request) {
 // AND a non-blocked AppUser (EnsureAppUserNotBlocked 403s blocked accounts).
 Route::post('/account/register', [AccountController::class, 'register']);
 Route::get('/account/username-available', [AccountController::class, 'usernameAvailable']);
+
+// SSO sign-in (public): verifies a provider token, links/creates the AppUser, and
+// issues a Sanctum token. Google now; Apple + phone to follow.
+Route::post('/auth/google', [AuthController::class, 'google']);
 
 Route::middleware(['auth:sanctum', EnsureAppUserNotBlocked::class])->group(function () {
     Route::post('/account/sync', [AccountController::class, 'sync']);

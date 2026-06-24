@@ -26,6 +26,9 @@ class AppUser extends Authenticatable
 
     protected $fillable = [
         'device_id',
+        'google_id',
+        'apple_id',
+        'auth_provider',
         'display_name',
         'username',
         'email',

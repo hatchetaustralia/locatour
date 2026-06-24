@@ -42,4 +42,13 @@ return [
     // blank. See docs/locatour/05-backend.md.
     'google_maps_key' => env('GOOGLE_MAPS_KEY'),
 
+    // SSO: the Google OAuth *Web* client ID. Google ID tokens minted for the app
+    // carry this as their `aud`, and AuthController@google rejects any token whose
+    // audience doesn't match. (The Android OAuth client — package + SHA-1 — is also
+    // needed in Google Cloud for the app to obtain a token, but only this Web id is
+    // verified here.) Apple/phone creds will join this block as they land.
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+    ],
+
 ];
