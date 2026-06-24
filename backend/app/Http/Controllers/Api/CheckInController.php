@@ -84,4 +84,26 @@ class CheckInController extends Controller
 
         return response()->json(null, 204);
     }
+
+    /**
+     * POST /api/checkins/{checkIn}/share  (auth:sanctum, EnsureAppUserNotBlocked)
+     * Mints (once) the check-in's public share token and returns the public URL
+     * for the /c/{token} page. 403 if the check-in belongs to another user.
+     */
+    public function share(Request $request, AppCheckIn $checkIn): JsonResponse
+    {
+        /** @var AppUser $appUser */
+        $appUser = $request->user();
+
+        if ($checkIn->app_user_id !== $appUser->id) {
+            return response()->json(['error' => 'forbidden'], 403);
+        }
+
+        $token = $checkIn->ensureShareToken();
+
+        return response()->json([
+            'token' => $token,
+            'url' => $checkIn->share_url, // honours SHARE_BASE_URL (standalone front-end)
+        ]);
+    }
 }

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AchievementController;
+use App\Http\Controllers\ShareController;
 use App\Http\Controllers\Api\AnnouncementController;
 use App\Http\Controllers\Api\CheckInController;
 use App\Http\Controllers\Api\ConfigController;
@@ -28,6 +29,8 @@ Route::middleware(['auth:sanctum', EnsureAppUserNotBlocked::class])->group(funct
     Route::post('/account/base-location', [AccountController::class, 'baseLocation']);
     Route::post('/checkins', [CheckInController::class, 'store']);
     Route::delete('/checkins/{checkIn}', [CheckInController::class, 'destroy']);
+    // Mint + return the public share URL for one of the user's own check-ins.
+    Route::post('/checkins/{checkIn}/share', [CheckInController::class, 'share']);
     // Community location suggestions submitted by app users from the map.
     // Proximity check (haversine <= 150 m) enforced in SuggestionController.
     Route::post('/suggestions', [SuggestionController::class, 'store']);
@@ -47,6 +50,11 @@ Route::middleware(['throttle:locations', 'monitor.location.queries'])->group(fun
     Route::get('/locations', [LocationController::class, 'index']);
     Route::get('/locations/{id}', [LocationController::class, 'show']);
 });
+
+// Public JSON for a shared check-in (no auth) — consumed by the standalone share
+// front-end (e.g. a Next.js app) to render the public /{token} page + OG tags.
+// 404 if the token is unknown or has been revoked.
+Route::get('/share/{token}', [ShareController::class, 'data']);
 
 // Public read-only Achievements catalogue (the app evaluates them locally).
 Route::get('/achievements', [AchievementController::class, 'index']);

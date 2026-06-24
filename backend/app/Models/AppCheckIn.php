@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /**
  * A single check-in by an AppUser, with an optional uploaded photo stored on
@@ -21,6 +22,7 @@ class AppCheckIn extends Model
         'location_name',
         'points_earned',
         'photo_path',
+        'share_token',
         'latitude',
         'longitude',
         'verified_offline',
@@ -48,5 +50,34 @@ class AppCheckIn extends Model
         return $this->photo_path
             ? Storage::disk('public')->url($this->photo_path)
             : null;
+    }
+
+    /**
+     * Mint (once) + return the unguessable public share token. Lazy so a check-in
+     * stays private until the user explicitly taps Share.
+     */
+    public function ensureShareToken(): string
+    {
+        if (! $this->share_token) {
+            $this->share_token = Str::random(16);
+            $this->save();
+        }
+
+        return $this->share_token;
+    }
+
+    /**
+     * Base for public share links: a standalone front-end (SHARE_BASE_URL, e.g. a
+     * Next.js app) if set, else this app's own /c page.
+     */
+    public static function shareBaseUrl(): string
+    {
+        return rtrim(config('app.share_base_url') ?: url('/c'), '/');
+    }
+
+    /** Public share URL once a token exists, else null. */
+    public function getShareUrlAttribute(): ?string
+    {
+        return $this->share_token ? self::shareBaseUrl().'/'.$this->share_token : null;
     }
 }

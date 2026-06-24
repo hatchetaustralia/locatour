@@ -55,6 +55,14 @@ return [
     'url' => env('APP_URL', 'http://localhost'),
 
     /*
+    | Base URL for PUBLIC shared check-in links (the /{token} pages). Defaults to
+    | this Laravel app's own /c page, but set SHARE_BASE_URL to a standalone share
+    | front-end (e.g. a Next.js app on Vercel that consumes GET /api/share/{token})
+    | to offload public traffic from this instance — no app rebuild needed.
+    */
+    'share_base_url' => env('SHARE_BASE_URL'),
+
+    /*
     |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
