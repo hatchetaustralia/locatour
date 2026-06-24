@@ -63,8 +63,11 @@ export default function LoginScreen() {
       <View pointerEvents="none" style={styles.stickerLayer}>
         <Sticker kind="camera" size={146} style={[styles.sticker, { top: -6, left: -34 }]} />
         <Sticker kind="hiking" size={92} style={[styles.sticker, { top: 30, left: 78 }]} />
-        <Sticker kind="hat" size={158} style={[styles.sticker, { top: -18, left: 226 }]} />
-        <Sticker kind="boot" size={96} style={[styles.sticker, { top: 34, left: 312 }]} />
+        <Sticker kind="hat" size={158} style={[styles.sticker, { top: -18, left: 214 }]} />
+        {/* Anchored to the right edge so it always bleeds cleanly off-screen on
+            any width (no hard right edge shown), rather than a fixed left that
+            lands on-screen on wider phones. */}
+        <Sticker kind="boot" size={96} style={[styles.sticker, { top: 30, right: -22 }]} />
       </View>
 
       <View style={[styles.column, { width: colWidth }]}>
