@@ -5,21 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandAssets, BrandText, Sticker, StampButton, StampInput } from '@/components/brand';
 import { Brand } from '@/constants/theme';
-
-// Mock identities a "real" SSO provider would return — makes the demo social
-// login feel authentic without any real OAuth.
-// TODO: replace with real SSO (Google/Apple) wired to the backend in a later phase.
-const SSO_NAMES = ['Jordan Avery', 'Sam Taylor', 'Riley Morgan', 'Casey Nguyen', 'Alex Brooks'];
-function makeMockIdentity(platform: 'google' | 'apple') {
-  const name = SSO_NAMES[Math.floor(Math.random() * SSO_NAMES.length)];
-  const handle = name.toLowerCase().replace(/\s+/g, '.');
-  const domain = platform === 'apple' ? 'icloud.com' : 'gmail.com';
-  return {
-    name,
-    email: `${handle}@${domain}`,
-    avatarUrl: `https://api.dicebear.com/7.x/adventurer/png?seed=${encodeURIComponent(name)}&backgroundColor=c0aede`,
-  };
-}
+import { signInWithGoogle } from '@/utils/account';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -42,22 +28,32 @@ export default function LoginScreen() {
     router.push({ pathname: '/auth/otp', params: { email } });
   };
 
-  const handleSocialLogin = (platform: 'google' | 'apple') => {
+  const handleGoogleSignIn = async () => {
     if (connecting) return;
-    setConnecting(platform);
-    setTimeout(() => {
-      const identity = makeMockIdentity(platform);
+    setError('');
+    setConnecting('google');
+    try {
+      const result = await signInWithGoogle();
+      if (result.ok) {
+        // The backend provisioned the account (username/name/avatar from Google),
+        // so go straight in — profile details can be edited later. '/' is the same
+        // entry the rest of onboarding uses (root redirects into the tabs).
+        router.replace('/');
+        return;
+      }
+      if (result.reason === 'cancelled') return; // user backed out — not an error
+      setError(
+        result.reason === 'unconfigured'
+          ? 'Google sign-in isn’t set up yet.'
+          : result.reason === 'play_services'
+            ? 'Google Play Services is unavailable on this device.'
+            : result.reason === 'offline'
+              ? 'Couldn’t reach the server — check your connection and try again.'
+              : 'Google sign-in failed. Please try again.',
+      );
+    } finally {
       setConnecting(null);
-      router.push({
-        pathname: '/auth/profile',
-        params: {
-          provider: platform,
-          displayName: identity.name,
-          email: identity.email,
-          avatarUrl: identity.avatarUrl,
-        },
-      });
-    }, 1300);
+    }
   };
 
   return (
@@ -88,45 +84,53 @@ export default function LoginScreen() {
             iconImage={connecting === 'google' ? undefined : BrandAssets.googleG}
             loading={connecting === 'google'}
             disabled={!!connecting}
-            onPress={() => handleSocialLogin('google')}
+            onPress={handleGoogleSignIn}
           />
-          <StampButton
-            variant="dark"
-            label={connecting === 'apple' ? 'Connecting…' : 'Sign in with Apple'}
-            icon={connecting === 'apple' ? undefined : 'logo-apple'}
-            loading={connecting === 'apple'}
-            disabled={!!connecting}
-            onPress={() => handleSocialLogin('apple')}
-          />
+          {/* Apple is grayed out for now — Google is the only live provider. */}
+          <View style={styles.comingSoon} pointerEvents="none">
+            <StampButton
+              variant="dark"
+              label="Sign in with Apple"
+              icon="logo-apple"
+              disabled
+              onPress={() => {}}
+            />
+          </View>
         </View>
 
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <BrandText weight="medium" color={Brand.inkSecondary} style={styles.dividerText}>OR</BrandText>
-          <View style={styles.dividerLine} />
-        </View>
+        {error ? (
+          <BrandText weight="medium" style={styles.error}>{error}</BrandText>
+        ) : null}
 
-        <View style={styles.group}>
-          <StampInput
-            icon="mail-outline"
-            placeholder="Your email"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            value={email}
-            onChangeText={(t) => {
-              setEmail(t);
-              if (error) setError('');
-            }}
-          />
-          {/* Passwordless: email gets a magic sign-in link / one-time code,
-              so there is no password field (overrides the Figma frame). */}
-          {error ? <BrandText weight="medium" style={styles.error}>{error}</BrandText> : null}
+        {/* Email / mobile sign-in is grayed out for now — Google only. */}
+        <View style={styles.comingSoon} pointerEvents="none">
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <BrandText weight="medium" color={Brand.inkSecondary} style={styles.dividerText}>OR</BrandText>
+            <View style={styles.dividerLine} />
+          </View>
 
-          <View style={styles.cta}>
-            <StampButton variant="primary" label="SEND SIGN-IN LINK" onPress={handleLogin} />
-            <BrandText weight="medium" color={Brand.link} style={styles.linkRow}>
-              No account? <BrandText weight="medium" color={Brand.purple}>Create one</BrandText>
-            </BrandText>
+          <View style={styles.group}>
+            <StampInput
+              icon="call-outline"
+              placeholder="Your mobile number"
+              keyboardType="phone-pad"
+              autoCapitalize="none"
+              value={email}
+              onChangeText={(t) => {
+                setEmail(t);
+                if (error) setError('');
+              }}
+            />
+            {/* Mobile sign-up: a one-time SMS code (no password). SMS isn't wired
+                up yet, so this whole section is grayed out for now. */}
+
+            <View style={styles.cta}>
+              <StampButton variant="primary" label="SEND CODE" onPress={handleLogin} />
+              <BrandText weight="medium" color={Brand.link} style={styles.linkRow}>
+                No account? <BrandText weight="medium" color={Brand.purple}>Sign up with mobile</BrandText>
+              </BrandText>
+            </View>
           </View>
         </View>
       </View>
@@ -172,6 +176,12 @@ const styles = StyleSheet.create({
   group: {
     width: '100%',
     gap: 12,
+  },
+  // Grayed-out, non-interactive providers (Apple + email/mobile) until they're live.
+  comingSoon: {
+    width: '100%',
+    gap: 12,
+    opacity: 0.4,
   },
   divider: {
     flexDirection: 'row',

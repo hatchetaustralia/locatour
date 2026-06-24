@@ -16,7 +16,14 @@
  */
 import { Platform } from 'react-native';
 
-import { API_URLS, API_TIMEOUT_MS } from '../constants/config';
+import {
+  GoogleSignin,
+  isSuccessResponse,
+  isErrorWithCode,
+  statusCodes,
+} from '@react-native-google-signin/google-signin';
+
+import { API_URLS, API_TIMEOUT_MS, GOOGLE_WEB_CLIENT_ID } from '../constants/config';
 import { storage } from './storage';
 import { fetchPlaceCoordinates } from './places';
 import { User } from '../types';
@@ -42,6 +49,158 @@ export function getToken(): string | null {
 }
 
 export type UsernameStatus = 'available' | 'taken' | 'too_short' | 'unknown';
+
+// ── Google SSO ──────────────────────────────────────────────────────────────
+/** The AppUser row the server returns from /api/auth/google (snake_case). */
+type ServerAppUser = {
+  device_id?: string | null;
+  username?: string | null;
+  display_name?: string | null;
+  avatar_url?: string | null;
+  bio?: string | null;
+  gender?: string | null;
+  home_suburb?: string | null;
+  home_lat?: number | null;
+  home_lng?: number | null;
+  interests?: string[] | null;
+  total_xp?: number | null;
+  current_level?: number | null;
+  day_streak?: number | null;
+};
+
+/** Map the server's AppUser row onto the app's local User. */
+function mapServerUser(u: ServerAppUser): User {
+  const rawUsername = (u.username ?? 'explorer').replace(/^@/, '');
+  return {
+    uid: u.device_id ?? `user_${Math.random().toString(36).slice(2, 11)}`,
+    displayName: u.display_name ?? '',
+    username: `@${rawUsername}`,
+    bio: u.bio ?? '',
+    avatarUrl: u.avatar_url ?? '',
+    gender: u.gender ?? '',
+    homeSuburb: u.home_suburb ?? '',
+    homeCoordinates:
+      u.home_lat != null && u.home_lng != null
+        ? { latitude: u.home_lat, longitude: u.home_lng }
+        : undefined,
+    interests: u.interests ?? [],
+    stats: {
+      dayStreak: u.day_streak ?? 0,
+      totalXP: u.total_xp ?? 0,
+      uniqueLocations: 0,
+      totalCheckIns: 0,
+      currentLevel: u.current_level ?? 1,
+      currentXPInLevel: 0,
+      xpNeededForNextLevel: 100,
+    },
+    createdAt: new Date().toISOString(),
+  };
+}
+
+let googleConfigured = false;
+function ensureGoogleConfigured(): void {
+  if (googleConfigured) return;
+  GoogleSignin.configure({ webClientId: GOOGLE_WEB_CLIENT_ID, offlineAccess: false });
+  googleConfigured = true;
+}
+
+export type GoogleSignInResult =
+  | { ok: true; isNew: boolean }
+  | { ok: false; reason: 'cancelled' | 'unconfigured' | 'play_services' | 'rejected' | 'offline' };
+
+/**
+ * Real Google sign-in. Opens the native account picker, gets an ID token, then
+ * verifies + links/creates the account server-side (/api/auth/google) and persists
+ * the issued Sanctum token + resolved profile locally. Self-contained — the backend
+ * provisions the account, so this does NOT go through device-register. Never throws.
+ */
+export async function signInWithGoogle(): Promise<GoogleSignInResult> {
+  if (!GOOGLE_WEB_CLIENT_ID) return { ok: false, reason: 'unconfigured' };
+  try {
+    ensureGoogleConfigured();
+    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+    const response = await GoogleSignin.signIn();
+    if (!isSuccessResponse(response)) return { ok: false, reason: 'cancelled' };
+
+    const idToken = response.data.idToken;
+    if (!idToken) return { ok: false, reason: 'rejected' };
+
+    // Identity-based: do NOT send the device's account id, so a Google login never
+    // inherits an anonymous device account's progress — it's keyed to the Google
+    // identity (google_id / verified email) server-side.
+    const res = await fetchWithFallback('/api/auth/google', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_token: idToken }),
+    });
+    if (!res) return { ok: false, reason: 'offline' };
+    if (!res.ok) return { ok: false, reason: 'rejected' };
+
+    const body = (await res.json()) as { token?: string; is_new?: boolean; user?: ServerAppUser };
+    if (!body.token || !body.user) return { ok: false, reason: 'rejected' };
+
+    // Clear any PREVIOUS account's device-local data before adopting this one, so a
+    // different account never inherits the last user's check-ins/photos/achievements
+    // on a shared device. The /api/auth/google call above needs no token, so wiping
+    // here (after it) is safe.
+    await storage.wipeAllData();
+    storage.setToken(body.token);
+    await storage.setUser(mapServerUser(body.user));
+    return { ok: true, isNew: !!body.is_new };
+  } catch (e) {
+    if (isErrorWithCode(e)) {
+      if (e.code === statusCodes.SIGN_IN_CANCELLED) return { ok: false, reason: 'cancelled' };
+      if (e.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) return { ok: false, reason: 'play_services' };
+    }
+    console.warn('[account] signInWithGoogle failed (soft)', e);
+    return { ok: false, reason: 'offline' };
+  }
+}
+
+/**
+ * Sign out: end the Google session, drop the Sanctum token, and clear the local
+ * user so the app returns to the login screen. Local game data (check-ins etc.)
+ * stays on the device — the server account is unaffected and re-adopts on the next
+ * sign-in. Fail-soft.
+ */
+export async function signOut(): Promise<void> {
+  try {
+    await GoogleSignin.signOut();
+  } catch {
+    // not signed in via Google / module unavailable — ignore
+  }
+  // Full local wipe (not just user+token): game data (check-ins, photos,
+  // achievements, unlocked spots) is device-local and NOT account-scoped, so
+  // leaving it would bleed into whoever signs in next on a shared device. The
+  // server account is untouched and the level/XP re-adopt on next sign-in.
+  await storage.wipeAllData();
+}
+
+/**
+ * Permanently delete the account: revoke it server-side (best-effort), then WIPE
+ * all local data + the Google session so the app returns to a fresh-install state.
+ * The local wipe ALWAYS runs — even offline / if the server call fails — so the
+ * device is never left showing a deleted account's data. Never throws.
+ */
+export async function deleteAccount(): Promise<void> {
+  const token = storage.getToken();
+  if (token) {
+    try {
+      await fetchWithFallback('/api/account', {
+        method: 'DELETE',
+        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      });
+    } catch {
+      // offline / already gone — wipe locally regardless
+    }
+  }
+  try {
+    await GoogleSignin.signOut();
+  } catch {
+    // not signed in via Google — ignore
+  }
+  await storage.wipeAllData();
+}
 
 /**
  * Live username availability check (the public handle is unique). Pass the

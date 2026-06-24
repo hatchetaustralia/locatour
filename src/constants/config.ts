@@ -36,3 +36,11 @@ export const API_URLS: string[] = Array.from(
  *  8s tolerates a slightly slow first response over LAN / the dev server without
  *  prematurely falling through. Multipart uploads use their own longer timeout. */
 export const API_TIMEOUT_MS = 8000;
+
+/**
+ * Google OAuth *Web* client ID — passed to GoogleSignin as `webClientId` so the
+ * ID token it mints carries this as its `aud` (which the backend verifies). Same
+ * value as the backend's GOOGLE_CLIENT_ID. Baked from `.env` at build time; empty
+ * → the "Sign in with Google" flow reports "not configured".
+ */
+export const GOOGLE_WEB_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ?? '';
