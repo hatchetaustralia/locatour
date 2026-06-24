@@ -367,6 +367,15 @@ export async function syncAccount(): Promise<boolean> {
     });
     if (!res) return false;
     if (noteBlockedIf403(res)) return false;
+    // 401 = the stored token is stale/invalid (e.g. the backend DB was reset, so
+    // the server no longer knows this token). Without this we'd be stuck forever:
+    // the device HAS a token so it never re-registers, but every sync 401s and no
+    // app_user is ever created. Clear the dead token and register fresh —
+    // registerAccount upserts by device_id and mints a new valid token.
+    if (res.status === 401) {
+      storage.clearToken();
+      return (await registerAccount(user)).ok;
+    }
     return res.ok;
   } catch (e) {
     console.warn('[account] syncAccount failed (soft)', e);
