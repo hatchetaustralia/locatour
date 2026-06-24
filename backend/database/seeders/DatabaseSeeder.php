@@ -19,6 +19,9 @@ class DatabaseSeeder extends Seeder
         // Roles + Shield permissions must exist before we assign them.
         $this->call([
             RoleSeeder::class,
+            // Server-controlled settings store. Idempotent (keyed on `key`) and
+            // never overwrites an admin-edited value, so safe on every re-seed.
+            SettingSeeder::class,
         ]);
 
         // Admin (super admin) — full access incl. user/role management.

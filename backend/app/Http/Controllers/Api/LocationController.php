@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\LocationResource;
 use App\Models\Location;
+use App\Models\Setting;
 use Illuminate\Http\Request;
 
 class LocationController extends Controller
@@ -76,7 +77,7 @@ class LocationController extends Controller
         if ($hasGeo) {
             $lat = (float) $request->input('lat');
             $lng = (float) $request->input('lng');
-            $radius = $request->filled('radius') ? (int) $request->integer('radius') : 200000;
+            $radius = $request->filled('radius') ? (int) $request->integer('radius') : Setting::int('default_search_radius_m', 200000);
 
             // Cheap bounding-box pre-filter in SQL (deg ~ radius/111320), but
             // ALWAYS keep major destinations regardless of distance. Longitude
@@ -101,7 +102,7 @@ class LocationController extends Controller
             // of the true circle, so trim corners. Major destinations stay in.
             $lat = (float) $request->input('lat');
             $lng = (float) $request->input('lng');
-            $radius = $request->filled('radius') ? (int) $request->integer('radius') : 200000;
+            $radius = $request->filled('radius') ? (int) $request->integer('radius') : Setting::int('default_search_radius_m', 200000);
 
             $locations = $locations->filter(function (Location $location) use ($lat, $lng, $radius, $maxTier): bool {
                 // Major destinations are always included, at any distance.
@@ -116,7 +117,7 @@ class LocationController extends Controller
                 }
 
                 // Within the reveal radius: surfaced regardless of tier (proximity wins).
-                if ($distance <= self::REVEAL_RADIUS_M) {
+                if ($distance <= Setting::int('reveal_radius_m', self::REVEAL_RADIUS_M)) {
                     return true;
                 }
 
