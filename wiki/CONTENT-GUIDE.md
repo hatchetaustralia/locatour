@@ -30,7 +30,7 @@ it**. The mechanics are the product's moat — protect them.
 - ❌ "You reach tier 6 at 51 levels / N points."
 
 **Nearby alerts — what's OK to publish.** Player-facing UX that the app already
-surfaces is fine: the feature exists, it's opt-in/off-by-default, the **+50%
+surfaces is fine: the feature exists, it's opt-in/off-by-default, the **+20%
 points bonus** (shown in-app), and the anti-spam behaviour (a small daily cap,
 quiet overnight hours, no repeat pings for ~a month). Keep the **spot-detection
 distances qualitative** ("a few hundred metres" / "as you get close"), not exact,
