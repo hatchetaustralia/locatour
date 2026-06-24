@@ -45,6 +45,10 @@ app-example
 # local env (committed config lives in .env.example)
 .env
 
+# env backups (may contain secrets — never commit)
+*.bak.pretunnel
+backend/.env.bak.pretunnel
+
 # build artifacts
 *.apk
 *.aab
