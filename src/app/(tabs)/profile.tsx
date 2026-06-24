@@ -12,6 +12,7 @@ import {
   Dimensions,
   Alert,
   Switch,
+  Share,
   type ListRenderItemInfo,
 } from 'react-native';
 import {
@@ -30,11 +31,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandText } from '@/components/brand';
+import { ConfirmModal } from '@/components/confirm-modal';
 import { Brand, BrandFonts, BrandRadius, stampBorder, Spacing } from '@/constants/theme';
 import { storage } from '@/utils/storage';
-import { checkUsernameAvailable, deleteCheckInNow, UsernameStatus } from '@/utils/account';
+import { checkUsernameAvailable, deleteAccount, deleteCheckInNow, shareCheckIn, signOut, UsernameStatus } from '@/utils/account';
 import { enableNearbyAlerts, disableNearbyAlerts } from '@/utils/geofencing';
-import { NEARBY_ALERTS_BONUS_PCT } from '@/utils/leveling';
+import { NEARBY_ALERTS_BONUS_PCT, deriveLevelStats } from '@/utils/leveling';
 import { avatarUri } from '@/utils/avatar';
 import { User, Achievement, CheckIn, ExploreLocation } from '@/types';
 import { INTERESTS } from '@/constants/interests';
@@ -153,10 +155,16 @@ function PhotoViewer({
   photos,
   initialIndex,
   onClose,
+  onDelete,
+  onShare,
 }: {
   photos: ViewerPhoto[];
   initialIndex: number;
   onClose: () => void;
+  /** Delete the check-in for the photo currently on screen (by its index). */
+  onDelete: (index: number) => void;
+  /** Share the check-in for the photo currently on screen (by its index). */
+  onShare: (index: number) => void;
 }) {
   const [index, setIndex] = useState(initialIndex);
   const current = photos[index];
@@ -209,6 +217,28 @@ function PhotoViewer({
             <Ionicons name="close" size={26} color={Brand.surface} />
           </TouchableOpacity>
         </SafeAreaView>
+
+        {/* Share the check-in shown on screen (bottom-left). */}
+        <SafeAreaView style={styles.viewerShareWrap} edges={['bottom']}>
+          <TouchableOpacity
+            style={styles.viewerShareButton}
+            onPress={() => onShare(index)}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Ionicons name="share-outline" size={22} color={Brand.surface} />
+          </TouchableOpacity>
+        </SafeAreaView>
+
+        {/* Delete the check-in shown on screen (bottom-right). */}
+        <SafeAreaView style={styles.viewerDeleteWrap} edges={['bottom']}>
+          <TouchableOpacity
+            style={styles.viewerDeleteButton}
+            onPress={() => onDelete(index)}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Ionicons name="trash" size={22} color={Brand.surface} />
+          </TouchableOpacity>
+        </SafeAreaView>
       </GestureHandlerRootView>
     </Modal>
   );
@@ -231,6 +261,10 @@ export default function ProfileScreen() {
   // Background "Nearby alerts" opt-in (off by default). Initialised synchronously
   // from storage so the switch reflects the saved preference on first paint.
   const [nearbyAlerts, setNearbyAlerts] = useState(() => storage.getNearbyAlertsEnabled());
+  // Branded confirm/info dialogs that replace the native Alert.alert popups.
+  const [logoutConfirm, setLogoutConfirm] = useState(false);
+  const [alertsConfirm, setAlertsConfirm] = useState(false);
+  const [alertsPermInfo, setAlertsPermInfo] = useState(false);
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -244,6 +278,8 @@ export default function ProfileScreen() {
   const [pendingDelete, setPendingDelete] = useState<HistoryEntry | 'all' | null>(null);
   // True while a delete/clear is in flight, to disable the modal's buttons.
   const [isDeleting, setIsDeleting] = useState(false);
+  // The achievement whose detail sheet is open (tap a card), or null.
+  const [selectedAch, setSelectedAch] = useState<Achievement | null>(null);
 
   // Edit-mode form state
   const [editDisplayName, setEditDisplayName] = useState('');
@@ -284,15 +320,17 @@ export default function ProfileScreen() {
         await storage.acknowledgeNewAchievements();
       }
 
-      // Recent check-ins (folded in from the old History tab).
-      const [checkIns, queued] = await Promise.all([
-        storage.getCheckIns(),
-        storage.getQueuedCheckIns(),
-      ]);
-      const combined: HistoryEntry[] = [
-        ...checkIns.map((c) => ({ checkIn: c, pendingSync: false, location: undefined })),
-        ...queued.map((c) => ({ checkIn: c, pendingSync: true, location: undefined })),
-      ];
+      // Recent check-ins. Every check-in lives in this.checkIns (the camera adds
+      // it locally on BOTH the online and offline paths); the offline upload queue
+      // is just a retry list for the SAME records. So we list checkIns ONLY —
+      // pulling the queue in too showed each un-synced check-in twice (one normal,
+      // one "pending sync"). pendingSync is derived from the missing serverId.
+      const checkIns = await storage.getCheckIns();
+      const combined: HistoryEntry[] = checkIns.map((c) => ({
+        checkIn: c,
+        pendingSync: !c.serverId,
+        location: undefined,
+      }));
       const resolved = await Promise.all(
         combined.map(async (entry) => ({
           ...entry,
@@ -437,26 +475,16 @@ export default function ProfileScreen() {
       setNearbyAlerts(false);
       return;
     }
-    Alert.alert(
-      'Turn on Nearby Alerts?',
-      `Locatour will use your location in the background — even when the app is closed — to notify you when you wander near a hidden spot, so you discover places as you go about your day.\n\n• You earn +${NEARBY_ALERTS_BONUS_PCT}% points on every check-in while it's on.\n• It only checks your location against nearby spots (battery-light) — never tracked or shared.\n• Turn it off anytime here.`,
-      [
-        { text: 'Not now', style: 'cancel' },
-        {
-          text: 'Turn on',
-          onPress: async () => {
-            const ok = await enableNearbyAlerts();
-            setNearbyAlerts(ok);
-            if (!ok) {
-              Alert.alert(
-                'Allow location “All the time”',
-                'To get nearby alerts, set Locatour’s location permission to “Allow all the time” in your phone’s Settings.'
-              );
-            }
-          },
-        },
-      ]
-    );
+    setAlertsConfirm(true);
+  };
+
+  // Confirmed the disclosure → request permission + enable. On failure (the OS
+  // didn't grant "Allow all the time") surface the branded settings explainer.
+  const doEnableAlerts = async () => {
+    setAlertsConfirm(false);
+    const ok = await enableNearbyAlerts();
+    setNearbyAlerts(ok);
+    if (!ok) setAlertsPermInfo(true);
   };
 
   // Run the pending delete (a single check-in, or 'all' for the dev clear). The
@@ -490,18 +518,12 @@ export default function ProfileScreen() {
     }
   }, [pendingDelete, loadData]);
 
-  const handleLogout = () => {
-    Alert.alert('Log out', 'Are you sure you want to log out?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Log out',
-        style: 'destructive',
-        onPress: async () => {
-          await storage.logout();
-          router.replace('/auth/login');
-        },
-      },
-    ]);
+  const handleLogout = () => setLogoutConfirm(true);
+
+  const doLogout = async () => {
+    setLogoutConfirm(false);
+    await storage.logout();
+    router.replace('/auth/login');
   };
 
   if (isLoading) {
@@ -515,10 +537,37 @@ export default function ProfileScreen() {
   if (!user) return null;
 
   const { stats } = user;
+
+  // The overview totals reflect the SAME lifetime check-in list the user sees in
+  // the timeline below (synced history + the offline upload queue). We derive
+  // level & progress from that points total rather than the cached stats.totalXP,
+  // which lags when check-ins are still queued (their points count toward the
+  // visible total but haven't been folded into totalXP yet) — that's why a
+  // 250-point explorer was wrongly showing "Level 1, 0/83" with an empty bar.
+  const cumulativePoints = entries.reduce(
+    (sum, entry) => sum + (entry.checkIn.pointsEarned || 0),
+    0,
+  );
+  const pointLevel = deriveLevelStats(cumulativePoints);
+  const totalCheckInsCount = entries.length;
+  const uniqueLocationsCount = new Set(entries.map((e) => e.checkIn.locationId)).size;
   const xpProgress =
-    stats.xpNeededForNextLevel > 0
-      ? Math.min(stats.currentXPInLevel / stats.xpNeededForNextLevel, 1)
+    pointLevel.xpNeededForNextLevel > 0
+      ? Math.min(pointLevel.currentXPInLevel / pointLevel.xpNeededForNextLevel, 1)
       : 0;
+  // A human "how close am I" hint under the bar. Estimate check-ins-to-go from
+  // the explorer's own average points per check-in; fall back to raw XP if they
+  // have no check-ins yet to average from.
+  const pointsToNext = Math.max(0, pointLevel.xpNeededForNextLevel - pointLevel.currentXPInLevel);
+  const avgPerCheckIn = totalCheckInsCount > 0 ? cumulativePoints / totalCheckInsCount : 0;
+  const checkInsToGo =
+    avgPerCheckIn > 0 && pointsToNext > 0 ? Math.max(1, Math.ceil(pointsToNext / avgPerCheckIn)) : null;
+  const levelHint =
+    checkInsToGo != null
+      ? `~${checkInsToGo} check-in${checkInsToGo === 1 ? '' : 's'} to level ${pointLevel.currentLevel + 1}`
+      : pointsToNext > 0
+        ? `${pointLevel.currentXPInLevel} / ${pointLevel.xpNeededForNextLevel} XP to level ${pointLevel.currentLevel + 1}`
+        : `Level ${pointLevel.currentLevel} reached`;
 
   // Achievements sorted by difficulty tier (Easy → Grandmaster), then threshold.
   const sortedAchievements = [...achievements].sort(
@@ -539,14 +588,30 @@ export default function ProfileScreen() {
     date: formatDate(entry.checkIn.timestamp),
   }));
 
-  // Cumulative points earned across all check-ins — the rewarding "lifetime"
-  // tally shown at the top of the timeline.
-  const cumulativePoints = entries.reduce(
-    (sum, entry) => sum + (entry.checkIn.pointsEarned || 0),
-    0,
-  );
-
   const openViewer = (index: number) => setViewerIndex(index);
+
+  // Share the opened check-in: mint its public link on the server, then open the
+  // native share sheet (copy-link included). Only synced check-ins have a server
+  // id — a still-uploading one is queued, so we ask the user to retry shortly.
+  const handleShareCheckIn = async (index: number) => {
+    const entry = entries[index];
+    const serverId = entry?.checkIn.serverId;
+    if (!serverId) {
+      Alert.alert('Still uploading', 'This check-in is still syncing — try sharing again in a moment.');
+      return;
+    }
+    const url = await shareCheckIn(serverId);
+    if (!url) {
+      Alert.alert("Couldn't create link", 'Please check your connection and try again.');
+      return;
+    }
+    try {
+      // message carries the URL so Android (which ignores `url`) still shares it.
+      await Share.share({ message: url, url });
+    } catch {
+      // user dismissed the share sheet — ignore
+    }
+  };
 
   // ---------------------------------------------------------------------------
   // EDIT MODE
@@ -730,6 +795,58 @@ export default function ProfileScreen() {
             </View>
           </View>
 
+          {/* Sign out / disconnect — ends the Google session and returns to login.
+              Local data stays on the device and re-syncs on the next sign-in. */}
+          <TouchableOpacity
+            style={[styles.signOutBtn, stampBorder]}
+            activeOpacity={0.85}
+            onPress={() =>
+              Alert.alert('Sign out?', 'You can sign back in with Google any time.', [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Sign out',
+                  style: 'destructive',
+                  onPress: async () => {
+                    await signOut();
+                    router.replace('/auth/login');
+                  },
+                },
+              ])
+            }
+          >
+            <Ionicons name="log-out-outline" size={18} color={Brand.ink} />
+            <BrandText weight="bold" color={Brand.ink} style={styles.signOutText}>
+              Sign out
+            </BrandText>
+          </TouchableOpacity>
+
+          {/* Destructive: permanently delete the account + ALL data (server + local),
+              then drop back into onboarding as a brand-new user. */}
+          <TouchableOpacity
+            style={styles.deleteBtn}
+            activeOpacity={0.85}
+            onPress={() =>
+              Alert.alert(
+                'Delete account?',
+                'This permanently deletes your account and ALL your data — check-ins, achievements and unlocked spots. This cannot be undone.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Delete everything',
+                    style: 'destructive',
+                    onPress: async () => {
+                      await deleteAccount();
+                      router.replace('/auth/walkthrough');
+                    },
+                  },
+                ],
+              )
+            }
+          >
+            <Ionicons name="trash-outline" size={18} color="#d1453b" />
+            <BrandText weight="bold" style={styles.deleteText}>Delete account</BrandText>
+          </TouchableOpacity>
+
           {/* No save/done button: edits auto-save as you type, and the back arrow
               (top-left) leaves edit mode. */}
         </ScrollView>
@@ -772,7 +889,7 @@ export default function ProfileScreen() {
                 rendered as a "?" — use a styled badge instead). */}
             <View style={[styles.levelHex, stampBorder]}>
               <BrandText weight="bold" color={Brand.bg} style={styles.levelHexText}>
-                {stats.currentLevel}
+                {pointLevel.currentLevel}
               </BrandText>
             </View>
           </View>
@@ -827,31 +944,30 @@ export default function ProfileScreen() {
               <View style={styles.xpRow}>
                 <View style={[styles.levelBadge, styles.roundedFull, { backgroundColor: Brand.sticker.pink }]}>
                   <BrandText weight="bold" color={Brand.bg} style={styles.levelBadgeText}>
-                    {stats.currentLevel}
+                    {pointLevel.currentLevel}
                   </BrandText>
                 </View>
-                <View style={styles.progressColumn}>
-                  <View style={styles.progressBarBackground}>
-                    <View style={[styles.progressBarActive, { width: `${xpProgress * 100}%` }]} />
-                  </View>
-                  <BrandText weight="medium" style={styles.xpCounter}>
-                    {stats.currentXPInLevel}/{stats.xpNeededForNextLevel}
-                  </BrandText>
+                <View style={styles.progressBarBackground}>
+                  {/* Min 4% so there's always a sliver of fill on the left. */}
+                  <View style={[styles.progressBarActive, { width: `${Math.max(xpProgress * 100, 4)}%` }]} />
                 </View>
                 <View style={[styles.levelBadge, styles.roundedFull, { backgroundColor: Brand.purple }]}>
                   <BrandText weight="bold" color={Brand.bg} style={styles.levelBadgeText}>
-                    {stats.currentLevel + 1}
+                    {pointLevel.currentLevel + 1}
                   </BrandText>
                 </View>
               </View>
+              <BrandText weight="medium" style={styles.xpHint}>
+                {levelHint}
+              </BrandText>
             </View>
 
             {/* Stats grid 2x2 */}
             <View style={styles.statsGrid}>
               <StatCard icon="flame" color={Brand.sticker.pink} value={stats.dayStreak} label="Day streak" />
-              <StatCard icon="flash" color={Brand.sticker.gold} value={stats.totalXP} label="Total XP" />
-              <StatCard icon="location" color={Brand.purple} value={stats.uniqueLocations} label="Unique locations" />
-              <StatCard icon="map" color={Brand.sticker.green} value={stats.totalCheckIns} label="Total check-ins" />
+              <StatCard icon="flash" color={Brand.sticker.gold} value={cumulativePoints} label="Total XP" />
+              <StatCard icon="location" color={Brand.purple} value={uniqueLocationsCount} label="Unique locations" />
+              <StatCard icon="map" color={Brand.sticker.green} value={totalCheckInsCount} label="Total check-ins" />
             </View>
 
             {/* Nearby alerts opt-in — incentivised with a points multiplier. */}
@@ -1027,10 +1143,6 @@ export default function ProfileScreen() {
               </View>
             ) : (
               <>
-                {/* Hint so the tap-to-view / long-press-to-delete is discoverable. */}
-                <BrandText weight="medium" color={Brand.inkSecondary} style={styles.checkinsHint}>
-                  Tap a photo to view it, or long-press to delete.
-                </BrandText>
                 <View style={styles.galleryGrid}>
                   {entries.map((entry, idx) => (
                     <TouchableOpacity
@@ -1038,8 +1150,6 @@ export default function ProfileScreen() {
                       activeOpacity={0.85}
                       style={[styles.galleryItem, stampBorder]}
                       onPress={() => openViewer(idx)}
-                      onLongPress={() => setPendingDelete(entry)}
-                      delayLongPress={300}
                     >
                       <Image
                         source={{ uri: entry.checkIn.photoUrl || entry.location?.imageUrls[0] }}
@@ -1098,8 +1208,10 @@ export default function ProfileScreen() {
               {sortedAchievements.map((ach) => {
                 const diffColor = DIFFICULTY_COLOR[ach.difficulty] ?? Brand.inkSubtle;
                 return (
-                  <View
+                  <TouchableOpacity
                     key={ach.id}
+                    activeOpacity={0.85}
+                    onPress={() => setSelectedAch(ach)}
                     style={[
                       styles.achievementCard,
                       stampBorder,
@@ -1111,7 +1223,11 @@ export default function ProfileScreen() {
                         <BrandText weight="bold" color={Brand.bg} style={styles.newBadgeText}>NEW</BrandText>
                       </View>
                     )}
-                    {!ach.isUnlocked && (
+                    {ach.isUnlocked ? (
+                      <View style={styles.achDoneBadge}>
+                        <Ionicons name="checkmark" size={13} color={Brand.bg} />
+                      </View>
+                    ) : (
                       <View style={styles.lockBadge}>
                         <Ionicons name="lock-closed" size={12} color={Brand.inkSubtle} />
                       </View>
@@ -1142,7 +1258,7 @@ export default function ProfileScreen() {
                         </BrandText>
                       </View>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>
@@ -1155,8 +1271,109 @@ export default function ProfileScreen() {
           photos={viewerPhotos}
           initialIndex={viewerIndex}
           onClose={() => setViewerIndex(null)}
+          // viewerPhotos is 1:1 with entries (same order), so the on-screen index
+          // maps straight to the entry to delete. Routes through the existing
+          // confirm flow (which closes the viewer + reloads on success).
+          onDelete={(i) => {
+            const entry = entries[i];
+            if (entry) setPendingDelete(entry);
+          }}
+          onShare={(i) => {
+            void handleShareCheckIn(i);
+          }}
         />
       ) : null}
+
+      {/* Achievement detail — how you earned it (unlocked) or how to earn it. */}
+      <Modal
+        visible={selectedAch !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedAch(null)}
+      >
+        <TouchableOpacity
+          style={styles.confirmOverlay}
+          activeOpacity={1}
+          onPress={() => setSelectedAch(null)}
+        >
+          <TouchableOpacity activeOpacity={1} style={[styles.achModalCard, stampBorder]} onPress={() => {}}>
+            {selectedAch ? (
+              <>
+                <View
+                  style={[
+                    styles.achModalIcon,
+                    { borderColor: DIFFICULTY_COLOR[selectedAch.difficulty] ?? Brand.teal },
+                  ]}
+                >
+                  <Ionicons
+                    name={selectedAch.iconName as keyof typeof Ionicons.glyphMap}
+                    size={34}
+                    color={DIFFICULTY_COLOR[selectedAch.difficulty] ?? Brand.teal}
+                  />
+                </View>
+                <BrandText weight="bold" style={styles.achModalTitle}>
+                  {selectedAch.title}
+                </BrandText>
+                <View
+                  style={[
+                    styles.difficultyChip,
+                    { backgroundColor: DIFFICULTY_COLOR[selectedAch.difficulty] ?? Brand.teal },
+                  ]}
+                >
+                  <BrandText weight="bold" color={Brand.bg} style={styles.difficultyChipText}>
+                    {selectedAch.difficulty}
+                  </BrandText>
+                </View>
+
+                <View style={styles.achModalStatus}>
+                  <Ionicons
+                    name={selectedAch.isUnlocked ? 'checkmark-circle' : 'lock-closed'}
+                    size={15}
+                    color={selectedAch.isUnlocked ? Brand.sticker.green : Brand.inkSecondary}
+                  />
+                  <BrandText
+                    weight="bold"
+                    color={selectedAch.isUnlocked ? Brand.sticker.green : Brand.inkSecondary}
+                    style={styles.achModalStatusText}
+                  >
+                    {selectedAch.isUnlocked
+                      ? selectedAch.unlockedAt
+                        ? `Earned ${formatDate(selectedAch.unlockedAt)}`
+                        : 'Earned'
+                      : 'Not earned yet'}
+                  </BrandText>
+                </View>
+
+                <View style={styles.achModalSection}>
+                  <BrandText weight="bold" color={Brand.inkSecondary} style={styles.achModalLabel}>
+                    {selectedAch.isUnlocked ? 'HOW YOU EARNED IT' : 'HOW TO EARN'}
+                  </BrandText>
+                  <BrandText weight="medium" style={styles.achModalBody}>
+                    {selectedAch.description}
+                  </BrandText>
+                </View>
+
+                <View style={styles.achModalReward}>
+                  <Ionicons name="trophy" size={15} color={Brand.sticker.gold} />
+                  <BrandText weight="bold" color={Brand.ink} style={styles.achModalRewardText}>
+                    {`+${selectedAch.points} points`}
+                  </BrandText>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.achModalClose}
+                  onPress={() => setSelectedAch(null)}
+                  activeOpacity={0.85}
+                >
+                  <BrandText weight="bold" color={Brand.surface} style={styles.achModalCloseText}>
+                    Got it
+                  </BrandText>
+                </TouchableOpacity>
+              </>
+            ) : null}
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Delete confirmation — single check-in or the dev "clear all". */}
       <Modal
@@ -1204,6 +1421,41 @@ export default function ProfileScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Branded confirmations (replace the native Alert.alert popups). */}
+      <ConfirmModal
+        visible={logoutConfirm}
+        title="Log out"
+        body="Are you sure you want to log out?"
+        confirmLabel="Log out"
+        cancelLabel="Cancel"
+        destructive
+        onConfirm={doLogout}
+        onCancel={() => setLogoutConfirm(false)}
+      />
+      <ConfirmModal
+        visible={alertsConfirm}
+        title="Turn on Nearby Alerts?"
+        body="Locatour will use your location in the background — even when the app is closed — to notify you when you wander near a hidden spot, so you discover places as you go about your day."
+        bullets={[
+          `You earn +${NEARBY_ALERTS_BONUS_PCT}% points on every check-in while it's on.`,
+          'It only checks your location against nearby spots (battery-light) — never tracked or shared.',
+          'Turn it off anytime here.',
+        ]}
+        confirmLabel="Turn on"
+        cancelLabel="Not now"
+        onConfirm={doEnableAlerts}
+        onCancel={() => setAlertsConfirm(false)}
+      />
+      <ConfirmModal
+        visible={alertsPermInfo}
+        title={'Allow location “All the time”'}
+        body={'To get nearby alerts, set Locatour’s location permission to “Allow all the time” in your phone’s Settings.'}
+        confirmLabel="Got it"
+        hideCancel
+        onConfirm={() => setAlertsPermInfo(false)}
+        onCancel={() => setAlertsPermInfo(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -1243,6 +1495,34 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: Spacing.three,
     paddingBottom: 80,
+  },
+  signOutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    height: 52,
+    borderRadius: BrandRadius.control,
+    backgroundColor: Brand.surface,
+    marginTop: Spacing.five,
+  },
+  signOutText: {
+    fontSize: 15,
+  },
+  deleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    height: 52,
+    borderRadius: BrandRadius.control,
+    borderWidth: 1.5,
+    borderColor: '#d1453b',
+    marginTop: Spacing.three,
+  },
+  deleteText: {
+    fontSize: 15,
+    color: '#d1453b',
   },
   roundedFull: {
     borderRadius: BrandRadius.pill,
@@ -1308,6 +1588,10 @@ const styles = StyleSheet.create({
   },
   levelHexText: {
     fontSize: 16,
+    lineHeight: 18,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   displayName: {
     fontSize: 18,
@@ -1431,12 +1715,13 @@ const styles = StyleSheet.create({
   },
   levelBadgeText: {
     fontSize: 20,
-  },
-  progressColumn: {
-    flex: 1,
-    gap: 4,
+    lineHeight: 22,
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    includeFontPadding: false,
   },
   progressBarBackground: {
+    flex: 1,
     height: 16,
     borderRadius: BrandRadius.pill,
     borderWidth: 1,
@@ -1449,11 +1734,11 @@ const styles = StyleSheet.create({
     borderRadius: BrandRadius.pill,
     backgroundColor: Brand.purple,
   },
-  xpCounter: {
-    fontSize: 10,
-    color: 'rgba(42,36,33,0.4)',
-    alignSelf: 'flex-end',
-    marginRight: 4,
+  xpHint: {
+    fontSize: 12,
+    color: Brand.inkSecondary,
+    marginTop: 8,
+    alignSelf: 'flex-start',
   },
 
   // Stats grid
@@ -1878,6 +2163,90 @@ const styles = StyleSheet.create({
     right: Spacing.two,
     zIndex: 1,
   },
+  // Green "completed" tick on unlocked achievements.
+  achDoneBadge: {
+    position: 'absolute',
+    top: Spacing.two,
+    right: Spacing.two,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: Brand.sticker.green,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  // Achievement detail modal.
+  achModalCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: Brand.surface,
+    borderRadius: BrandRadius.sticker,
+    padding: Spacing.four,
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  achModalIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: BrandRadius.pill,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Brand.bg,
+  },
+  achModalTitle: {
+    fontSize: 18,
+    color: Brand.ink,
+    textAlign: 'center',
+  },
+  achModalStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 2,
+  },
+  achModalStatusText: {
+    fontSize: 12,
+  },
+  achModalSection: {
+    width: '100%',
+    gap: Spacing.one,
+    marginTop: Spacing.two,
+  },
+  achModalLabel: {
+    fontSize: 10,
+    letterSpacing: 0.5,
+  },
+  achModalBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: Brand.ink,
+  },
+  achModalReward: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: Spacing.two,
+    backgroundColor: 'rgba(245,166,35,0.16)',
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one + 2,
+    borderRadius: BrandRadius.pill,
+  },
+  achModalRewardText: {
+    fontSize: 13,
+  },
+  achModalClose: {
+    marginTop: Spacing.three,
+    alignSelf: 'stretch',
+    backgroundColor: Brand.ink,
+    borderRadius: BrandRadius.pill,
+    paddingVertical: Spacing.three,
+    alignItems: 'center',
+  },
+  achModalCloseText: {
+    fontSize: 15,
+  },
 
   // ---- Edit mode ----
   editHeader: {
@@ -2071,6 +2440,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  viewerDeleteWrap: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+  },
+  viewerDeleteButton: {
+    margin: Spacing.three,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(209,69,59,0.9)', // destructive red
+  },
+  viewerShareWrap: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+  },
+  viewerShareButton: {
+    margin: Spacing.three,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
   },
   viewerCaption: {
     position: 'absolute',

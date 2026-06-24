@@ -581,6 +581,55 @@ export async function deleteCheckInNow(serverId: string | number): Promise<boole
   }
 }
 
+/**
+ * Mint + fetch the PUBLIC share URL for one of the user's own check-ins
+ * (auth:sanctum). `serverId` is the SERVER check-in id (only synced check-ins
+ * have one). Returns the public /c/{token} URL, or null on any failure. Mirrors
+ * deleteCheckInNow: bearer token + fallback base URLs + fail-soft (never throws).
+ */
+export async function shareCheckIn(serverId: string | number): Promise<string | null> {
+  const token = storage.getToken();
+  if (!token) return null;
+  try {
+    const res = await fetchWithFallback(
+      `/api/checkins/${encodeURIComponent(String(serverId))}/share`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    );
+    if (!res) return null;
+    if (noteBlockedIf403(res)) return null;
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => null);
+    return (data?.url as string | undefined) ?? null;
+  } catch (e) {
+    console.warn('[account] shareCheckIn failed (soft)', e);
+    return null;
+  }
+}
+
+/** The single live announcement banner (or null) — PUBLIC, no auth. The admin
+ *  manages it in Filament; the app polls this and shows the banner until dismissed.
+ *  Returns null on any failure (so the app simply shows no banner). */
+export async function fetchAnnouncement(): Promise<{ id: number; title?: string | null; body: string } | null> {
+  try {
+    const res = await fetchWithFallback('/api/announcement', {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+    if (!res || !res.ok) return null;
+    const data = await res.json().catch(() => null);
+    return data?.announcement ?? null;
+  } catch (e) {
+    console.warn('[account] fetchAnnouncement failed (soft)', e);
+    return null;
+  }
+}
+
 /** Outcome of a community location suggestion. `message` carries the server's
  *  422 text (e.g. the "within 150 metres" rejection) so the UI can show it inline. */
 export interface SuggestionResult {
