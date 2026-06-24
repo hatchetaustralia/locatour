@@ -265,4 +265,22 @@ class AccountController extends Controller
         // Only persist keys the client actually sent (so sync is a partial update).
         return $request->only(array_keys($request->validate($rules)));
     }
+
+    /**
+     * Permanently delete the authed account and ALL its data. Check-ins are deleted
+     * via the model (firing the photo-removal hook); tokens are revoked. Irreversible.
+     */
+    public function destroy(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        // Atomic: a mid-delete failure (e.g. a photo-removal hook) must not leave a
+        // half-deleted account behind.
+        DB::transaction(function () use ($user): void {
+            $user->tokens()->delete();
+            $user->checkIns->each->delete(); // fires the photo-removal hook per row
+            $user->delete();
+        });
+
+        return response()->json(['deleted' => true]);
+    }
 }

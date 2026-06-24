@@ -25,6 +25,8 @@ Route::get('/account/username-available', [AccountController::class, 'usernameAv
 
 Route::middleware(['auth:sanctum', EnsureAppUserNotBlocked::class])->group(function () {
     Route::post('/account/sync', [AccountController::class, 'sync']);
+    // Permanently delete the authed account + all its data (irreversible).
+    Route::delete('/account', [AccountController::class, 'destroy']);
     // The cooldown-guarded base-location change endpoint (server-authoritative).
     Route::post('/account/base-location', [AccountController::class, 'baseLocation']);
     Route::post('/checkins', [CheckInController::class, 'store']);

@@ -38,6 +38,17 @@ class AppCheckIn extends Model
     /** Surface the resolved photo URL on every serialised check-in. */
     protected $appends = ['photo_url'];
 
+    /** Clean the uploaded photo off the public disk whenever a check-in is
+     *  deleted (admin "Revoke", the API destroy, or a cascade). No-op if none. */
+    protected static function booted(): void
+    {
+        static::deleting(function (AppCheckIn $checkIn): void {
+            if ($checkIn->photo_path) {
+                Storage::disk('public')->delete($checkIn->photo_path);
+            }
+        });
+    }
+
     /** The app user who made this check-in. */
     public function appUser(): BelongsTo
     {

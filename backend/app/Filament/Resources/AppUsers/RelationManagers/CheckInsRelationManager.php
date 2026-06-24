@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AppUsers\RelationManagers;
 
+use Filament\Actions\DeleteAction;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\IconColumn;
@@ -10,8 +11,8 @@ use Filament\Tables\Table;
 
 /**
  * Lists a single AppUser's check-ins (newest first) with a photo thumbnail,
- * location, points and timestamp. Read-only — admins inspect, they do not edit
- * a user's check-ins from here.
+ * location, points and timestamp. Admins can REVOKE (delete) a check-in here —
+ * the photo is cleaned off the public disk via the model's `deleting` hook.
  */
 class CheckInsRelationManager extends RelationManager
 {
@@ -46,6 +47,12 @@ class CheckInsRelationManager extends RelationManager
                     ->label('Checked in')
                     ->dateTime()
                     ->sortable(),
+            ])
+            ->recordActions([
+                DeleteAction::make()
+                    ->label('Revoke')
+                    ->modalHeading('Revoke this check-in?')
+                    ->modalDescription('This permanently removes the check-in and its photo. This cannot be undone.'),
             ]);
     }
 }
