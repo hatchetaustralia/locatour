@@ -42,6 +42,9 @@ export interface ExploreLocation {
   coordinates: Coordinates;
   address: string;
   points: number;
+  // Community check-ins here THIS WEEK (Mon-start), from the locations API. Social
+  // proof shown on Home "top picks" cards. Absent on bundled/offline mock spots.
+  checkinsThisWeek?: number;
   description: string;
   imageUrls: string[];
   verificationTags: string[];

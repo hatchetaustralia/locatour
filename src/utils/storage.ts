@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import { User, ExploreLocation, CheckIn, Achievement, Coordinates } from '../types';
-import { deriveLevelStats, CHECKIN_COOLDOWN_H, maxDiscoverableTier, REACH_RADIUS_M } from './leveling';
+import { deriveLevelStats, unlockedTier } from './leveling';
+import { getConfig } from './runtime-config';
 import { API_URLS, API_TIMEOUT_MS } from '../constants/config';
 import { ACHIEVEMENTS as ACHIEVEMENTS_CATALOGUE, AchievementDef } from '../constants/achievements';
 
@@ -1008,6 +1009,28 @@ class StorageManager {
     this.writeKey('locatour_nearby_alerts', enabled ? '1' : '0');
   }
 
+  // --- Generic kv passthrough ---
+  // A thin public window onto the SAME kv store the rest of the app persists to
+  // (localStorage on web, the SQLite `kv` table on native). Used by
+  // runtime-config to cache the server-controlled gameplay settings without
+  // introducing a second persistence mechanism. Best-effort: reads return null
+  // and writes no-op on any failure (offline-first, never throws).
+  public getItem(key: string): string | null {
+    try {
+      return this.readKey(key);
+    } catch {
+      return null;
+    }
+  }
+
+  public setItem(key: string, value: string): void {
+    try {
+      this.writeKey(key, value);
+    } catch {
+      // swallow — persistence is best-effort
+    }
+  }
+
   public async setUser(user: User): Promise<void> {
     this.user = user;
     this.saveState();
@@ -1021,6 +1044,36 @@ class StorageManager {
   public async logout(): Promise<void> {
     this.user = null;
     this.writeKey('locatour_user', '');
+  }
+
+  /**
+   * Full local wipe — back to a fresh-install state. Resets the in-memory caches
+   * AND clears ALL persisted storage (the kv store + offline queue on native;
+   * locatour* keys on web). Used by "Delete account" so a re-onboard starts truly
+   * clean (no check-ins, achievements, unlocked spots, token or profile bleed).
+   */
+  public async wipeAllData(): Promise<void> {
+    this.user = null;
+    this.checkIns = [];
+    this.unlocked = {};
+    this.newAchievements = new Set();
+    this.unlockedLocationIds = new Set();
+    this.offlineQueue = [];
+    this.achievementsFetched = false;
+    this.locationsFetched = false;
+    this.locations = INITIAL_LOCATIONS;
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        Object.keys(window.localStorage)
+          .filter((k) => k.startsWith('locatour'))
+          .forEach((k) => window.localStorage.removeItem(k));
+      } else if (this.db) {
+        this.db.runSync('DELETE FROM kv;');
+        this.db.runSync('DELETE FROM offline_queue;');
+      }
+    } catch (e) {
+      console.warn('[storage] wipeAllData failed', e);
+    }
   }
 
   public async updateProfile(displayName: string, username: string, bio: string, avatarUrl: string, interests?: string[], homeCoordinates?: Coordinates): Promise<User | null> {
@@ -1095,6 +1148,8 @@ class StorageManager {
       },
       address: raw.address ?? '',
       points: Number(raw.points ?? 0),
+      checkinsThisWeek:
+        raw.checkinsThisWeek != null ? Number(raw.checkinsThisWeek) : undefined,
       description: raw.description ?? '',
       imageUrls: Array.isArray(raw.imageUrls) ? raw.imageUrls : [],
       verificationTags: Array.isArray(raw.verificationTags) ? raw.verificationTags : [],
@@ -1155,7 +1210,7 @@ class StorageManager {
     if (opts?.latitude != null && opts?.longitude != null) {
       let q = `?lat=${encodeURIComponent(String(opts.latitude))}&lng=${encodeURIComponent(
         String(opts.longitude),
-      )}&radius=${REACH_RADIUS_M}`;
+      )}&radius=${getConfig().reachRadiusM}`;
       if (opts.level != null) q += `&level=${opts.level}`;
       path += q;
     }
@@ -1238,7 +1293,7 @@ class StorageManager {
     }
     if (timestamps.length === 0) return null;
     const latest = Math.max(...timestamps);
-    const readyAt = latest + CHECKIN_COOLDOWN_H * 60 * 60 * 1000;
+    const readyAt = latest + getConfig().checkinCooldownH * 60 * 60 * 1000;
     return readyAt > Date.now() ? new Date(readyAt) : null;
   }
 
@@ -1248,12 +1303,18 @@ class StorageManager {
   }
 
   public async addCheckIn(checkIn: CheckIn): Promise<void> {
-    // Tier-gating invariant (backstop for any caller): SECRET locations (beyond
-    // the hidden discovery range) can never be checked into. Hidden spots within
-    // range ARE allowed — that's a discovery. The camera UI also pre-checks.
+    // Tier-gating invariant (backstop for any caller): only the HARD-LOCKED teaser
+    // band (unlockedTier+1 .. unlockedTier+lockTeaserRange) can never be checked
+    // into — those are visible pins you must level up for. Normal spots (<= your
+    // tier) and proximity-discovered hidden spots (above the teaser band, any tier)
+    // ARE allowed — that's a discovery. The camera UI also pre-checks distance.
     const target = this.locations.find((l) => l.id === checkIn.locationId);
-    if (this.user && target && target.tier > maxDiscoverableTier(this.user.stats.currentLevel)) {
-      throw new Error(`${target.name} is locked.`);
+    if (this.user && target) {
+      const maxTier = unlockedTier(this.user.stats.currentLevel);
+      const discoveryFloor = maxTier + getConfig().lockTeaserRange;
+      if (target.tier > maxTier && target.tier <= discoveryFloor) {
+        throw new Error(`${target.name} is locked.`);
+      }
     }
 
     this.checkIns.push(checkIn);
@@ -1507,7 +1568,19 @@ class StorageManager {
   // next" rather than the locked wall.
   public async getNextAchievements(
     limit = 4,
-  ): Promise<{ title: string; iconName: string; progress: number; difficulty: string }[]> {
+  ): Promise<
+    {
+      title: string;
+      iconName: string;
+      progress: number;
+      difficulty: string;
+      description: string;
+      points: number;
+      metric: string;
+      threshold: number;
+      value: number;
+    }[]
+  > {
     if (!this.achievementsFetched) {
       const remote = await this.fetchRemoteAchievements();
       if (remote && remote.length) this.achievementDefs = remote;
@@ -1529,6 +1602,12 @@ class StorageManager {
         iconName: def.iconName,
         progress,
         difficulty: def.difficulty,
+        description: def.description,
+        points: def.points,
+        metric: def.metric,
+        threshold: def.threshold,
+        // Clamp to the threshold so the modal reads "3 / 3" at most, matching the bar.
+        value: Math.min(metrics[def.metric] ?? 0, def.threshold),
       }));
   }
 
@@ -1638,6 +1717,13 @@ class StorageManager {
 
   public setToken(token: string): void {
     this.writeKey('locatour_token', token);
+  }
+
+  /** Drop a stale/invalid token (getToken() then returns null → triggers a fresh
+   *  register on the next syncAccount). Used when the server 401s an existing
+   *  token, e.g. after a backend DB reset. */
+  public clearToken(): void {
+    this.writeKey('locatour_token', '');
   }
 
   // --- Pending check-in uploads (retry queue) ---

@@ -40,8 +40,9 @@ export const NEARBY_ALERTS_BONUS_PCT = Math.round((NEARBY_ALERTS_POINT_MULTIPLIE
 /**
  * Tiers ABOVE your unlocked tier that are SURFACED in the home lists as LOCKED
  * teasers (lock icon + "level up"). These are HARD-locked — you must level up,
- * you can't discover-bypass them. Only the band BETWEEN this and HIDDEN_TIER_RANGE
- * (i.e. exactly unlockedTier+3) is the hidden, discoverable one (spec 08 rev).
+ * you can't discover-bypass them. Everything ABOVE this band (tier > unlockedTier
+ * + LOCK_TEASER_RANGE) is hidden and discoverable by PROXIMITY, with no upper tier
+ * ceiling (remote high-tier spots are found by getting near them).
  */
 export const LOCK_TEASER_RANGE = 2;
 
@@ -49,12 +50,21 @@ export const LOCK_TEASER_RANGE = 2;
 export const WARM_RADIUS_M = 500;
 
 /**
- * Hard check-in radius (metres) for ALL spots: you must be this close to the
- * real coordinates to take the check-in photo. Tight on purpose — it brings
- * people to the actual location instead of checking in from afar — but kept at
- * 20m (not less) to tolerate normal consumer-GPS error.
+ * Per-tier radius boost (percent). A player gets a FLAT (non-compounding) boost
+ * to their discovery (warm) radius and their localised-locations (vicinity) load
+ * of (unlockedTier - 1) × this percent: tier 1 → +0%, tier 2 (level 10) → +10%,
+ * … tier 10 (level 90) → +90%. Check-in and hidden-find radii stay flat. Tunable
+ * server-side (Game Settings → radius_tier_boost_pct).
  */
-export const CHECK_IN_RADIUS_M = 20;
+export const RADIUS_TIER_BOOST_PCT = 10;
+
+/**
+ * Hard check-in radius (metres) for ALL spots: you must be this close to the
+ * real coordinates to take the check-in photo. Still tight enough to bring people
+ * to the actual location, but 20m proved too restrictive in field testing (normal
+ * consumer-GPS error blocked legitimate check-ins) — 50m matches HIDDEN_RADIUS_M.
+ */
+export const CHECK_IN_RADIUS_M = 50;
 
 /**
  * Radius (metres) at which you're considered to have REACHED an undiscovered
@@ -181,8 +191,10 @@ export function levelForTier(tier: number): number {
 }
 
 /**
- * The highest tier a player can DISCOVER right now — their unlocked tier plus the
- * hidden range. Tiers above this are secret (never matched, never surfaced).
+ * Legacy "highest discoverable tier" helper (unlocked tier + hidden range).
+ * NOTE: hidden discovery is no longer tier-capped — any spot above the locked
+ * teaser band is discoverable by PROXIMITY (see hidden-detection.ts), so this is
+ * retained only for reference/back-compat and is not used to gate discovery.
  */
 export function maxDiscoverableTier(level: number): number {
   return Math.min(MAX_TIER, unlockedTier(level) + HIDDEN_TIER_RANGE);
