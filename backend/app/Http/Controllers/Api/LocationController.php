@@ -95,6 +95,15 @@ class LocationController extends Controller
             });
         }
 
+        // Community popularity: how many check-ins each spot received THIS WEEK
+        // (Monday-start), surfaced on the app's "top picks" cards as social proof.
+        // COALESCE so rows whose client `checked_in_at` is null still count by
+        // their server insert time.
+        $weekStart = now()->startOfWeek();
+        $query->withCount(['checkIns as checkins_this_week' => function ($q) use ($weekStart): void {
+            $q->whereRaw('COALESCE(checked_in_at, created_at) >= ?', [$weekStart]);
+        }]);
+
         $locations = $query->orderBy('created_at')->get();
 
         if ($hasGeo) {

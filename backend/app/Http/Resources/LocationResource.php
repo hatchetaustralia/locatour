@@ -38,6 +38,9 @@ class LocationResource extends JsonResource
             ],
             'address' => $this->address,
             'points' => (int) $this->points,
+            // Community check-ins this week (Monday-start), present when the index
+            // endpoint loads it via withCount; 0 elsewhere (e.g. the show route).
+            'checkinsThisWeek' => (int) ($this->checkins_this_week ?? 0),
             'geofenceRadius' => (int) $this->geofence_radius_m,
             'description' => $this->description ?? '',
             'imageUrls' => $this->resolveImageUrls(),
