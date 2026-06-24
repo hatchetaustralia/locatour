@@ -12,7 +12,7 @@
  * alive. expo-linear-gradient lays a soft iridescent wash across the card face.
  */
 import React, { useEffect } from 'react';
-import { TouchableOpacity, View, StyleSheet } from 'react-native';
+import { TouchableOpacity, View, StyleSheet, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -46,20 +46,24 @@ const GC = GLOW / 2;
 const GLOW_R = 40;
 const BLUR = 8;
 
-/** "~120 m away" under a km, otherwise one-decimal km "~1.2 km away". */
+/** "120 m away" under a km, otherwise one-decimal km "1.2 km away". */
 function friendlyDistance(distanceM: number): string {
   if (distanceM < 1000) {
-    return `~${Math.round(distanceM)} m away`;
+    return `${Math.round(distanceM)} m away`;
   }
-  return `~${(distanceM / 1000).toFixed(1)} km away`;
+  return `${(distanceM / 1000).toFixed(1)} km away`;
 }
 
 export function HiddenHeroCard({
   distanceM,
   onPress,
+  discovered,
 }: {
   distanceM: number;
   onPress?: () => void;
+  /** When set, the spot has been REACHED — reveal it (name + photo) and switch the
+   *  copy to a celebratory "you found it, check in" instead of the mystery tease. */
+  discovered?: { name: string; image?: string | null } | null;
 }): React.JSX.Element {
   const rot = useSharedValue(0);
   const pulse = useSharedValue(0);
@@ -87,9 +91,10 @@ export function HiddenHeroCard({
       onPress={onPress}
       style={[styles.card, stampBorder]}
     >
-      {/* Soft iridescent wash across the whole card face. */}
+      {/* Soft pink wash across the card face — keeps it synonymous with the
+          map / camera "something hidden nearby" bars (Brand.sticker.pink). */}
       <LinearGradient
-        colors={['#FFE9F2', '#EAF6FF', '#F3ECFF']}
+        colors={['#F58FB0', '#EA739C', '#E05F8E']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
@@ -118,22 +123,33 @@ export function HiddenHeroCard({
           </Group>
         </Canvas>
         <View style={styles.iconDisc}>
-          <Ionicons name="sparkles" size={34} color={Brand.ink} />
+          {discovered?.image ? (
+            <Image source={{ uri: discovered.image }} style={styles.discImage} />
+          ) : (
+            <Ionicons name={discovered ? 'checkmark-circle' : 'sparkles'} size={34} color={Brand.ink} />
+          )}
         </View>
       </View>
 
       <View style={styles.copy}>
         <BrandText weight="bold" color={Brand.ink} style={styles.headline}>
-          Something Hidden Nearby
+          {discovered ? 'You found it!' : 'Hidden spot nearby'}
         </BrandText>
-        <BrandText weight="semibold" color={Brand.inkSecondary} style={styles.distance}>
-          {friendlyDistance(distanceM)}
-        </BrandText>
-        <View style={styles.cta}>
-          <BrandText weight="bold" color={Brand.purple} style={styles.ctaText}>
-            Tap to go find it
+        <View style={styles.distanceBadge}>
+          <BrandText
+            weight="bold"
+            color={Brand.ink}
+            style={styles.distanceBadgeText}
+            numberOfLines={1}
+          >
+            {discovered ? discovered.name : friendlyDistance(distanceM)}
           </BrandText>
-          <Ionicons name="arrow-forward" size={15} color={Brand.purple} />
+        </View>
+        <View style={styles.cta}>
+          <BrandText weight="bold" color={Brand.ink} style={styles.ctaText}>
+            {discovered ? 'Tap to check in' : 'Tap to go find it'}
+          </BrandText>
+          <Ionicons name="arrow-forward" size={15} color={Brand.ink} />
         </View>
       </View>
     </TouchableOpacity>
@@ -148,7 +164,7 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     padding: Spacing.four,
     borderRadius: BrandRadius.sticker,
-    backgroundColor: Brand.surface,
+    backgroundColor: Brand.sticker.pink,
     overflow: 'hidden',
   },
   // Fixed footprint that fits the 140px glow canvas centred behind the icon.
@@ -171,24 +187,40 @@ const styles = StyleSheet.create({
     backgroundColor: Brand.surface,
     ...stampBorder,
     borderRadius: BrandRadius.pill,
+    overflow: 'hidden',
+  },
+  // The revealed spot photo (discovered state) — fills the disc.
+  discImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: BrandRadius.pill,
   },
   copy: {
     flex: 1,
-    gap: Spacing.one,
+    // Even vertical rhythm between headline → distance badge → CTA.
+    gap: Spacing.two,
     alignItems: 'flex-start',
   },
   headline: {
     fontSize: 19,
     lineHeight: 24,
   },
-  distance: {
-    fontSize: 14,
+  // Distance in a cream badge so it pops against the pink card.
+  distanceBadge: {
+    ...stampBorder,
+    alignSelf: 'flex-start',
+    backgroundColor: Brand.surface,
+    paddingHorizontal: Spacing.two + 2,
+    paddingVertical: 3,
+    borderRadius: BrandRadius.pill,
+  },
+  distanceBadgeText: {
+    fontSize: 13,
   },
   cta: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    marginTop: Spacing.two,
   },
   ctaText: {
     fontSize: 14,

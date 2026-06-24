@@ -4,13 +4,20 @@ import {
   View,
   Image,
   TouchableOpacity,
+  Pressable,
   Platform,
   Dimensions,
   FlatList,
   ScrollView,
   Animated,
-  PanResponder,
+  ActivityIndicator,
+  Modal,
 } from 'react-native';
+import {
+  GestureHandlerRootView,
+  GestureDetector,
+  Gesture,
+} from 'react-native-gesture-handler';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
@@ -20,11 +27,13 @@ import { BrandText } from '@/components/brand';
 import { HiddenNearbyBar } from '@/components/hidden-nearby-bar';
 import { RainbowGlowMarker } from '@/components/rainbow-glow-marker';
 import { SuggestLocationSheet } from '@/components/suggest-location-sheet';
+import { LocationLoadingBar } from '@/components/location-loading-bar';
 import { Brand, Spacing, stampBorder, BrandRadius } from '@/constants/theme';
 import { storage } from '@/utils/storage';
-import { submitSuggestion } from '@/utils/account';
-import { unlockedTier, levelForTier, VICINITY_RADIUS_M, CHECK_IN_RADIUS_M } from '@/utils/leveling';
-import { findNearestHiddenSpot } from '@/utils/hidden-detection';
+import { submitSuggestion, fetchAnnouncement } from '@/utils/account';
+import { unlockedTier, levelForTier } from '@/utils/leveling';
+import { getConfig, tierRadiusBoost } from '@/utils/runtime-config';
+import { useLocationContext } from '@/context/location-context';
 import { formatDistance, openDirections, isWithinVicinity } from '@/utils/geo';
 import { avatarUri } from '@/utils/avatar';
 import { ExploreLocation, CheckIn, Coordinates } from '@/types';
@@ -48,18 +57,35 @@ if (Platform.OS !== 'web') {
 // server's 150m enforcement; the client pre-check just saves a round-trip).
 const SUGGEST_RADIUS_M = 150;
 
-// Custom Map Skin — warm cream/paper tones to match the brand aesthetic.
+// POI label NOISE we never want on either basemap (schools — e.g. the beach
+// primary school — shops, clinics, government, places of worship, transit). The
+// outdoorsy ones (parks, attractions, natural features) stay visible so real
+// Google places the explorer recognises remain on the map.
+const HIDE_POI_NOISE = [
+  { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.school', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.medical', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.government', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.place_of_worship', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', elementType: 'all', stylers: [{ visibility: 'off' }] },
+];
+
+// Standard skin — warm cream/paper tones + the POI noise filter (so parks +
+// attractions stay, unlike the old blanket `poi: off` that hid everything).
 const LIGHT_MAP_STYLE = [
-  { featureType: 'poi', elementType: 'all', stylers: [{ visibility: 'off' }] },
+  ...HIDE_POI_NOISE,
   { featureType: 'landscape', elementType: 'geometry.fill', stylers: [{ color: '#FCF0E8' }] },
   { featureType: 'poi.park', elementType: 'geometry.fill', stylers: [{ color: '#dcefdf' }] },
   { featureType: 'water', elementType: 'geometry.fill', stylers: [{ color: '#bfe6e9' }] },
   { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#fffdfb' }] },
   // Soften airports: man-made land + building fills render dark navy by default;
-  // tint them a light warm grey and hide transit/airport icons for a paper look.
+  // tint them a light warm grey for a paper look.
   { featureType: 'landscape.man_made', elementType: 'geometry.fill', stylers: [{ color: '#EAE3DB' }] },
-  { featureType: 'transit', elementType: 'all', stylers: [{ visibility: 'off' }] },
 ];
+
+// Satellite/hybrid — keep Google's imagery + labels, but filter the SAME POI
+// noise so the school/shop clutter doesn't reappear over the photo basemap.
+const SATELLITE_MAP_STYLE = HIDE_POI_NOISE;
 
 // Great-circle distance (metres) between two arbitrary points. Used by the
 // suggest-a-location flow to gate on the user's CURRENT GPS vs the picked spot
@@ -105,13 +131,32 @@ export default function ExploreScreen() {
   const insets = useSafeAreaInsets();
   const searchParams = useLocalSearchParams<{ selectedId?: string }>();
 
-  const [locations, setLocations] = useState<ExploreLocation[]>([]);
-  // Hidden spots the user has unlocked by reaching them — always shown on the map.
-  const [unlockedIds, setUnlockedIds] = useState<Set<string>>(() => new Set(storage.getUnlockedLocationIds()));
+  // Shared location + located slice + hidden-spot-nearby readout — ONE GPS watch +
+  // ONE located fetch for the whole tab group (see LocationProvider). `reachable`
+  // is the UNFILTERED slice (same as the map's old `locations`). The map keeps its
+  // own screen state below (selection, avatar paint, heading).
+  const {
+    user,
+    userLocation,
+    reachable,
+    level: userLevel,
+    unlockedIds,
+    nearestHidden,
+    hiddenDistanceM,
+    hiddenInRange,
+    locating,
+    refresh,
+    forceFreshFix,
+  } = useLocationContext();
+  // True while the map is acquiring a FRESH fix on open (drives the loading bar
+  // and stops the camera from settling on the stale last-known/base position).
+  const [locatingMap, setLocatingMap] = useState(Platform.OS !== 'web');
   const [selectedLoc, setSelectedLoc] = useState<ExploreLocation | null>(null);
-  const [userLocation, setUserLocation] = useState<Location.LocationObject | null>(null);
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
-  const [userLevel, setUserLevel] = useState(1);
+  // "You're at X — check in?" arrival prompt: the nearest checkable spot you've
+  // walked within range of. Dismissed-id ref re-arms only after you leave.
+  const [arrivalSpot, setArrivalSpot] = useState<ExploreLocation | null>(null);
+  const dismissedArrivalRef = useRef<string | null>(null);
   // react-native-maps snapshots a custom marker to a bitmap; we must keep
   // tracksViewChanges TRUE until the avatar image has actually painted, else the
   // marker freezes as an empty ring. Driven by load state (not a guess timer).
@@ -122,7 +167,11 @@ export default function ExploreScreen() {
   // Live map heading (degrees) — drives the compass rose's north needle.
   const [mapHeading, setMapHeading] = useState(0);
   const [visitedLogs, setVisitedLogs] = useState<CheckIn[]>([]);
-  const [showAnnouncement, setShowAnnouncement] = useState(true);
+  // The live announcement banner is SERVER-DRIVEN (admin-managed). Null = nothing
+  // to show. Dismiss hides it for this session; it returns on the next fetch if
+  // still live (and not re-dismissed).
+  const [announcement, setAnnouncement] = useState<{ id: number; title?: string | null; body: string } | null>(null);
+  const [announcementDismissed, setAnnouncementDismissed] = useState(false);
   const [activeSlide, setActiveSlide] = useState(0);
   // Standard vs satellite (hybrid) basemap. Online-only for now; offline tiles
   // are a future MapLibre migration (see docs/locatour/02-map-stack-decision.md).
@@ -150,136 +199,170 @@ export default function ExploreScreen() {
   const mapRef = useRef<any>(null);
   // Guard so we only auto-center on the very first location fix.
   const didCenterRef = useRef(false);
+  // Map-ready gating: a fresh GPS fix can resolve BEFORE the native map has laid
+  // out, and react-native-maps silently drops an animateToRegion issued before
+  // then (so the camera would stay stuck on the base initialRegion). Stash the
+  // target and flush it from onMapReady so the zoom is never lost.
+  const mapReady = useRef(false);
+  const pendingCenterRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  const centerOnUser = useCallback((target: { latitude: number; longitude: number }) => {
+    const region = {
+      latitude: target.latitude,
+      longitude: target.longitude,
+      latitudeDelta: 0.02,
+      longitudeDelta: 0.02,
+    };
+    if (mapReady.current && mapRef.current) {
+      mapRef.current.animateToRegion(region, 600);
+    } else {
+      pendingCenterRef.current = target; // onMapReady will flush this
+    }
+  }, []);
 
   // Drag-to-dismiss for the detail sheet: dragging anywhere on the card down
   // past a threshold slides it away and clears the selection (a native
   // bottom-sheet feel). We only claim the gesture when the inner ScrollView is
   // at the very top, so scrolling tall content still works normally.
-  const translateY = useRef(new Animated.Value(0)).current;
-  const sheetScrollAtTop = useRef(true);
-  const pan = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_e, g) =>
-        sheetScrollAtTop.current && g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
-      onPanResponderMove: (_e, g) => {
-        if (g.dy > 0) translateY.setValue(g.dy);
-      },
-      onPanResponderRelease: (_e, g) => {
-        if (g.dy > 110) {
-          Animated.timing(translateY, { toValue: 600, duration: 180, useNativeDriver: true }).start(() => {
-            translateY.setValue(0);
-            setSelectedLoc(null);
-          });
-        } else {
-          Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
-        }
-      },
+  // Start off-screen (not 0) so the card never paints seated for a frame before
+  // the entrance animation drives it up from the bottom.
+  const translateY = useRef(new Animated.Value(Dimensions.get('window').height)).current;
+  // The dim backdrop is animated SEPARATELY from the card. The Modal uses
+  // animationType="none" and we drive both ourselves so dismiss SLIDES the card
+  // down while the backdrop FADES out — instead of the whole window (incl. the
+  // backdrop's hard top edge) sliding down together, which looked junky.
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const SHEET_CLOSED_Y = Dimensions.get('window').height;
+
+  // Animate the sheet OUT (card slides down + backdrop fades), THEN unmount.
+  // Shared by the drag-dismiss, the backdrop tap, and the Android back button.
+  const closeSheet = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(translateY, { toValue: SHEET_CLOSED_Y, duration: 220, useNativeDriver: true }),
+      Animated.timing(backdropOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start(({ finished }) => {
+      if (finished) setSelectedLoc(null);
+    });
+  }, [translateY, backdropOpacity, SHEET_CLOSED_Y]);
+
+  // Drag-to-dismiss MUST use react-native-gesture-handler, not PanResponder: the
+  // sheet lives inside a React Native <Modal>, which on Android is a separate
+  // native window where PanResponder move events don't propagate (taps still do —
+  // that's why the backdrop-tap close kept working but the drag didn't). We keep
+  // the RN Animated.Value and drive it from the gesture on the JS thread via
+  // runOnJS(true). The gesture activates only on a downward drag, and only while
+  // the inner ScrollView is at the top, so scrolling tall content still works.
+  const [sheetScrollAtTop, setSheetScrollAtTop] = useState(true);
+  const sheetDrag = Gesture.Pan()
+    .enabled(sheetScrollAtTop)
+    .activeOffsetY(8)
+    .failOffsetY(-8)
+    .runOnJS(true)
+    .onUpdate((e) => {
+      if (e.translationY > 0) translateY.setValue(e.translationY);
     })
-  ).current;
+    .onEnd((e) => {
+      if (e.translationY > 110) {
+        // Past the threshold → animate the rest of the way out from where the
+        // finger left the card, fading the backdrop as it goes.
+        closeSheet();
+      } else {
+        Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
+      }
+    });
+
+  // Animate the sheet IN whenever it opens (marker tap, deep-link, or hidden-reach
+  // auto-open): card springs up from the bottom while the backdrop fades in — the
+  // symmetric counterpart to closeSheet.
+  useEffect(() => {
+    if (selectedLoc) {
+      translateY.setValue(SHEET_CLOSED_Y);
+      backdropOpacity.setValue(0);
+      Animated.parallel([
+        Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 6 }),
+        Animated.timing(backdropOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [selectedLoc, translateY, backdropOpacity, SHEET_CLOSED_Y]);
 
   // Initial data load
+  // Screen-local seed from the shared user: the avatar for the "you are here"
+  // marker, the home base (vicinity fallback), and the check-in log for the detail
+  // sheet. Location, the located slice, and hidden detection come from the
+  // LocationProvider now (one watch + one fetch for the whole tab group).
   useEffect(() => {
-    // GPS watch subscription, set once permission is granted; cleared on unmount.
-    let watchSub: Location.LocationSubscription | null = null;
-    let cancelled = false;
-
-    async function init() {
-      const user = await storage.getUser();
-      const level = user?.stats.currentLevel ?? 1;
-      setUserLevel(level);
-      // Refresh unlocked spots (a just-reached hidden spot should appear now).
-      setUnlockedIds(new Set(storage.getUnlockedLocationIds()));
-      // Warm-start at the user's base: seed the slice + camera from their home
-      // coordinates so pins are already local on the first paint, instead of
-      // loading a broad set and snapping once GPS arrives.
-      const home = user?.homeCoordinates ?? null;
-      if (home) setHomeCoords(home);
-      // Pull the tier-relevant slice (≤ unlockedTier+3 within reach + majors).
-      // We DON'T cap at unlockedTier here: the map render below only draws ≤
-      // unlocked pins, but keeping the wider slice lets a tapped locked teaser
-      // (from Home) open its sheet, and the camera detect the +3 hidden band.
-      // Seed it localized to home when we have it (else the broad set).
-      const allLocs = home
-        ? await storage.getLocations({ latitude: home.latitude, longitude: home.longitude, level })
-        : await storage.getLocations({ level });
-      setLocations(allLocs);
-      // Capture the user's avatar for the live "you are here" map marker.
-      setUserAvatar(avatarUri(user?.avatarUrl, user?.username));
-
-      const checkins = await storage.getCheckIns();
-      setVisitedLogs(checkins);
-
-      // Handle query parameter trigger
-      if (searchParams.selectedId) {
-        const found = allLocs.find((l) => l.id === searchParams.selectedId);
-        if (found) setSelectedLoc(found);
-      }
-
-      // Request GPS permissions, then live-watch position. On the FIRST fix we
-      // animate the camera to the user once (guarded by didCenterRef).
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted' && !cancelled) {
-          watchSub = await Location.watchPositionAsync(
-            {
-              // High (GPS) rather than Balanced — Balanced leans on coarse
-              // network/wifi location and can land a whole suburb off.
-              accuracy: Location.Accuracy.High,
-              distanceInterval: 10,
-              timeInterval: 5000,
-            },
-            (loc) => {
-              setUserLocation(loc);
-              if (!didCenterRef.current) {
-                didCenterRef.current = true;
-                mapRef.current?.animateToRegion(
-                  {
-                    latitude: loc.coords.latitude,
-                    longitude: loc.coords.longitude,
-                    latitudeDelta: 0.02,
-                    longitudeDelta: 0.02,
-                  },
-                  600
-                );
-                // Re-sync the local slice now we have a precise fix (+ level).
-                storage
-                  .getLocations({
-                    latitude: loc.coords.latitude,
-                    longitude: loc.coords.longitude,
-                    level,
-                  })
-                  .then((slice) => {
-                    if (!cancelled) setLocations(slice);
-                  })
-                  .catch(() => {});
-              }
-            }
-          );
-          // If the effect was torn down while awaiting, stop immediately.
-          if (cancelled) {
-            watchSub.remove();
-            watchSub = null;
-          }
-        }
-      } catch (e) {
-        console.warn('GPS permission denied or failed to retrieve coordinates', e);
-      }
+    if (user) {
+      setUserAvatar(avatarUri(user.avatarUrl, user.username));
+      if (user.homeCoordinates) setHomeCoords(user.homeCoordinates);
     }
-    init();
+    storage.getCheckIns().then(setVisitedLogs).catch(() => {});
+  }, [user]);
 
+  // On first open: keep the loader up while we get a FRESH high-accuracy fix
+  // (NOT the stale last-known/base seed the provider hands out instantly), then
+  // zoom the camera to the user's real position. We also kick a located refresh so
+  // the spots shown are within the radius around where they actually are. Falls
+  // back to the last-known fix and is time-boxed so the loader can never hang.
+  useEffect(() => {
+    if (Platform.OS === 'web' || didCenterRef.current) return;
+    didCenterRef.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        const fresh = await Promise.race([
+          forceFreshFix().catch(() => null),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 10000)),
+        ]);
+        if (cancelled) return;
+        // Fresh fix preferred; else a LIVE last-known reading (read here, not from
+        // the mount-time userLocation closure which is still null on a cold open).
+        let target = fresh;
+        if (!target) {
+          const last = await Location.getLastKnownPositionAsync().catch(() => null);
+          if (cancelled) return;
+          target = last
+            ? { latitude: last.coords.latitude, longitude: last.coords.longitude }
+            : null;
+        }
+        if (target) {
+          centerOnUser(target); // flushes via onMapReady if the map isn't laid out yet
+          // Pull the located slice for this radius (the provider also fetches on its
+          // first fix; this covers the case where the fresh fix moved us). Await it so
+          // the loader stays up until nearby spots are actually loaded, not just GPS.
+          await refresh();
+        }
+      } finally {
+        // Always clear the loader — never leave the map stuck on "Locating you…".
+        if (!cancelled) setLocatingMap(false);
+      }
+    })();
     return () => {
       cancelled = true;
-      watchSub?.remove();
     };
-  }, [searchParams.selectedId]);
+    // Once, on first open. forceFreshFix/refresh/centerOnUser are stable; the
+    // last-known fallback is read live inside, so no reactive deps are needed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Refresh unlocked spots every time the map regains focus — so a spot just
-  // unlocked on the camera screen appears the moment the user returns here, even
-  // if this tab was already mounted (so init() didn't re-run).
+  // Deep-link: open a spot's sheet when navigated with ?selectedId, once the
+  // shared slice has loaded. Guarded by id so a later `reachable` refresh (e.g. on
+  // focus) never re-opens a sheet the user already dismissed.
+  const handledSelectedIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const id = searchParams.selectedId;
+    if (!id || !reachable.length || handledSelectedIdRef.current === id) return;
+    handledSelectedIdRef.current = id;
+    const found = reachable.find((l) => l.id === id);
+    if (found) setSelectedLoc(found);
+  }, [searchParams.selectedId, reachable]);
+
+  // On focus, re-read unlocked/visited (cheap, debounced in the provider) so a
+  // spot just unlocked on the camera folds out of "hidden" the moment we return.
   useFocusEffect(
     useCallback(() => {
-      setUnlockedIds(new Set(storage.getUnlockedLocationIds()));
-    }, [])
+      void refresh();
+      // Pull the admin-managed announcement (null = show nothing).
+      fetchAnnouncement().then(setAnnouncement).catch(() => {});
+    }, [refresh])
   );
 
   // Whenever a spot is opened (via a marker tap or a deep-link selectedId),
@@ -464,29 +547,53 @@ export default function ExploreScreen() {
     return Math.round(d);
   };
 
-  // Nearest UNDISCOVERED hidden spot — via the SHARED detector so the map agrees
-  // with the camera + home. (This used to have its own looser rules: it treated
-  // visible locked teasers AND secret tiers as "hidden" and used the 20m check-in
-  // radius, so a spot could read as hidden here but not in the camera.)
-  const hiddenNearby = userLocation
-    ? findNearestHiddenSpot(
-        { latitude: userLocation.coords.latitude, longitude: userLocation.coords.longitude },
-        locations,
-        userLevel,
-        { visitedIds: new Set(visitedLogs.map((c) => c.locationId)), unlockedIds },
-      )
-    : null;
-  // Within warm range → show the guide bar; within reach (HIDDEN_RADIUS_M) → unlock it.
-  const hiddenNearbyDist = hiddenNearby?.warm ? hiddenNearby.distanceM : null;
-  const hiddenInReachId = hiddenNearby?.inRange ? hiddenNearby.spot.id : null;
+  // Arrival prompt: surface the nearest CHECKABLE spot (unlocked tier, not yet
+  // checked in, off cooldown) once you walk within CHECK_IN_RADIUS. One-shot per
+  // arrival (dismissedArrivalRef), re-armed only after you leave the zone. Hidden
+  // reaches + an open detail card take precedence, so it never stacks.
+  useEffect(() => {
+    if (selectedLoc) {
+      setArrivalSpot(null);
+      return;
+    }
+    if (!userLocation) {
+      setArrivalSpot(null);
+      return;
+    }
+    const cand =
+      reachable
+        .map((l) => ({ l, d: getDistanceToLocation(l.coordinates) ?? Infinity }))
+        .filter(
+          ({ l, d }) =>
+            d <= getConfig().checkInRadiusM &&
+            l.tier <= unlockedTier(userLevel) &&
+            !getCheckInStatus(l.id) &&
+            !storage.nextCheckInAt(l.id)
+        )
+        .sort((a, b) => a.d - b.d)[0]?.l ?? null;
+    if (!cand) {
+      setArrivalSpot(null);
+      dismissedArrivalRef.current = null; // left the zone → re-arm
+      return;
+    }
+    if (dismissedArrivalRef.current === cand.id) return;
+    setArrivalSpot((prev) => (prev?.id === cand.id ? prev : cand));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userLocation, reachable, visitedLogs, selectedLoc, userLevel]);
+
+  // Hidden-spot-nearby readout comes from the SHARED provider (single source of
+  // truth across home/map/camera). Within warm range → show the guide bar; within
+  // reach (HIDDEN_RADIUS_M) → unlock it + open its card.
+  const hiddenNearbyDist = nearestHidden?.warm ? hiddenDistanceM : null;
+  const hiddenInReachId = hiddenInRange ? nearestHidden?.spot.id ?? null : null;
 
   useEffect(() => {
     // Reaching a hidden spot on the map unlocks it (persists on the map) AND
     // opens its slide card right there — so the explorer can read about it and
     // check in without switching to the camera.
     if (hiddenInReachId && storage.unlockLocation(hiddenInReachId)) {
-      setUnlockedIds(new Set(storage.getUnlockedLocationIds()));
-      const found = locations.find((l) => l.id === hiddenInReachId);
+      void refresh(); // provider re-reads unlocked → the spot folds out of "hidden"
+      const found = reachable.find((l) => l.id === hiddenInReachId);
       if (found) handleMarkerSelect(found);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -543,7 +650,7 @@ export default function ExploreScreen() {
   // 150m) floored at 50m so the tolerance is never unreasonably tight.
   const selectedDistance = selectedLoc ? getDistanceToLocation(selectedLoc.coordinates) : null;
   // Hard 20m check-in radius for ALL spots (shared with the camera gate).
-  const selectedRadius = CHECK_IN_RADIUS_M;
+  const selectedRadius = getConfig().checkInRadiusM;
   const tooFar = selectedDistance != null && selectedDistance > selectedRadius;
   // Hard tier-lock: a surfaced spot above your tier requires leveling up — no
   // check-in even if you're standing on it (the camera enforces this too). EXCEPT
@@ -562,7 +669,7 @@ export default function ExploreScreen() {
   const userCoords = userLocation
     ? { latitude: userLocation.coords.latitude, longitude: userLocation.coords.longitude }
     : homeCoords;
-  const visibleLocations = locations.filter((loc) => {
+  const visibleLocations = reachable.filter((loc) => {
     // A hidden spot the user has physically UNLOCKED (reached within range) is
     // always on their map from then on — it bypasses the tier + vicinity gates.
     if (unlockedIds.has(loc.id)) return true;
@@ -577,7 +684,7 @@ export default function ExploreScreen() {
       loc.id === searchParams.selectedId ||
       loc.isMajorDestination ||
       !userCoords ||
-      isWithinVicinity(userCoords, loc.coordinates, VICINITY_RADIUS_M);
+      isWithinVicinity(userCoords, loc.coordinates, getConfig().vicinityRadiusM * tierRadiusBoost(userLevel));
     return tierVisible && reachVisible;
   });
 
@@ -587,10 +694,14 @@ export default function ExploreScreen() {
     !!selectedLoc &&
     !selectedLoc.isMajorDestination &&
     selectedDistance != null &&
-    selectedDistance > VICINITY_RADIUS_M;
+    selectedDistance > getConfig().vicinityRadiusM * tierRadiusBoost(userLevel);
 
   return (
     <View style={styles.container}>
+      {/* Transient top "pulling nearby spots" indicator (provider-driven). The
+          map's own "Locating you…" overlay below covers the fresh-fix wait. */}
+      <LocationLoadingBar topOffset={8} />
+
       {/* Top overlay: while a hidden spot is nearby, the guide bar takes over so
           the user can hunt it from the (lower-battery) map; otherwise the gold
           announcement shows — and comes back here once they leave the area,
@@ -600,7 +711,7 @@ export default function ExploreScreen() {
           distance={hiddenNearbyDist}
           style={[styles.topOverlay, Platform.OS !== 'web' && { top: insets.top + 8 }]}
         />
-      ) : showAnnouncement ? (
+      ) : announcement && !announcementDismissed ? (
         <View
           style={[
             styles.announcement,
@@ -608,11 +719,11 @@ export default function ExploreScreen() {
             Platform.OS !== 'web' && { top: insets.top + 8 },
           ]}
         >
-          <BrandText weight="semibold" style={styles.announcementText}>
-            Here&apos;s a useful announcement!
+          <BrandText weight="semibold" style={styles.announcementText} numberOfLines={2}>
+            {announcement.title ? `${announcement.title}: ${announcement.body}` : announcement.body}
           </BrandText>
           <TouchableOpacity
-            onPress={() => setShowAnnouncement(false)}
+            onPress={() => setAnnouncementDismissed(true)}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Ionicons name="close" size={18} color={Brand.ink} />
@@ -667,7 +778,20 @@ export default function ExploreScreen() {
               longitudeDelta: 0.05,
             }}
             mapType={satellite ? 'hybrid' : 'standard'}
-            customMapStyle={satellite ? undefined : LIGHT_MAP_STYLE}
+            customMapStyle={satellite ? SATELLITE_MAP_STYLE : LIGHT_MAP_STYLE}
+            // The map is laid out — flush any center target the locate flow computed
+            // before the map was ready (else that zoom would be silently dropped).
+            onMapReady={() => {
+              mapReady.current = true;
+              const t = pendingCenterRef.current;
+              if (t && mapRef.current) {
+                mapRef.current.animateToRegion(
+                  { latitude: t.latitude, longitude: t.longitude, latitudeDelta: 0.02, longitudeDelta: 0.02 },
+                  600
+                );
+                pendingCenterRef.current = null;
+              }
+            }}
             // Native Google controls clash with the status bar / pill nav — use
             // our own avatar marker + recenter button instead.
             showsUserLocation={false}
@@ -698,7 +822,7 @@ export default function ExploreScreen() {
             {userCoords && Circle && (
               <Circle
                 center={userCoords}
-                radius={VICINITY_RADIUS_M}
+                radius={getConfig().vicinityRadiusM * tierRadiusBoost(userLevel)}
                 strokeWidth={1}
                 strokeColor="rgba(125,227,231,0.5)"
                 fillColor="rgba(125,227,231,0.06)"
@@ -759,6 +883,19 @@ export default function ExploreScreen() {
           </MapView>
         )}
 
+        {/* "Locating you…" while we acquire a fresh fix + load nearby spots on
+            open, so a fresh map open never looks empty/broken or stuck on base. */}
+        {Platform.OS !== 'web' && (locatingMap || locating) && (
+          <View style={styles.locatingOverlay} pointerEvents="none">
+            <View style={[styles.locatingPill, stampBorder]}>
+              <ActivityIndicator size="small" color={Brand.ink} />
+              <BrandText weight="bold" color={Brand.ink} style={styles.locatingText}>
+                Locating you…
+              </BrandText>
+            </View>
+          </View>
+        )}
+
         {/* Satellite + reset-north compass + recenter buttons (native only). Three
             equal-size icon buttons stacked above the floating pill tab bar, clear
             of the bottom inset (Google-Maps style). */}
@@ -810,19 +947,63 @@ export default function ExploreScreen() {
         )}
       </View>
 
-      {/* Location detail sheet — draggable cream stamp card above the tab bar */}
-      {selectedLoc && (
-        <View
-          style={[
-            styles.sheetOverlay,
-            { bottom: Platform.OS === 'web' ? Spacing.six + 20 : 0 },
-          ]}
-          pointerEvents="box-none"
-        >
-          <Animated.View
-            style={[styles.bottomSheet, stampBorder, { transform: [{ translateY }] }]}
-            {...pan.panHandlers}
+      {/* Arrival prompt — you've walked up to a checkable spot. */}
+      {arrivalSpot && (
+        <View style={[styles.arrivalBanner, stampBorder, { bottom: insets.bottom + 84 }]}>
+          <Ionicons name="walk" size={20} color={Brand.bg} />
+          <BrandText weight="bold" color={Brand.bg} style={styles.arrivalText} numberOfLines={1}>
+            You&apos;re at {arrivalSpot.name} — check in?
+          </BrandText>
+          <TouchableOpacity
+            onPress={() => {
+              const id = arrivalSpot.id;
+              const pts = arrivalSpot.points;
+              dismissedArrivalRef.current = id;
+              setArrivalSpot(null);
+              router.push({ pathname: '/camera', params: { locationId: id, points: pts } });
+            }}
           >
+            <BrandText weight="bold" color={Brand.bg} style={styles.arrivalCta}>
+              CHECK IN
+            </BrandText>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              dismissedArrivalRef.current = arrivalSpot.id;
+              setArrivalSpot(null);
+            }}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="close" size={18} color={Brand.bg} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Location detail slide-over — a full-screen Modal so it covers the tab bar
+          ("over the nav and everything"). Opens for ANY tapped location; drag the
+          card down (or tap the dimmed backdrop) to dismiss. */}
+      <Modal
+        visible={!!selectedLoc}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        onRequestClose={closeSheet}
+      >
+        {selectedLoc && (
+          <GestureHandlerRootView style={styles.sheetModalRoot}>
+            {/* Dim is a PURE visual layer (pointerEvents none) so its opacity is
+                driven only by our fade animation — never by a TouchableOpacity's
+                internal press-opacity, which fought the fade and flashed. A
+                separate full-screen Pressable handles tap-to-close. */}
+            <Animated.View
+              style={[styles.sheetBackdrop, { opacity: backdropOpacity }]}
+              pointerEvents="none"
+            />
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeSheet} />
+            <GestureDetector gesture={sheetDrag}>
+            <Animated.View
+              style={[styles.bottomSheet, stampBorder, { transform: [{ translateY }] }]}
+            >
             {/* Grabber + title — drag the whole card down to dismiss (no close cross) */}
             <View style={styles.sheetGrabber}>
               <View style={styles.dragHandle} />
@@ -842,7 +1023,7 @@ export default function ExploreScreen() {
               onScroll={(e) => {
                 // Only let a downward drag dismiss the sheet when content is
                 // scrolled to the top; otherwise the ScrollView keeps the gesture.
-                sheetScrollAtTop.current = e.nativeEvent.contentOffset.y <= 0;
+                setSheetScrollAtTop(e.nativeEvent.contentOffset.y <= 0);
               }}
             >
               {/* Photo Carousel */}
@@ -901,23 +1082,28 @@ export default function ExploreScreen() {
                 )}
               </View>
 
-              {/* Universal get-directions — Apple Maps on iOS, Google/geo on Android */}
-              <TouchableOpacity
-                style={[styles.directionsBtn, stampBorder]}
-                onPress={() =>
-                  openDirections(
-                    selectedLoc.coordinates.latitude,
-                    selectedLoc.coordinates.longitude,
-                    selectedLoc.name
-                  )
-                }
-                activeOpacity={0.85}
-              >
-                <Ionicons name="navigate" size={16} color={Brand.ink} />
-                <BrandText weight="bold" color={Brand.ink} style={styles.directionsBtnText}>
-                  Get directions
-                </BrandText>
-              </TouchableOpacity>
+              {/* Universal get-directions — Apple Maps on iOS, Google/geo on Android.
+                  Hidden once the user is AT the spot (within check-in range) — no
+                  point routing them where they're standing. Still shown when the
+                  distance is unknown (no GPS fix yet). */}
+              {!(selectedDistance != null && !tooFar) && (
+                <TouchableOpacity
+                  style={[styles.directionsBtn, stampBorder]}
+                  onPress={() =>
+                    openDirections(
+                      selectedLoc.coordinates.latitude,
+                      selectedLoc.coordinates.longitude,
+                      selectedLoc.name
+                    )
+                  }
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="navigate" size={16} color={Brand.ink} />
+                  <BrandText weight="bold" color={Brand.ink} style={styles.directionsBtnText}>
+                    Get directions
+                  </BrandText>
+                </TouchableOpacity>
+              )}
 
               {/* Address */}
               <View style={styles.addressRow}>
@@ -973,7 +1159,16 @@ export default function ExploreScreen() {
             {/* CHECK IN Action CTA — purple stamp button. Disabled within the
                 24h re-check-in cooldown window (spec 06). Bottom padding clears
                 the floating pill nav. */}
-            <View style={[styles.ctaWrapper, { paddingBottom: insets.bottom + 72 }]}>
+            <View style={[styles.ctaWrapper, { paddingBottom: insets.bottom + Spacing.four }]}>
+              {/* Ready-again nudge for a spot you've checked in before. */}
+              {!checkInDisabled && selectedLatest && (
+                <View style={styles.recheckPrompt}>
+                  <Ionicons name="refresh-circle" size={16} color={Brand.purple} />
+                  <BrandText weight="bold" color={Brand.purple} style={styles.recheckText}>
+                    Ready again — check in to earn points here once more!
+                  </BrandText>
+                </View>
+              )}
               <TouchableOpacity
                 activeOpacity={0.85}
                 disabled={checkInDisabled}
@@ -1008,10 +1203,22 @@ export default function ExploreScreen() {
                         : 'CHECK IN'}
                 </BrandText>
               </TouchableOpacity>
+              {/* Reassuring cooldown explainer so the disabled state doesn't read
+                  as "broken" — it's a deliberate daily cadence. */}
+              {cooldownUntil && (
+                <View style={styles.cooldownHint}>
+                  <Ionicons name="information-circle-outline" size={14} color={Brand.inkSecondary} />
+                  <BrandText weight="medium" color={Brand.inkSecondary} style={styles.cooldownHintText}>
+                    Locations cool down — come back tomorrow to earn points here again (once every {getConfig().checkinCooldownH}h).
+                  </BrandText>
+                </View>
+              )}
             </View>
-          </Animated.View>
-        </View>
-      )}
+            </Animated.View>
+            </GestureDetector>
+          </GestureHandlerRootView>
+        )}
+      </Modal>
 
       {/* Community "Suggest a location" sheet — opened by a POI tap / long-press. */}
       <SuggestLocationSheet
@@ -1076,6 +1283,52 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
+  // "Locating you…" overlay shown until the first GPS fix. Above the map/controls
+  // (zIndex 20) but below the detail sheet (zIndex 30).
+  locatingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 25,
+  },
+  locatingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    backgroundColor: Brand.surface,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.three,
+    borderRadius: BrandRadius.pill,
+  },
+  locatingText: {
+    fontSize: 14,
+  },
+  // "You're at X — check in?" arrival banner, floating above the tab bar.
+  arrivalBanner: {
+    position: 'absolute',
+    left: Spacing.three,
+    right: Spacing.three,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    backgroundColor: Brand.teal,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two + 2,
+    borderRadius: BrandRadius.pill,
+    zIndex: 25,
+  },
+  arrivalText: {
+    flex: 1,
+    fontSize: 14,
+  },
+  arrivalCta: {
+    fontSize: 13,
+    letterSpacing: 0.3,
+  },
   // Satellite toggle (native `top` is applied inline from safe-area insets)
   // Compass rose inside the reset-north button: a diamond needle, red half = N.
   compassRose: {
@@ -1139,10 +1392,10 @@ const styles = StyleSheet.create({
     backgroundColor: Brand.surface,
   },
   // Wrapper gives the pink "hidden nearby" glow room around the avatar ring.
-  // Sized to fit the rainbow halo Image (90x90) so the marker bitmap isn't clipped.
+  // Sized to fit the rainbow halo Image (104x104) so the marker bitmap isn't clipped.
   userMarkerWrap: {
-    width: 90,
-    height: 90,
+    width: 104,
+    height: 104,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1247,16 +1500,15 @@ const styles = StyleSheet.create({
   },
 
   // Sheet
-  sheetOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: Platform.OS === 'web' ? Spacing.six + 20 : 0,
-    top: 0,
+  // The slide-over lives in a full-screen Modal now (covers the tab bar). Root
+  // fills the window; the card sits at the bottom over a dim, tap-to-close backdrop.
+  sheetModalRoot: {
+    flex: 1,
     justifyContent: 'flex-end',
-    // Sit above the map's floating controls (satellite/compass/recenter, zIndex 20)
-    // so the card covers them instead of the buttons poking through it.
-    zIndex: 30,
+  },
+  sheetBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
   },
   bottomSheet: {
     marginHorizontal: 0,
@@ -1534,6 +1786,29 @@ const styles = StyleSheet.create({
     color: '#e59824',
   },
 
+  // "Ready again" nudge above the CTA once a prior check-in is off cooldown.
+  recheckPrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingBottom: Spacing.two,
+  },
+  recheckText: {
+    fontSize: 13,
+    flex: 1,
+  },
+  // Reassuring explainer under the disabled CTA while cooling down.
+  cooldownHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingTop: Spacing.two,
+  },
+  cooldownHintText: {
+    fontSize: 12,
+    flex: 1,
+    lineHeight: 16,
+  },
   // CTA
   ctaWrapper: {
     paddingHorizontal: Spacing.three,

@@ -7,11 +7,9 @@
 import { Coordinates, ExploreLocation } from '@/types';
 import {
   unlockedTier,
-  maxDiscoverableTier,
   LOCK_TEASER_RANGE,
-  HIDDEN_RADIUS_M,
-  WARM_RADIUS_M,
 } from '@/utils/leveling';
+import { getConfig, tierRadiusBoost } from '@/utils/runtime-config';
 
 /** Great-circle distance in metres. The one shared Haversine (there were three). */
 export function distanceMeters(a: Coordinates, b: Coordinates): number {
@@ -53,8 +51,9 @@ export interface NearbyClassification {
  * Tier bands (single definition):
  *   tier <= unlockedTier ................. unlocked → checkable
  *   unlockedTier+1 .. unlockedTier+2 ..... visible LOCKED teasers → ignored (NOT hidden)
- *   > unlockedTier+LOCK_TEASER_RANGE ...... genuinely hidden (until discovered)
- *   > maxDiscoverableTier ................. secret → never surfaced at all
+ *   > unlockedTier+LOCK_TEASER_RANGE ...... genuinely hidden (until discovered) — NO upper
+ *       tier ceiling: a remote high-tier spot is discoverable by PROXIMITY (within the
+ *       boosted warm radius) regardless of how far above your tier it sits.
  *
  * A hidden spot that has been discovered (checked in = visitedIds, OR reached =
  * unlockedIds) is no longer hidden — it folds into "checkable". Pass BOTH sets so
@@ -67,7 +66,6 @@ export function classifyNearby(
   opts?: { visitedIds?: Set<string>; unlockedIds?: Set<string> },
 ): NearbyClassification {
   const maxTier = unlockedTier(level);
-  const maxDisc = maxDiscoverableTier(level);
   const discoveryFloor = maxTier + LOCK_TEASER_RANGE;
   const discovered = (id: string) =>
     opts?.visitedIds?.has(id) === true || opts?.unlockedIds?.has(id) === true;
@@ -78,7 +76,6 @@ export function classifyNearby(
   let hidDist = Infinity;
 
   for (const loc of locations) {
-    if (loc.tier > maxDisc) continue; // secret — never surfaced
     const d = distanceMeters(here, loc.coordinates);
     if (loc.tier > discoveryFloor) {
       // Genuinely hidden. Undiscovered → a hidden target; discovered → checkable.
@@ -103,14 +100,15 @@ export function classifyNearby(
   }
 
   const hidRounded = Math.round(hidDist);
+  const cfg = getConfig();
   return {
     checkable: chk ? { spot: chk, distanceM: Math.round(chkDist) } : null,
     hidden: hid
       ? {
           spot: hid,
           distanceM: hidRounded,
-          inRange: hidRounded <= HIDDEN_RADIUS_M,
-          warm: hidRounded <= WARM_RADIUS_M,
+          inRange: hidRounded <= cfg.hiddenRadiusM,
+          warm: hidRounded <= cfg.warmRadiusM * tierRadiusBoost(level),
         }
       : null,
   };
@@ -126,8 +124,8 @@ export function findNearestHiddenSpot(
   return classifyNearby(here, locations, level, opts).hidden;
 }
 
-/** Format a metre distance for UI: "~120 m away" / "~1.2 km away". */
+/** Format a metre distance for UI: "120 m away" / "1.2 km away". */
 export function formatDistanceAway(distanceM: number): string {
-  if (distanceM < 1000) return `~${Math.round(distanceM)} m away`;
-  return `~${(distanceM / 1000).toFixed(1)} km away`;
+  if (distanceM < 1000) return `${Math.round(distanceM)} m away`;
+  return `${(distanceM / 1000).toFixed(1)} km away`;
 }

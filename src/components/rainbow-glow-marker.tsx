@@ -46,9 +46,9 @@ const GLOW_R = 36; // halo radius (matches shutter GLOW_R)
 const BLUR = 6; // matches shutter blur
 const SCALE = 2; // rasterise at 2x for crispness, display down at DISPLAY
 
-// On-screen footprint. ~90 puts the halo's bright band a touch outside the 40px
-// avatar ring (so it reads as a glow), with blur headroom inside the bitmap.
-const DISPLAY = 90;
+// On-screen footprint. ~104 puts a prominent halo (like the home hero glow) well
+// outside the 40px avatar ring, with blur headroom inside the bitmap.
+const DISPLAY = 104;
 
 // Module-level cache so the PNG is baked + written only once per app session.
 let cachedUri: string | null = null;
@@ -93,6 +93,7 @@ async function buildGlowUri(): Promise<string | null> {
 
 export function RainbowGlowMarker() {
   const [uri, setUri] = useState<string | null>(cachedUri);
+  const [frame, setFrame] = useState(0);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -107,8 +108,25 @@ export function RainbowGlowMarker() {
     };
   }, [uri]);
 
+  // Slow spin + gentle pulse. The parent marker keeps re-snapshotting while a
+  // hidden spot is near (tracksViewChanges stays true), so each transformed
+  // frame is captured into the marker bitmap. The glow PNG has transparent
+  // margins, so the scale pulse never clips. Only runs while mounted (= nearby).
+  useEffect(() => {
+    const id = setInterval(() => setFrame((f) => (f + 1) % 360), 80);
+    return () => clearInterval(id);
+  }, []);
+
   if (!uri) return null;
-  return <Image source={{ uri }} style={styles.glow} fadeDuration={0} />;
+  const rotate = `${frame * 4}deg`; // ~7s per revolution at 80ms/frame
+  const scale = 1 + 0.08 * Math.sin((frame * 8 * Math.PI) / 180); // ~3.6s pulse
+  return (
+    <Image
+      source={{ uri }}
+      style={[styles.glow, { transform: [{ rotate }, { scale }] }]}
+      fadeDuration={0}
+    />
+  );
 }
 
 const styles = StyleSheet.create({

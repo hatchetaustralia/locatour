@@ -55,7 +55,15 @@ export function BrandText({
   color = Brand.ink,
   ...rest
 }: TextProps & { weight?: Weight; color?: string }) {
-  return <Text {...rest} style={[{ fontFamily: fontFor[weight], color }, style]} />;
+  // includeFontPadding:false removes the extra top/bottom padding Android bakes
+  // into text — the usual culprit for labels sitting visually off-centre inside
+  // pills/badges. Setting it here fixes vertical alignment app-wide (no-op on iOS).
+  return (
+    <Text
+      {...rest}
+      style={[{ fontFamily: fontFor[weight], color, includeFontPadding: false }, style]}
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------

@@ -24,14 +24,18 @@ import * as SQLite from 'expo-sqlite';
 import { Platform } from 'react-native';
 
 import { storage } from './storage';
-import { maxDiscoverableTier, unlockedTier, LOCK_TEASER_RANGE, WARM_RADIUS_M } from './leveling';
+import { unlockedTier } from './leveling';
+import { getConfig, tierRadiusBoost } from './runtime-config';
+import { distanceMeters } from './geo';
 
 export const GEOFENCE_TASK = 'locatour-geofence';
 const CHANNEL_ID = 'geofence-alerts';
 /** Separator packed into the region identifier: `type::name::id`. Names never contain it. */
 const SEP = '::';
-/** Android allows up to 100 active geofences per app; stay under it. */
-const MAX_REGIONS = 90;
+/** OS cap on active geofences: Android ~100 (stay under), iOS ~20 per app. The
+ *  hidden-first nearest ranking puts the most valuable regions in the limited
+ *  slots, so a smaller iOS cap still keeps the right ones. */
+const MAX_REGIONS = Platform.OS === 'ios' ? 20 : 90;
 
 // ── Notification throttling (best-practice: a rare delight, never spam) ──
 /** Don't re-notify the SAME spot within this window (~1 month). */
@@ -205,30 +209,59 @@ export async function syncGeofences(): Promise<void> {
 
     const level = user.stats.currentLevel;
     const maxUnlocked = unlockedTier(level);
-    const maxDisc = maxDiscoverableTier(level);
-    const discoveryFloor = maxUnlocked + LOCK_TEASER_RANGE; // genuinely-hidden band is above this
+    const discoveryFloor = maxUnlocked + getConfig().lockTeaserRange; // genuinely-hidden band is above this
     const visited = new Set(checkIns.map((c) => c.locationId));
 
-    const regions: Location.LocationRegion[] = [];
+    // Centre to rank by: a cheap last-known fix (no GPS spin-up in the background)
+    // or the user's home base. Without one we keep source order (dist 0 for all).
+    const center =
+      (await Location.getLastKnownPositionAsync().catch(() => null))?.coords ??
+      user.homeCoordinates ??
+      null;
+
+    type Candidate = { region: Location.LocationRegion; hidden: boolean; dist: number };
+    const candidates: Candidate[] = [];
     for (const loc of locations) {
       if (visited.has(loc.id)) continue; // only nudge for never-checked-in spots
-      if (loc.tier > maxDisc) continue; // secret tier — never surface
-      const hidden = loc.tier > discoveryFloor; // genuinely hidden (unlocked+3)
+      // No secret-tier ceiling: a remote high-tier spot is discoverable by proximity.
+      const hidden = loc.tier > discoveryFloor; // genuinely hidden (above the locked teasers)
       // Skip the visible-but-locked teaser band (maxUnlocked < tier <= discoveryFloor):
       // a map pin, not checkable and not hidden — no geofence "hidden nearby" nudge.
       if (loc.tier > maxUnlocked && ! hidden) continue;
-      regions.push({
-        // Pack everything the headless task needs; hide the name for hidden spots.
-        identifier: `${hidden ? 'hidden' : 'unlocked'}${SEP}${hidden ? '' : loc.name}${SEP}${loc.id}`,
-        latitude: loc.coordinates.latitude,
-        longitude: loc.coordinates.longitude,
-        // Hidden: a wide "warm" ring so the hint fires before they arrive.
-        // Unlocked: the check-in radius, floored to a geofence-reliable minimum.
-        radius: hidden ? WARM_RADIUS_M : Math.max(loc.geofenceRadius ?? 150, 120),
-        notifyOnEnter: true,
-        notifyOnExit: false,
+      candidates.push({
+        hidden,
+        dist: center ? distanceMeters(center, loc.coordinates) : 0,
+        region: {
+          // Pack everything the headless task needs; hide the name for hidden spots.
+          identifier: `${hidden ? 'hidden' : 'unlocked'}${SEP}${hidden ? '' : loc.name}${SEP}${loc.id}`,
+          latitude: loc.coordinates.latitude,
+          longitude: loc.coordinates.longitude,
+          // Hidden: a wide "warm" ring so the hint fires before they arrive.
+          // Unlocked: the check-in radius, floored to a geofence-reliable minimum.
+          radius: hidden
+            ? getConfig().warmRadiusM * tierRadiusBoost(level)
+            : Math.max(loc.geofenceRadius ?? 150, 120),
+          notifyOnEnter: true,
+          notifyOnExit: false,
+        },
       });
-      if (regions.length >= MAX_REGIONS) break;
+    }
+
+    // The OS caps active geofences (~20 iOS / 100 Android), so in a dense area we
+    // can't register them all. Register the NEAREST to where the user is now, and
+    // let HIDDEN spots claim slots FIRST — the discovery ping is the whole point, so
+    // nearer already-unlocked spots must never crowd hidden ones out of the cap.
+    // Within each group, nearest wins. (Stable order is kept when center is null.)
+    const byDist = (a: Candidate, b: Candidate) => a.dist - b.dist;
+    const ranked = [
+      ...candidates.filter((c) => c.hidden).sort(byDist),
+      ...candidates.filter((c) => !c.hidden).sort(byDist),
+    ];
+    const regions = ranked.slice(0, MAX_REGIONS).map((c) => c.region);
+    if (candidates.length > MAX_REGIONS) {
+      console.log(
+        `[geofence] ${candidates.length} candidates exceed the ${MAX_REGIONS} cap → registered the nearest (hidden-first); some far spots are not monitored in the background.`,
+      );
     }
 
     const running = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK).catch(() => false);

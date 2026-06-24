@@ -1,27 +1,26 @@
 /**
- * PassportStamp — the inked rubber-stamp overlay slapped on a successful
- * check-in. A slightly-tilted bordered badge with the STATUS as the big stamp
- * word, the location below it, and a short human date. The whole thing reads
- * like a real passport stamp: a double ring, a touch of rotation, and an inked
- * accent tint that shifts with the status (gold for a fresh Discovery, a
- * teal/purple wash for Explorer, plain ink for a routine Checked In).
+ * PassportStamp — the inked rubber-stamp keepsake slapped on a successful
+ * check-in. A slightly-tilted double-ring badge with a CUSTOM line-illustration
+ * postmark emblem at its heart (drawn with Skia — concentric ring + radial ticks
+ * + a status motif), the location below it, and a short human date. Reads like a
+ * real passport / postal cancellation stamp, not a flat icon.
  *
- * Self-contained: it sizes itself and applies its own tilt. The parent is
- * expected to position it (we never set position:absolute here).
+ * Self-contained: it sizes itself and applies its own tilt. The parent positions
+ * it (we never set position:absolute here).
  */
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Canvas, Circle, Path, Group, vec } from '@shopify/react-native-skia';
 
 import { BrandText } from '@/components/brand';
-import { Brand, BrandFonts, BrandRadius } from '@/constants/theme';
+import { Brand, BrandRadius } from '@/constants/theme';
 
 type Status = 'Checked In' | 'Discovered' | 'Explorer';
 
 const SIZE = 164;
 
-// Each status gets its own inked colourway: the ring/text tint, a soft glow
-// behind the badge, and (for the rainbow Discovery) gradient stops.
+// Each status gets its own inked colourway: the ring/emblem tint + a soft glow.
 const STATUS_STYLE: Record<
   Status,
   { tint: string; glow: readonly [string, string, ...string[]] }
@@ -39,6 +38,65 @@ const STATUS_STYLE: Record<
     glow: [Brand.inkSubtle, Brand.ink],
   },
 };
+
+// ---------------------------------------------------------------------------
+// Custom stamp emblem — a hand-drawn-feeling postmark line illustration (Skia).
+// ---------------------------------------------------------------------------
+const E = 72; // emblem canvas
+const EC = E / 2; // centre
+
+/** Radial tick marks between two radii (the postal-cancellation look). */
+function radialTicks(r1: number, r2: number, n: number): string {
+  let p = '';
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const x1 = (EC + r1 * Math.cos(a)).toFixed(2);
+    const y1 = (EC + r1 * Math.sin(a)).toFixed(2);
+    const x2 = (EC + r2 * Math.cos(a)).toFixed(2);
+    const y2 = (EC + r2 * Math.sin(a)).toFixed(2);
+    p += `M ${x1} ${y1} L ${x2} ${y2} `;
+  }
+  return p;
+}
+
+/** A pointed star motif (n points), centred — used for Discovered/Explorer. */
+function starMotif(points: number, outer: number, inner: number): string {
+  let p = '';
+  for (let i = 0; i < points * 2; i++) {
+    const r = i % 2 === 0 ? outer : inner;
+    const a = (i / (points * 2)) * Math.PI * 2 - Math.PI / 2;
+    const x = (EC + r * Math.cos(a)).toFixed(2);
+    const y = (EC + r * Math.sin(a)).toFixed(2);
+    p += (i === 0 ? 'M ' : 'L ') + x + ' ' + y + ' ';
+  }
+  return p + 'Z';
+}
+
+const TICKS = radialTicks(22, 28, 28);
+const MOTIF: Record<Status, string> = {
+  Discovered: starMotif(5, 13, 5), // a 5-point discovery star
+  Explorer: starMotif(4, 14, 4), // a 4-point compass star
+  'Checked In': `M ${EC - 9} ${EC + 1} L ${EC - 2} ${EC + 8} L ${EC + 10} ${EC - 8}`, // a tick
+};
+
+function StampEmblem({ tint, status }: { tint: string; status: Status }): React.JSX.Element {
+  return (
+    <Canvas style={styles.emblemCanvas} pointerEvents="none">
+      <Group opacity={0.92}>
+        <Circle c={vec(EC, EC)} r={30} style="stroke" strokeWidth={1.5} color={tint} />
+        <Path path={TICKS} style="stroke" strokeWidth={1.5} strokeCap="round" color={tint} />
+        <Path
+          path={MOTIF[status]}
+          style="stroke"
+          strokeWidth={2}
+          strokeJoin="round"
+          strokeCap="round"
+          color={tint}
+        />
+      </Group>
+    </Canvas>
+  );
+}
 
 /** "2026-06-22" → "22 Jun 2026". Falls back to the raw string if unparseable. */
 function formatStampDate(dateISO: string): string {
@@ -71,9 +129,7 @@ export function PassportStamp(props: {
 
       <View style={[styles.outerRing, { borderColor: tint }]}>
         <View style={[styles.innerRing, { borderColor: tint }]}>
-          <BrandText weight="bold" color={tint} style={styles.status} numberOfLines={1}>
-            {status.toUpperCase()}
-          </BrandText>
+          <StampEmblem tint={tint} status={status} />
 
           <View style={[styles.rule, { backgroundColor: tint }]} />
 
@@ -131,13 +187,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 14,
   },
-  status: {
-    fontFamily: BrandFonts.bold,
-    fontSize: 22,
-    letterSpacing: 1.5,
-    textAlign: 'center',
-    // A slightly faded ink so the big word reads as a pressed stamp, not flat type.
-    opacity: 0.92,
+  emblemCanvas: {
+    width: E,
+    height: E,
+    marginBottom: 2,
   },
   rule: {
     width: 56,

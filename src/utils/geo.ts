@@ -1,5 +1,5 @@
 import { Linking, Platform } from 'react-native';
-import { VICINITY_RADIUS_M } from './leveling';
+import { getConfig } from './runtime-config';
 
 type LatLng = { latitude: number; longitude: number };
 
@@ -27,10 +27,13 @@ export function distanceMeters(a: LatLng, b: LatLng): number {
 export function isWithinVicinity(
   userCoords: LatLng | null | undefined,
   coords: LatLng,
-  radiusM: number = VICINITY_RADIUS_M
+  radiusM?: number
 ): boolean {
   if (!userCoords) return true;
-  return distanceMeters(userCoords, coords) <= radiusM;
+  // Resolve the default from the live server config at call time (not at module
+  // load) so an admin change to vicinity_radius_m applies without a rebuild.
+  const r = radiusM ?? getConfig().vicinityRadiusM;
+  return distanceMeters(userCoords, coords) <= r;
 }
 
 /**

@@ -89,7 +89,20 @@ function TabBar({ children, activeIndex, ...props }: TabListProps & { activeInde
         {tabWidth > 0 && (
           <Animated.View
             pointerEvents="none"
-            style={[styles.pill, { width: tabWidth - PILL_INSET * 2, transform: [{ translateX }] }]}
+            style={[
+              styles.pill,
+              {
+                width: tabWidth - PILL_INSET * 2,
+                transform: [{ translateX }],
+                // Fully round the OUTER corners at the ends so the pill nests
+                // cleanly inside the bar's rounded left/right; inner corners stay
+                // softer. Home = left end, Profile/avatar = right end.
+                borderTopLeftRadius: activeIndex === 0 ? 22 : 16,
+                borderBottomLeftRadius: activeIndex === 0 ? 22 : 16,
+                borderTopRightRadius: activeIndex === TAB_COUNT - 1 ? 22 : 16,
+                borderBottomRightRadius: activeIndex === TAB_COUNT - 1 ? 22 : 16,
+              },
+            ]}
           />
         )}
         {children}

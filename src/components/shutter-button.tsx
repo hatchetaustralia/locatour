@@ -1,8 +1,9 @@
 /**
  * ShutterButton — the camera capture button with a Skia-rendered glow.
  *
- *   'warm'  → a sweeping full-spectrum rainbow face + a REAL blurred rainbow glow
- *             halo behind it (a hidden spot is near).
+ *   'warm'  → a PINK button face (matches the "something nearby" pink) inside a
+ *             large, slowly-spinning blurred RAINBOW glow halo — the same look as
+ *             the home "hidden spot nearby" card (a hidden spot is near).
  *   'ready' → solid green face + green blurred glow (you're in range to check in).
  *   'none'  → a plain white shutter.
  *
@@ -28,15 +29,19 @@ import {
   Easing,
 } from 'react-native-reanimated';
 
+import { Brand } from '@/constants/theme';
+
 export type ShutterMode = 'none' | 'warm' | 'ready';
 
-const SIZE = 120; // canvas size — bigger than the button to give the glow room
+const SIZE = 144; // canvas — bigger than the button to give the big glow room
 const C = SIZE / 2; // centre
 const RING_R = 34; // white ring radius
-const INNER_R = 30; // rainbow/green face radius
-const GLOW_R = 36; // glow radius — kept small so the blur fully fades INSIDE the
-// 120px canvas (otherwise the blur clips to the canvas edge → a visible square)
+const INNER_R = 30; // button face radius
+const GLOW_R = 44; // glow radius — large halo; the 9px blur still fully fades
+// INSIDE the canvas (otherwise the blur clips to the canvas edge → a square)
+const BLUR = 9;
 const GREEN = '#16a34a';
+const PINK = Brand.sticker.pink; // matches the "something hidden nearby" pink
 
 const RAINBOW = ['#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#5ac8fa', '#af52de', '#ff3b30'];
 
@@ -50,12 +55,12 @@ export function ShutterButton({ mode, onPress }: { mode: ShutterMode; onPress: (
       pulse.value = 0;
       return;
     }
-    rot.value = withRepeat(withTiming(Math.PI * 2, { duration: 5000, easing: Easing.linear }), -1, false);
-    pulse.value = withRepeat(withTiming(1, { duration: 1300, easing: Easing.inOut(Easing.quad) }), -1, true);
+    rot.value = withRepeat(withTiming(Math.PI * 2, { duration: 6000, easing: Easing.linear }), -1, false);
+    pulse.value = withRepeat(withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.quad) }), -1, true);
   }, [mode, rot, pulse]);
 
   const spin = useDerivedValue(() => [{ rotate: rot.value }]);
-  const glowOpacity = useDerivedValue(() => 0.3 + pulse.value * 0.25);
+  const glowOpacity = useDerivedValue(() => 0.45 + pulse.value * 0.25);
   const glowGrow = useDerivedValue(() => [{ scale: 1 + pulse.value * 0.05 }]);
 
   return (
@@ -66,14 +71,14 @@ export function ShutterButton({ mode, onPress }: { mode: ShutterMode; onPress: (
         </View>
       ) : (
         <Canvas style={styles.canvas} pointerEvents="none">
-          {/* Blurred glow halo behind the button (the CSS-blur look). */}
+          {/* Big blurred glow halo behind the button — spins slowly (warm). */}
           <Group
             origin={vec(C, C)}
             transform={glowGrow}
             opacity={glowOpacity}
             layer={
               <Paint>
-                <Blur blur={6} />
+                <Blur blur={BLUR} />
               </Paint>
             }
           >
@@ -88,16 +93,8 @@ export function ShutterButton({ mode, onPress }: { mode: ShutterMode; onPress: (
             )}
           </Group>
 
-          {/* Inner button face. */}
-          {mode === 'warm' ? (
-            <Group origin={vec(C, C)} transform={spin}>
-              <Circle c={vec(C, C)} r={INNER_R}>
-                <SweepGradient c={vec(C, C)} colors={RAINBOW} />
-              </Circle>
-            </Group>
-          ) : (
-            <Circle c={vec(C, C)} r={INNER_R} color={GREEN} />
-          )}
+          {/* Inner button face: pink when warm (matches the nearby pink), else green. */}
+          <Circle c={vec(C, C)} r={INNER_R} color={mode === 'warm' ? PINK : GREEN} />
 
           {/* White ring. */}
           <Circle c={vec(C, C)} r={RING_R} color="#fff" style="stroke" strokeWidth={5} />

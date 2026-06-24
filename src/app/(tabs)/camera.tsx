@@ -10,6 +10,7 @@ import {
   Animated,
   Easing,
   ScrollView,
+  PanResponder,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useIsFocused } from '@react-navigation/native';
@@ -24,23 +25,18 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BrandText } from '@/components/brand';
 import { HiddenNearbyBar } from '@/components/hidden-nearby-bar';
 import { ShutterButton, ShutterMode } from '@/components/shutter-button';
+import { LevelUpBar } from '@/components/level-up-bar';
 import { PassportStamp } from '@/components/passport-stamp';
 import { Brand, BrandFonts, BrandRadius, stampBorder, Spacing } from '@/constants/theme';
 import { storage } from '@/utils/storage';
 import { uploadCheckInNow, uploadPendingCheckIns } from '@/utils/account';
 import {
   unlockedTier,
-  maxDiscoverableTier,
-  DISCOVERY_MULTIPLIER,
-  NEARBY_ALERTS_POINT_MULTIPLIER,
-  NEARBY_ALERTS_BONUS_PCT,
-  WARM_RADIUS_M,
-  CHECK_IN_RADIUS_M,
-  HIDDEN_RADIUS_M,
-  LOCK_TEASER_RANGE,
   levelForTier,
 } from '@/utils/leveling';
+import { getConfig, tierRadiusBoost } from '@/utils/runtime-config';
 import { classifyNearby } from '@/utils/hidden-detection';
+import { useLocationContext } from '@/context/location-context';
 import { formatDistance } from '@/utils/geo';
 import { ExploreLocation, CheckIn, User, Coordinates, Achievement } from '@/types';
 
@@ -247,6 +243,35 @@ export default function CameraScreen() {
   }, [isWeb, permission, requestPermission]);
 
   // Work out whether the user is currently standing inside a check-in zone so the
+  // Shared located slice + level + visited/unlocked from the LocationProvider. The
+  // camera keeps its OWN high-frequency watch below (live compass distance +
+  // check-in gating) but no longer fetches locations per capture entry — it reads
+  // them from this ref so the watch callback closure stays current without
+  // re-subscribing the watch each time the inputs change.
+  const {
+    reachable,
+    level: ctxLevel,
+    visitedIds: ctxVisited,
+    unlockedIds: ctxUnlocked,
+    hiddenWarm,
+    hiddenDistanceM,
+    refresh,
+  } = useLocationContext();
+  const detectInputs = useRef({
+    locations: reachable,
+    level: ctxLevel,
+    visited: ctxVisited,
+    unlocked: ctxUnlocked,
+  });
+  useEffect(() => {
+    detectInputs.current = {
+      locations: reachable,
+      level: ctxLevel,
+      visited: ctxVisited,
+      unlocked: ctxUnlocked,
+    };
+  }, [reachable, ctxLevel, ctxVisited, ctxUnlocked]);
+
   // capture screen can show a fun "you're in the X zone" / "no zone here" badge.
   useEffect(() => {
     if (isWeb || flow !== 'capture') return;
@@ -259,20 +284,13 @@ export default function CameraScreen() {
           if (!cancelled) setZone({ status: 'out' });
           return;
         }
-        const [locations, user, checkIns] = await Promise.all([
-          storage.getLocations(),
-          storage.getUser(),
-          storage.getCheckIns(),
-        ]);
-        const level = user?.stats.currentLevel ?? 1;
-        const visited = new Set(checkIns.map((c) => c.locationId));
-        const unlocked = new Set(storage.getUnlockedLocationIds());
-
         // Recompute the zone (and the live distance to the nearest hidden spot) on
         // every position update so the temperature gauge heats up as the explorer
-        // closes in. Detection routes through the SHARED classifier so the camera,
-        // the map and home all agree on what's hidden — see utils/hidden-detection.
+        // closes in. Detection routes through the SHARED classifier (with inputs
+        // from the shared provider, via detectInputs) so the camera, the map and
+        // home all agree on what's hidden — see utils/hidden-detection.
         const evaluate = (here: Coordinates) => {
+          const { locations, level, visited, unlocked } = detectInputs.current;
           const { checkable, hidden } = classifyNearby(here, locations, level, {
             visitedIds: visited,
             unlockedIds: unlocked,
@@ -284,9 +302,10 @@ export default function CameraScreen() {
           if (cancelled) return;
 
           // One-shot "you've arrived" success haptic when crossing INTO range.
+          const cfg = getConfig();
           const inRangeNow =
-            (!!nearestCheckable && nearestCheckableDist <= CHECK_IN_RADIUS_M) ||
-            (!!nearestHidden && nearestHiddenDist <= HIDDEN_RADIUS_M);
+            (!!nearestCheckable && nearestCheckableDist <= cfg.checkInRadiusM) ||
+            (!!nearestHidden && nearestHiddenDist <= cfg.hiddenRadiusM);
           if (inRangeNow && !arrivedRef.current) {
             try {
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -296,12 +315,12 @@ export default function CameraScreen() {
           }
           arrivedRef.current = inRangeNow;
 
-          if (nearestCheckable && nearestCheckableDist <= CHECK_IN_RADIUS_M) {
+          if (nearestCheckable && nearestCheckableDist <= cfg.checkInRadiusM) {
             setZone({ status: 'in', name: nearestCheckable.name });
             setHiddenDistance(null);
             currentHiddenIdRef.current = null;
             setHiddenSpot(null);
-          } else if (nearestHidden && nearestHiddenDist <= HIDDEN_RADIUS_M) {
+          } else if (nearestHidden && nearestHiddenDist <= cfg.hiddenRadiusM) {
             setZone({ status: 'hidden' });
             setHiddenDistance(Math.round(nearestHiddenDist));
             // Physically reaching the spot UNLOCKS it (persists on the map). Fire
@@ -309,9 +328,10 @@ export default function CameraScreen() {
             if (currentHiddenIdRef.current !== nearestHidden.id) {
               currentHiddenIdRef.current = nearestHidden.id;
               storage.unlockLocation(nearestHidden.id);
+              void refresh(); // provider re-reads unlocked → map/home stop hiding it
               setHiddenSpot({ id: nearestHidden.id, name: nearestHidden.name, image: nearestHidden.imageUrls?.[0] });
             }
-          } else if (nearestHidden && nearestHiddenDist <= WARM_RADIUS_M) {
+          } else if (nearestHidden && nearestHiddenDist <= cfg.warmRadiusM * tierRadiusBoost(level)) {
             setZone({ status: 'warm' });
             setHiddenDistance(Math.round(nearestHiddenDist));
             currentHiddenIdRef.current = null;
@@ -350,12 +370,42 @@ export default function CameraScreen() {
   // Shutter feedback mode — the Skia ShutterButton renders the actual glow:
   //   'warm'  = a hidden spot is near (rainbow), 'ready' = in range to check in
   //   (green), 'none' = plain white shutter.
+  // Until the camera's own precise watch returns its first fix (zone 'checking'),
+  // reflect the SHARED provider's hidden-nearby readout so the "something nearby"
+  // bar + warm shutter appear INSTANTLY (consistent with home/map) instead of a
+  // load gap. The precise local watch then takes over and is authoritative for the
+  // in/hidden check-in gating — we never seed 'ready' from the coarse shared fix.
+  const localFixReceived = zone.status !== 'checking';
+  // Display zone: the "something nearby" warm teaser reflects EITHER the precise
+  // local watch OR the shared provider readout — whichever currently senses a
+  // hidden spot. This keeps the pink bar/warm shutter showing INSTANTLY on open
+  // (consistent with home/map) AND stops it flickering off when the local watch's
+  // first (often last-known) fix transiently disagrees before it recomputes. The
+  // check-in READY states ('in'/'hidden') come ONLY from the precise local watch,
+  // so a check-in is never enabled on the coarse shared fix.
+  const localSensesHidden =
+    zone.status === 'in' || zone.status === 'hidden' || zone.status === 'warm';
+  const displayZoneStatus: typeof zone.status = localSensesHidden
+    ? zone.status
+    : hiddenWarm
+      ? 'warm'
+      : localFixReceived
+        ? 'out'
+        : 'checking';
+  // Prefer the precise local distance when the local watch itself senses the spot;
+  // otherwise fall back to the provider's distance so the readout matches the bar.
+  const displayHiddenDistance =
+    (zone.status === 'warm' || zone.status === 'hidden') && hiddenDistance != null
+      ? hiddenDistance
+      : hiddenWarm
+        ? hiddenDistanceM
+        : null;
   const shutterMode: ShutterMode =
     flow !== 'capture'
       ? 'none'
-      : zone.status === 'in' || zone.status === 'hidden'
+      : displayZoneStatus === 'in' || displayZoneStatus === 'hidden'
         ? 'ready'
-        : zone.status === 'warm'
+        : displayZoneStatus === 'warm'
           ? 'warm'
           : 'none';
 
@@ -387,6 +437,39 @@ export default function CameraScreen() {
     setLocked(null);
     setFlow('capture');
   }, []);
+
+  // Drag-down-to-dismiss for the full-screen "verified" takeover (mirrors the
+  // explore detail sheet). Drag only claims when the inner ScrollView is at the
+  // top; past a threshold it slides off and returns to the viewfinder.
+  const verifiedTranslateY = useRef(new Animated.Value(0)).current;
+  const verifiedScrollAtTop = useRef(true);
+  const verifiedPan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_e, g) =>
+        verifiedScrollAtTop.current && g.dy > 6 && Math.abs(g.dy) > Math.abs(g.dx),
+      onPanResponderMove: (_e, g) => {
+        if (g.dy > 0) verifiedTranslateY.setValue(g.dy);
+      },
+      onPanResponderRelease: (_e, g) => {
+        if (g.dy > 130) {
+          Animated.timing(verifiedTranslateY, {
+            toValue: SCREEN_H,
+            duration: 200,
+            useNativeDriver: true,
+          }).start(() => {
+            verifiedTranslateY.setValue(0);
+            resetToCapture();
+          });
+        } else {
+          Animated.spring(verifiedTranslateY, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
+        }
+      },
+    })
+  ).current;
+  // Clear any leftover drag offset whenever we (re)enter the verified takeover.
+  useEffect(() => {
+    if (flow === 'verified') verifiedTranslateY.setValue(0);
+  }, [flow, verifiedTranslateY]);
 
   // Haversine distance in meters (reused approach from explore.tsx).
   const getDistance = (a: Coordinates, b: Coordinates) => {
@@ -491,14 +574,14 @@ export default function CameraScreen() {
     }
 
     const verifyUser = await storage.getUser();
+    const cfg = getConfig();
     const level = verifyUser?.stats.currentLevel ?? 1;
     const maxTier = unlockedTier(level);
-    const maxDisc = maxDiscoverableTier(level);
     // Floor tier ABOVE which a spot becomes hidden-discoverable (the rainbow band).
     // tier <= maxTier: normal · maxTier < tier <= discoveryFloor: HARD-LOCKED (level
-    // up, no discovery) · discoveryFloor < tier <= maxDisc: discoverable (currently
-    // exactly maxTier+3) · tier > maxDisc: secret.
-    const discoveryFloor = maxTier + LOCK_TEASER_RANGE;
+    // up, no discovery) · tier > discoveryFloor: discoverable by PROXIMITY regardless
+    // of how high the tier (no secret ceiling — remote epics are found by getting near).
+    const discoveryFloor = maxTier + cfg.lockTeaserRange;
 
     // No live GPS → we cannot prove the user is on-site, so we cannot check in.
     if (!coords) {
@@ -512,7 +595,7 @@ export default function CameraScreen() {
     // 3. Resolve the TARGET location. Prefer the spot the user tapped CHECK IN on
     // (passed from explore). The user must be physically inside its geofence.
     const tapped = targetLocationId
-      ? locations.find((loc) => loc.id === targetLocationId && loc.tier <= maxDisc) ?? null
+      ? locations.find((loc) => loc.id === targetLocationId) ?? null
       : null;
 
     // Separately, the nearest UNDISCOVERED hidden spot the user is standing on —
@@ -522,13 +605,12 @@ export default function CameraScreen() {
     const priorCheckIns = await storage.getCheckIns();
     const visited = new Set(priorCheckIns.map((c) => c.locationId));
     for (const loc of locations) {
-      if (loc.tier > maxDisc) continue; // secret — never surfaced
-      // Only the band ABOVE the hard-lock teasers (currently exactly maxTier+3) is
-      // discoverable; tiers in maxTier+1..maxTier+LOCK_TEASER_RANGE are hard-locked.
+      // No secret ceiling: any spot ABOVE the hard-lock teasers is discoverable by
+      // proximity; tiers in maxTier+1..maxTier+LOCK_TEASER_RANGE stay hard-locked.
       const undiscoveredHidden = loc.tier > discoveryFloor && !visited.has(loc.id);
       if (!undiscoveredHidden) continue;
       const d = getDistance(coords, loc.coordinates);
-      if (d <= CHECK_IN_RADIUS_M && d < onsiteHiddenDist) {
+      if (d <= cfg.checkInRadiusM && d < onsiteHiddenDist) {
         onsiteHiddenDist = d;
         onsiteHidden = loc;
       }
@@ -552,10 +634,10 @@ export default function CameraScreen() {
         return;
       }
       const d = getDistance(coords, tapped.coordinates);
-      inRange = d <= CHECK_IN_RADIUS_M;
+      inRange = d <= cfg.checkInRadiusM;
       if (!inRange) {
         // #8: too far — do NOT record. Show a clear, branded distance state.
-        setTooFar({ name: tapped.name, distance: d, radius: CHECK_IN_RADIUS_M });
+        setTooFar({ name: tapped.name, distance: d, radius: cfg.checkInRadiusM });
         setFlow('toofar');
         return;
       }
@@ -585,8 +667,8 @@ export default function CameraScreen() {
     const discovered = target.tier > discoveryFloor && !visited.has(target.id);
     // Explorer bonus: opted-in Nearby-Alerts users earn a multiplier on every
     // check-in (stacks on top of the first-find discovery bonus).
-    const alertsBonus = storage.getNearbyAlertsEnabled() ? NEARBY_ALERTS_POINT_MULTIPLIER : 1;
-    const base = discovered ? target.points * DISCOVERY_MULTIPLIER : target.points;
+    const alertsBonus = storage.getNearbyAlertsEnabled() ? cfg.nearbyAlertsMultiplier : 1;
+    const base = discovered ? target.points * cfg.discoveryMultiplier : target.points;
     const earned = Math.round(base * alertsBonus);
 
     // #9: capture the level BEFORE the check-in so we can detect a level-up.
@@ -656,6 +738,9 @@ export default function CameraScreen() {
     // engine just unlocked (storage.addCheckIn ran evaluateAchievements). We read
     // them, then acknowledge so they don't re-appear on the next reveal.
     const fresh = await storage.getUser();
+    // Let the shared provider pick up the new visited id + level/XP so home + map
+    // reflect the check-in (and any newly-unlocked spot) on the next tab switch.
+    void refresh();
     let unlockedNow: Achievement[] = [];
     try {
       const all = await storage.getAchievements();
@@ -683,26 +768,29 @@ export default function CameraScreen() {
 
   // ----- Render helpers -----
 
+  // Badge text/icon/colour use the DISPLAY zone (seeded from the shared provider
+  // before the local fix), so "Something's hidden nearby" shows instantly instead
+  // of "Scanning…". zone.name only exists on a precise 'in', so it's safe here.
   const zoneText =
-    zone.status === 'in'
+    displayZoneStatus === 'in'
       ? zone.name
         ? `You're in the ${zone.name} zone! 🎯`
         : "You're in a check-in zone! 🎯"
-      : zone.status === 'hidden'
+      : displayZoneStatus === 'hidden'
         ? 'Hidden spot found — snap to claim it!'
-        : zone.status === 'warm'
+        : displayZoneStatus === 'warm'
           ? "👀 Something's hidden nearby"
-          : zone.status === 'out'
+          : displayZoneStatus === 'out'
             ? 'No zone here — roam closer to a spot! 🧭'
             : 'Scanning for a zone…';
   const zoneIcon: keyof typeof Ionicons.glyphMap =
-    zone.status === 'in'
+    displayZoneStatus === 'in'
       ? 'navigate-circle'
-      : zone.status === 'hidden'
+      : displayZoneStatus === 'hidden'
         ? 'sparkles'
-        : zone.status === 'warm'
+        : displayZoneStatus === 'warm'
           ? 'search' // the "looking for it" magnifying glass (was a flame)
-          : zone.status === 'out'
+          : displayZoneStatus === 'out'
             ? 'compass-outline'
             : 'navigate-outline';
 
@@ -710,16 +798,17 @@ export default function CameraScreen() {
   // closes from WARM_RADIUS_M to 0. Shown only while approaching (warm); once
   // within range the bar flips to the "found it — claim it" state instead.
   const zonePillStyle =
-    zone.status === 'in'
+    displayZoneStatus === 'in'
       ? styles.zonePillIn
-      : zone.status === 'hidden'
+      : displayZoneStatus === 'hidden'
         ? styles.zonePillHidden
-        : zone.status === 'warm'
+        : displayZoneStatus === 'warm'
           ? styles.zonePillWarm
-          : zone.status === 'out'
+          : displayZoneStatus === 'out'
             ? styles.zonePillOut
             : styles.zonePillChecking;
-  const zoneColor = zone.status === 'in' ? '#0f5132' : zone.status === 'hidden' ? '#fff' : Brand.ink;
+  const zoneColor =
+    displayZoneStatus === 'in' ? '#0f5132' : displayZoneStatus === 'hidden' ? '#fff' : Brand.ink;
 
   const renderCaptureControls = () => (
     <>
@@ -760,8 +849,8 @@ export default function CameraScreen() {
               </View>
             </View>
           </View>
-        ) : zone.status === 'warm' && hiddenDistance != null ? (
-          <HiddenNearbyBar distance={hiddenDistance} />
+        ) : displayZoneStatus === 'warm' && displayHiddenDistance != null ? (
+          <HiddenNearbyBar distance={displayHiddenDistance} />
         ) : (
           // Calm, nav-bar-sized pill for the in-zone / nothing-nearby states.
           <View style={[styles.zonePill, stampBorder, zonePillStyle]}>
@@ -1036,22 +1125,26 @@ export default function CameraScreen() {
 
       {flow === 'verified' && (
         <>
-          {/* X close over the dimmed preview (top-left, Figma node 340:1618) */}
-          <SafeAreaView style={styles.topBarLeft} edges={['top']} pointerEvents="box-none">
-            <TouchableOpacity style={styles.closeButton} onPress={() => router.push('/explore')} activeOpacity={0.8}>
-              <Ionicons name="close" size={24} color="#fff" />
-            </TouchableOpacity>
-          </SafeAreaView>
-
           <Confetti />
 
-          <View style={[styles.verifiedSheetWrap, { bottom: isWeb ? WEB_TABBAR_CLEARANCE : insets.bottom + 80 }]}>
-            <Animated.View style={isDiscovery ? [styles.discoveryGlow, { borderColor: rainbowColor }] : undefined}>
-            <View style={styles.verifiedCard}>
+          {/* Full-screen takeover — drag DOWN (from the top of the scroll) to
+              dismiss back to the viewfinder. */}
+          <Animated.View
+            style={[styles.verifiedTakeover, { transform: [{ translateY: verifiedTranslateY }] }]}
+            {...verifiedPan.panHandlers}
+          >
+            <Animated.View
+              style={[styles.verifiedGlowWrap, isDiscovery && [styles.discoveryGlow, { borderColor: rainbowColor }]]}
+            >
+            <View style={[styles.verifiedCard, { paddingTop: insets.top }]}>
               <ScrollView
                 style={styles.verifiedScroll}
                 contentContainerStyle={styles.verifiedScrollContent}
                 showsVerticalScrollIndicator={false}
+                scrollEventThrottle={16}
+                onScroll={(e) => {
+                  verifiedScrollAtTop.current = e.nativeEvent.contentOffset.y <= 0;
+                }}
               >
               {/* Header section: drag handle + title */}
               <View style={styles.sheetSection}>
@@ -1061,12 +1154,12 @@ export default function CameraScreen() {
                 </BrandText>
                 {isDiscovery && (
                   <BrandText weight="bold" color={Brand.purple} style={styles.discoveryBonus}>
-                    {DISCOVERY_MULTIPLIER}× first-find bonus!
+                    {getConfig().discoveryMultiplier}× first-find bonus!
                   </BrandText>
                 )}
                 {explorerBonus && (
                   <BrandText weight="bold" color={Brand.purple} style={styles.discoveryBonus}>
-                    +{NEARBY_ALERTS_BONUS_PCT}% explorer bonus 🧭
+                    +{Math.round((getConfig().nearbyAlertsMultiplier - 1) * 100)}% explorer bonus 🧭
                   </BrandText>
                 )}
                 {leveledUp && stats && (
@@ -1094,21 +1187,12 @@ export default function CameraScreen() {
                   <BrandText weight="bold" color={Brand.sticker.pink} style={styles.xpGainLabel}>
                     + {pointsEarned} XP
                   </BrandText>
-                  <View style={styles.levelRow}>
-                    <View style={[styles.levelBadge, styles.levelBadgeCurrent]}>
-                      <BrandText weight="bold" color={Brand.bg} style={styles.levelBadgeText}>
-                        {stats.currentLevel}
-                      </BrandText>
-                    </View>
-                    <View style={styles.progressTrack}>
-                      <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
-                    </View>
-                    <View style={[styles.levelBadge, styles.levelBadgeNext]}>
-                      <BrandText weight="bold" color={Brand.bg} style={styles.levelBadgeText}>
-                        {stats.currentLevel + 1}
-                      </BrandText>
-                    </View>
-                  </View>
+                  <LevelUpBar
+                    fromLevel={leveledUp ? prevLevel : stats.currentLevel}
+                    toLevel={stats.currentLevel}
+                    startFraction={0}
+                    endFraction={progressPct / 100}
+                  />
                   <BrandText weight="medium" style={styles.progressCountText}>
                     {stats.currentXPInLevel}/{stats.xpNeededForNextLevel}
                   </BrandText>
@@ -1197,7 +1281,13 @@ export default function CameraScreen() {
               </View>
             </View>
             </Animated.View>
-          </View>
+            {/* X close — returns to the camera viewfinder (NOT the map). */}
+            <SafeAreaView style={styles.topBarLeft} edges={['top']} pointerEvents="box-none">
+              <TouchableOpacity style={styles.closeButton} onPress={resetToCapture} activeOpacity={0.8}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+            </SafeAreaView>
+          </Animated.View>
         </>
       )}
     </View>
@@ -1611,14 +1701,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: Spacing.four,
   },
+  // Full-screen verified/discovery takeover (above the dimmed photo, zIndex 40).
+  verifiedTakeover: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 40,
+  },
+  verifiedGlowWrap: {
+    flex: 1,
+  },
   verifiedCard: {
+    flex: 1,
     backgroundColor: CREAM,
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-    borderTopWidth: 1,
-    borderColor: Brand.ink,
     overflow: 'hidden',
-    maxHeight: SCREEN_H * 0.78,
   },
   verifiedScroll: {
     flexShrink: 1,
@@ -1626,13 +1720,9 @@ const styles = StyleSheet.create({
   verifiedScrollContent: {
     paddingBottom: 0,
   },
-  // Animated rainbow glow around the sheet when a hidden spot is discovered.
+  // Animated rainbow glow framing the whole takeover when a hidden spot is found.
   discoveryGlow: {
-    borderTopWidth: 3,
-    borderLeftWidth: 3,
-    borderRightWidth: 3,
-    borderTopLeftRadius: 14,
-    borderTopRightRadius: 14,
+    borderWidth: 3,
   },
   discoveryBonus: {
     fontSize: 12,
