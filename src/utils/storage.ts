@@ -1076,6 +1076,35 @@ class StorageManager {
     }
   }
 
+  /**
+   * Replace the local check-in list + merge unlocked spots from the server — used
+   * on sign-in to restore an account's history (so a new device / post-sign-out
+   * isn't empty). Re-derives achievement unlock state from the restored check-ins,
+   * but doesn't flag them "new" (it's a restore, not fresh unlocks).
+   */
+  public async hydrateFromServer(checkIns: CheckIn[], unlockedIds: string[]): Promise<void> {
+    this.checkIns = checkIns;
+    unlockedIds.forEach((id) => this.unlockedLocationIds.add(id));
+    this.writeKey('locatour_checkins', JSON.stringify(this.checkIns));
+    this.writeKey('locatour_unlocked_locations', JSON.stringify([...this.unlockedLocationIds]));
+    // Reconcile cached stats so home / tab badge / map-gating (which read
+    // stats.currentLevel) agree with the profile (which derives level from the
+    // check-in points sum). Floor totalXP at the restored check-in sum, but KEEP
+    // the server value when it's higher (admin grants / achievement XP aren't
+    // stored as check-ins, so they'd otherwise be lost).
+    if (this.user) {
+      const stats = this.user.stats;
+      const checkInXP = this.checkIns.reduce((sum, c) => sum + (c.pointsEarned || 0), 0);
+      stats.totalXP = Math.max(stats.totalXP || 0, checkInXP);
+      stats.totalCheckIns = this.checkIns.length;
+      stats.uniqueLocations = new Set(this.checkIns.map((c) => c.locationId)).size;
+      Object.assign(stats, deriveLevelStats(stats.totalXP));
+      this.writeKey('locatour_user', JSON.stringify(this.user));
+    }
+    this.evaluateAchievements();
+    this.newAchievements = new Set();
+  }
+
   public async updateProfile(displayName: string, username: string, bio: string, avatarUrl: string, interests?: string[], homeCoordinates?: Coordinates): Promise<User | null> {
     if (!this.user) return null;
     this.user = {

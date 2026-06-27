@@ -70,15 +70,15 @@ export default function WalkthroughScreen() {
   const listRef = useRef<FlatList<Slide>>(null);
   const [index, setIndex] = useState(0);
 
-  // The story runs up-front during onboarding (→ login). When re-opened as help,
-  // just pop back to the app.
+  // The story now runs AFTER sign-in for new users, so finishing it drops them
+  // into the app. When re-opened as help (from profile), just pop back.
   const finish = () => {
     if (isHelp) {
       if (router.canGoBack()) router.back();
       else router.replace('/profile');
       return;
     }
-    router.replace('/auth/login');
+    router.replace('/');
   };
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {

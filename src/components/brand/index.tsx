@@ -203,5 +203,10 @@ const styles = StyleSheet.create({
     fontFamily: BrandFonts.medium,
     fontSize: 14,
     color: Brand.ink,
+    // Vertically centre the text/placeholder in the 40px row. Android otherwise
+    // top-aligns and adds font padding, clipping the top of the text.
+    padding: 0,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
 });

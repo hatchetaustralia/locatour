@@ -57,6 +57,10 @@ class CheckInController extends Controller
             'checked_in_at' => $data['checked_in_at'] ?? now(),
         ]);
 
+        // A check-in implies the spot is unlocked — persist it so it restores on
+        // sign-in / a new device (idempotent).
+        $appUser->unlockedLocations()->firstOrCreate(['location_id' => $data['location_id']]);
+
         return response()->json([
             'check_in' => $checkIn,
         ], 201);

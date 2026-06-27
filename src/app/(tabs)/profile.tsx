@@ -522,7 +522,10 @@ export default function ProfileScreen() {
 
   const doLogout = async () => {
     setLogoutConfirm(false);
-    await storage.logout();
+    // Full sign-out (wipe local data + end the Google session), not just clearing
+    // the user — otherwise the next account on this device would inherit this one's
+    // local check-ins/achievements. Matches the gear-screen "Sign out".
+    await signOut();
     router.replace('/auth/login');
   };
 
@@ -548,7 +551,12 @@ export default function ProfileScreen() {
     (sum, entry) => sum + (entry.checkIn.pointsEarned || 0),
     0,
   );
-  const pointLevel = deriveLevelStats(cumulativePoints);
+  // Reconcile with the server-synced total: stats.totalXP can hold XP that isn't
+  // stored as check-ins (admin grants, achievement XP), while cumulativePoints
+  // leads when check-ins are still queued. The higher of the two is the truth, so
+  // this matches what home / the tab badge show (they read stats.currentLevel).
+  const effectiveXP = Math.max(stats.totalXP || 0, cumulativePoints);
+  const pointLevel = deriveLevelStats(effectiveXP);
   const totalCheckInsCount = entries.length;
   const uniqueLocationsCount = new Set(entries.map((e) => e.checkIn.locationId)).size;
   const xpProgress =
@@ -836,7 +844,9 @@ export default function ProfileScreen() {
                     style: 'destructive',
                     onPress: async () => {
                       await deleteAccount();
-                      router.replace('/auth/walkthrough');
+                      // Login is the first screen now; signing in fresh routes a new
+                      // user through the onboarding story.
+                      router.replace('/auth/login');
                     },
                   },
                 ],

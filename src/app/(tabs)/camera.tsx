@@ -29,7 +29,7 @@ import { LevelUpBar } from '@/components/level-up-bar';
 import { PassportStamp } from '@/components/passport-stamp';
 import { Brand, BrandFonts, BrandRadius, stampBorder, Spacing } from '@/constants/theme';
 import { storage } from '@/utils/storage';
-import { uploadCheckInNow, uploadPendingCheckIns } from '@/utils/account';
+import { uploadCheckInNow, uploadPendingCheckIns, recordUnlock } from '@/utils/account';
 import {
   unlockedTier,
   levelForTier,
@@ -328,6 +328,7 @@ export default function CameraScreen() {
             if (currentHiddenIdRef.current !== nearestHidden.id) {
               currentHiddenIdRef.current = nearestHidden.id;
               storage.unlockLocation(nearestHidden.id);
+              void recordUnlock(nearestHidden.id); // persist the unlock server-side
               void refresh(); // provider re-reads unlocked → map/home stop hiding it
               setHiddenSpot({ id: nearestHidden.id, name: nearestHidden.name, image: nearestHidden.imageUrls?.[0] });
             }

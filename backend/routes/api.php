@@ -30,6 +30,10 @@ Route::post('/auth/google', [AuthController::class, 'google']);
 
 Route::middleware(['auth:sanctum', EnsureAppUserNotBlocked::class])->group(function () {
     Route::post('/account/sync', [AccountController::class, 'sync']);
+    // Full account state for hydrating the app's local DB on sign-in.
+    Route::get('/account/me', [AccountController::class, 'me']);
+    // Record a reached/unlocked hidden spot (so unlocks restore on a new device).
+    Route::post('/account/unlocks', [AccountController::class, 'recordUnlock']);
     // Permanently delete the authed account + all its data (irreversible).
     Route::delete('/account', [AccountController::class, 'destroy']);
     // The cooldown-guarded base-location change endpoint (server-authoritative).

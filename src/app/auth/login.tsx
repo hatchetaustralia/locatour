@@ -35,10 +35,9 @@ export default function LoginScreen() {
     try {
       const result = await signInWithGoogle();
       if (result.ok) {
-        // The backend provisioned the account (username/name/avatar from Google),
-        // so go straight in — profile details can be edited later. '/' is the same
-        // entry the rest of onboarding uses (root redirects into the tabs).
-        router.replace('/');
+        // New user → run the onboarding story first; returning user → straight into
+        // the app. The backend already provisioned the account either way.
+        router.replace(result.isNew ? '/auth/walkthrough' : '/');
         return;
       }
       if (result.reason === 'cancelled') return; // user backed out — not an error

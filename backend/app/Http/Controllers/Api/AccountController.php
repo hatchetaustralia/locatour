@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AccountFlag;
+use App\Models\AppCheckIn;
 use App\Models\AppUser;
 use App\Support\Leveling;
 use Illuminate\Http\JsonResponse;
@@ -282,5 +283,43 @@ class AccountController extends Controller
         });
 
         return response()->json(['deleted' => true]);
+    }
+
+    /**
+     * GET /api/account/me — the authed user's FULL state, so the app can hydrate its
+     * local DB on sign-in (restores history on a new device / after sign-out). Profile
+     * + check-in history (with public photo URLs) + unlocked hidden-spot ids.
+     */
+    public function me(Request $request): JsonResponse
+    {
+        $user = $request->user()->load(['checkIns', 'unlockedLocations']);
+
+        return response()->json([
+            'user' => $user->only([
+                'device_id', 'username', 'display_name', 'email', 'avatar_url', 'bio',
+                'gender', 'home_suburb', 'home_lat', 'home_lng', 'interests', 'total_xp',
+                'current_level', 'day_streak',
+            ]),
+            'check_ins' => $user->checkIns->map(fn (AppCheckIn $c): array => [
+                'server_id' => $c->id,
+                'location_id' => $c->location_id,
+                'photo_url' => $c->photo_url,
+                'points_earned' => $c->points_earned,
+                'latitude' => $c->latitude,
+                'longitude' => $c->longitude,
+                'verified_offline' => $c->verified_offline,
+                'checked_in_at' => optional($c->checked_in_at)->toISOString(),
+            ])->values(),
+            'unlocked_location_ids' => $user->unlockedLocations->pluck('location_id')->values(),
+        ]);
+    }
+
+    /** POST /api/account/unlocks — record a hidden spot the user has reached/unlocked. */
+    public function recordUnlock(Request $request): JsonResponse
+    {
+        $data = $request->validate(['location_id' => ['required', 'string', 'max:255']]);
+        $request->user()->unlockedLocations()->firstOrCreate(['location_id' => $data['location_id']]);
+
+        return response()->json(['ok' => true]);
     }
 }

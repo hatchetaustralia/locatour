@@ -78,6 +78,11 @@ class AppUser extends Authenticatable
         return $this->hasMany(AppCheckIn::class);
     }
 
+    public function unlockedLocations(): HasMany
+    {
+        return $this->hasMany(AppUnlockedLocation::class);
+    }
+
     /** All flags raised against this account (resolved and unresolved). */
     public function accountFlags(): HasMany
     {

@@ -85,9 +85,9 @@ export default function HomeScreen() {
       try {
         const currentUser = await storage.getUser();
         if (!currentUser) {
-          // No profile yet → start the up-front story walkthrough, which then
-          // leads into account creation.
-          router.replace('/auth/walkthrough');
+          // Not signed in → the LOGIN screen is the first thing (sign in to start).
+          // The onboarding story (walkthrough) runs AFTER a new user signs in.
+          router.replace('/auth/login');
           return;
         }
         const checkIns = await storage.getCheckIns();

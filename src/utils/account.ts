@@ -26,7 +26,7 @@ import {
 import { API_URLS, API_TIMEOUT_MS, GOOGLE_WEB_CLIENT_ID } from '../constants/config';
 import { storage } from './storage';
 import { fetchPlaceCoordinates } from './places';
-import { User } from '../types';
+import { User, CheckIn } from '../types';
 
 // Multipart check-in uploads carry a photo (hundreds of KB), so the quick
 // JSON-request timeout (API_TIMEOUT_MS) is far too short for them over a phone /
@@ -146,6 +146,10 @@ export async function signInWithGoogle(): Promise<GoogleSignInResult> {
     await storage.wipeAllData();
     storage.setToken(body.token);
     await storage.setUser(mapServerUser(body.user));
+    // Restore the account's full state (check-in history + unlocked spots) so a
+    // returning user / new device isn't left empty. New users get an empty payload.
+    const state = await fetchAccountState();
+    if (state) await storage.hydrateFromServer(state.checkIns, state.unlockedIds);
     return { ok: true, isNew: !!body.is_new };
   } catch (e) {
     if (isErrorWithCode(e)) {
@@ -163,6 +167,80 @@ export async function signInWithGoogle(): Promise<GoogleSignInResult> {
  * stays on the device — the server account is unaffected and re-adopts on the next
  * sign-in. Fail-soft.
  */
+// ── Account state restore ────────────────────────────────────────────────────
+type ServerCheckIn = {
+  server_id: number | string;
+  location_id: string;
+  photo_url: string | null;
+  points_earned: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  verified_offline: boolean;
+  checked_in_at: string | null;
+};
+
+function mapServerCheckIn(c: ServerCheckIn, userId: string): CheckIn {
+  return {
+    id: `srv_${c.server_id}`,
+    userId,
+    locationId: c.location_id,
+    photoUrl: c.photo_url ?? '',
+    pointsEarned: c.points_earned ?? 0,
+    timestamp: c.checked_in_at ?? new Date().toISOString(),
+    coordinatesChecked: { latitude: c.latitude ?? 0, longitude: c.longitude ?? 0 },
+    verifiedOffline: !!c.verified_offline,
+    serverId: c.server_id,
+    syncedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Pull the authed account's full state (check-in history + unlocked spots) from
+ * the server, mapped to local shapes. Returns null on no-token / offline / error
+ * — the caller should then just keep whatever local state it has. Never throws.
+ */
+export async function fetchAccountState(): Promise<{ checkIns: CheckIn[]; unlockedIds: string[] } | null> {
+  const token = storage.getToken();
+  if (!token) return null;
+  try {
+    const uid = (await storage.getUser())?.uid ?? '';
+    const res = await fetchWithFallback('/api/account/me', {
+      method: 'GET',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    });
+    if (!res || !res.ok) return null;
+    const body = (await res.json()) as {
+      check_ins?: ServerCheckIn[];
+      unlocked_location_ids?: string[];
+    };
+    return {
+      checkIns: (body.check_ins ?? []).map((c) => mapServerCheckIn(c, uid)),
+      unlockedIds: body.unlocked_location_ids ?? [],
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Record a reached/unlocked hidden spot server-side so it restores on a new device. */
+export async function recordUnlock(locationId: string): Promise<void> {
+  const token = storage.getToken();
+  if (!token) return;
+  try {
+    await fetchWithFallback('/api/account/unlocks', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ location_id: locationId }),
+    });
+  } catch {
+    // fire-and-forget — the next check-in also records the unlock server-side
+  }
+}
+
 export async function signOut(): Promise<void> {
   try {
     await GoogleSignin.signOut();

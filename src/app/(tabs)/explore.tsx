@@ -30,7 +30,7 @@ import { SuggestLocationSheet } from '@/components/suggest-location-sheet';
 import { LocationLoadingBar } from '@/components/location-loading-bar';
 import { Brand, Spacing, stampBorder, BrandRadius } from '@/constants/theme';
 import { storage } from '@/utils/storage';
-import { submitSuggestion, fetchAnnouncement } from '@/utils/account';
+import { submitSuggestion, fetchAnnouncement, recordUnlock } from '@/utils/account';
 import { unlockedTier, levelForTier } from '@/utils/leveling';
 import { getConfig, tierRadiusBoost } from '@/utils/runtime-config';
 import { useLocationContext } from '@/context/location-context';
@@ -592,6 +592,7 @@ export default function ExploreScreen() {
     // opens its slide card right there — so the explorer can read about it and
     // check in without switching to the camera.
     if (hiddenInReachId && storage.unlockLocation(hiddenInReachId)) {
+      void recordUnlock(hiddenInReachId); // persist the unlock server-side
       void refresh(); // provider re-reads unlocked → the spot folds out of "hidden"
       const found = reachable.find((l) => l.id === hiddenInReachId);
       if (found) handleMarkerSelect(found);
