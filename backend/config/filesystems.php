@@ -38,14 +38,36 @@ return [
             'report' => false,
         ],
 
-        'public' => [
-            'driver' => 'local',
-            'root' => storage_path('app/public'),
-            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
-            'visibility' => 'public',
-            'throw' => false,
-            'report' => false,
-        ],
+        // Uploaded check-in & location photos live on the "public" disk. Locally
+        // that's the on-disk public folder; in production (Laravel Cloud) the
+        // filesystem is ephemeral, so set PUBLIC_DISK_DRIVER=s3 to transparently
+        // route the SAME disk('public') call sites at the object-storage bucket.
+        // The disk's public URL differs by driver (APP_URL/storage vs the bucket
+        // URL), which is why this is a whole-disk switch rather than one env key.
+        'public' => env('PUBLIC_DISK_DRIVER', 'local') === 's3'
+            ? [
+                'driver' => 's3',
+                'key' => env('AWS_ACCESS_KEY_ID'),
+                'secret' => env('AWS_SECRET_ACCESS_KEY'),
+                'region' => env('AWS_DEFAULT_REGION'),
+                'bucket' => env('AWS_BUCKET'),
+                'url' => env('AWS_URL'),
+                'endpoint' => env('AWS_ENDPOINT'),
+                'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+                // Objects must be publicly readable — the app serves them via
+                // Storage::url() (no signing). The bucket must allow public reads.
+                'visibility' => 'public',
+                'throw' => false,
+                'report' => false,
+            ]
+            : [
+                'driver' => 'local',
+                'root' => storage_path('app/public'),
+                'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
+                'visibility' => 'public',
+                'throw' => false,
+                'report' => false,
+            ],
 
         's3' => [
             'driver' => 's3',
