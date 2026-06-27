@@ -5,7 +5,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandAssets, BrandText, Sticker, StampButton, StampInput } from '@/components/brand';
 import { Brand } from '@/constants/theme';
-import { signInWithGoogle } from '@/utils/account';
+import { signInWithGoogle, needsOnboarding } from '@/utils/account';
+import { storage } from '@/utils/storage';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -35,9 +36,13 @@ export default function LoginScreen() {
     try {
       const result = await signInWithGoogle();
       if (result.ok) {
-        // New user → run the onboarding story first; returning user → straight into
-        // the app. The backend already provisioned the account either way.
-        router.replace(result.isNew ? '/auth/walkthrough' : '/');
+        // Route on the freshly-synced LOCAL user, not the server's `is_new` flag:
+        // a pre-existing account can still be missing onboarding (no home base /
+        // default @explorer), and the server reports it as not-new. Anyone who
+        // hasn't completed onboarding runs the story first (walkthrough → profile →
+        // customize); a fully-onboarded user goes straight into the app (the MAP).
+        const localUser = await storage.getUser();
+        router.replace(needsOnboarding(localUser) ? '/auth/walkthrough' : '/explore');
         return;
       }
       if (result.reason === 'cancelled') return; // user backed out — not an error

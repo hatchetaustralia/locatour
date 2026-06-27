@@ -484,6 +484,24 @@ export async function ensureHomeCoordinates(): Promise<void> {
   }
 }
 
+/**
+ * Whether a signed-in user still needs to run the onboarding story (walkthrough →
+ * profile → customize). Returns false for a null user — sending an unauthenticated
+ * user to LOGIN is the login gate's job, not onboarding's.
+ *
+ * `homeSuburb` is the reliable "completed onboarding" marker: it's set ONLY by the
+ * customize step (the last screen of onboarding), and the rest of the codebase
+ * already treats it that way (ensureHomeCoordinates backfills coords only when a
+ * suburb exists). We stay CONSERVATIVE — requiring BOTH a missing suburb AND
+ * missing coordinates — so a genuinely-onboarded user is never bounced back into
+ * onboarding (e.g. one whose coords are momentarily un-backfilled). A brand-new or
+ * pre-existing-but-incomplete account (default `@explorer`, no home base) has
+ * neither, so it correctly routes through onboarding.
+ */
+export function needsOnboarding(user: User | null): boolean {
+  return !!user && !user.homeSuburb?.trim() && !user.homeCoordinates;
+}
+
 /** Result of a guarded base-location change. */
 export type BaseLocationResult =
   | { ok: true; nextChangeAt?: string }
