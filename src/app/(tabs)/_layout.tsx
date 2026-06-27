@@ -9,12 +9,14 @@ import { storage } from '@/utils/storage';
 import { needsOnboarding } from '@/utils/account';
 import { User } from '@/types';
 
-// Land on the MAP (explore) instead of home when the app enters this group —
-// expo-router reads `initialRouteName` here to set the tab navigator's anchor /
-// initial trigger (see app-tabs.tsx's expo-router/ui Tabs, which sorts triggers
-// by this route node's initialRouteName). Home stays reachable via its tab.
+// Land on the MAP (the `index` route, i.e. `/`) instead of home when the app
+// enters this group — the map IS the index now, so the launch URL `/` resolves
+// straight to it. `initialRouteName` pins the tab navigator's anchor / initial
+// trigger to `index` (see app-tabs.tsx's expo-router/ui Tabs, which sorts
+// triggers by this route node's initialRouteName). Home stays reachable via its
+// tab (`/home`).
 export const unstable_settings = {
-  initialRouteName: 'explore',
+  initialRouteName: 'index',
 };
 
 // The tab bar lives in this group so that auth/onboarding routes can sit as

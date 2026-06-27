@@ -28,9 +28,9 @@ const PILL_INSET = 8; // horizontal gap between the sliding pill and the tab cel
 export default function AppTabs() {
   const [avatar, setAvatar] = useState<string | null>(null);
   const [level, setLevel] = useState<number | null>(null);
-  // The MAP (explore, index 0) is the landing screen (see (tabs)/_layout.tsx's
-  // initialRouteName) and now the FIRST tab, so start the sliding pill on it —
-  // no flash of home before the focused trigger reports in.
+  // The MAP (the `index` route `/`, tab index 0) is the landing screen (see
+  // (tabs)/_layout.tsx's initialRouteName) and the FIRST tab, so start the
+  // sliding pill on it — no flash of home before the focused trigger reports in.
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
@@ -50,10 +50,10 @@ export default function AppTabs() {
       <TabSlot style={{ height: '100%' }} />
       <TabList asChild>
         <TabBar activeIndex={activeIndex}>
-          <TabTrigger name="explore" href="/explore" asChild>
+          <TabTrigger name="index" href="/" asChild>
             <TabButton index={0} iconOn="location" iconOff="location-outline" onActive={setActiveIndex} />
           </TabTrigger>
-          <TabTrigger name="home" href="/" asChild>
+          <TabTrigger name="home" href="/home" asChild>
             <TabButton index={1} iconOn="ribbon" iconOff="ribbon-outline" onActive={setActiveIndex} />
           </TabTrigger>
           <TabTrigger name="camera" href="/camera" asChild>

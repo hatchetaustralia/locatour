@@ -840,7 +840,7 @@ export default function CameraScreen() {
                 </BrandText>
                 <BrandText weight="bold" color={Brand.inkSubtle} style={styles.unlockDot}>·</BrandText>
                 <TouchableOpacity
-                  onPress={() => router.push({ pathname: '/explore', params: { selectedId: hiddenSpot.id } })}
+                  onPress={() => router.push({ pathname: '/', params: { selectedId: hiddenSpot.id } })}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                   <BrandText weight="bold" color={Brand.inkSecondary} style={styles.unlockLink}>
@@ -1044,7 +1044,7 @@ export default function CameraScreen() {
             </BrandText>
             <TouchableOpacity
               style={[styles.purpleButton, stampBorder]}
-              onPress={() => router.push('/explore')}
+              onPress={() => router.push('/')}
               activeOpacity={0.85}
             >
               <Ionicons name="map-outline" size={18} color={Brand.bg} />
@@ -1075,7 +1075,7 @@ export default function CameraScreen() {
             </BrandText>
             <TouchableOpacity
               style={[styles.purpleButton, stampBorder]}
-              onPress={() => router.push('/explore')}
+              onPress={() => router.push('/')}
               activeOpacity={0.85}
             >
               <Ionicons name="map-outline" size={18} color={Brand.bg} />
@@ -1275,7 +1275,7 @@ export default function CameraScreen() {
               {/* BACK TO MAP — purple stamp button, right-aligned. Pinned below
                   the scrollable reveal so it's always reachable. */}
               <View style={styles.sheetActionSection}>
-                <TouchableOpacity style={[styles.purpleButton, stampBorder]} onPress={() => router.push('/explore')} activeOpacity={0.85}>
+                <TouchableOpacity style={[styles.purpleButton, stampBorder]} onPress={() => router.push('/')} activeOpacity={0.85}>
                   <Ionicons name="map-outline" size={18} color={Brand.bg} />
                   <BrandText weight="bold" color={Brand.bg} style={styles.purpleButtonText}>BACK TO MAP</BrandText>
                 </TouchableOpacity>

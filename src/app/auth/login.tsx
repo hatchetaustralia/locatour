@@ -42,7 +42,7 @@ export default function LoginScreen() {
         // hasn't completed onboarding runs the story first (walkthrough → profile →
         // customize); a fully-onboarded user goes straight into the app (the MAP).
         const localUser = await storage.getUser();
-        router.replace(needsOnboarding(localUser) ? '/auth/walkthrough' : '/explore');
+        router.replace(needsOnboarding(localUser) ? '/auth/walkthrough' : '/');
         return;
       }
       if (result.reason === 'cancelled') return; // user backed out — not an error

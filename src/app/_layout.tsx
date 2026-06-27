@@ -68,7 +68,7 @@ export default function RootLayout() {
       const id = identifier.split('::')[2];
       if (!id) return;
       // Defer a tick so the navigator is mounted on a cold start.
-      setTimeout(() => router.push({ pathname: '/explore', params: { selectedId: id } }), 0);
+      setTimeout(() => router.push({ pathname: '/', params: { selectedId: id } }), 0);
     };
 
     Notifications.getLastNotificationResponseAsync().then(openFromNotification);
