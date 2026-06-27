@@ -114,7 +114,15 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       const checkIns = await storage.getCheckIns();
       setVisitedIds(new Set(checkIns.map((c) => c.locationId)));
       setUnlockedIds(new Set(storage.getUnlockedLocationIds()));
-      lastFetchAt.current = Date.now();
+      // Only a COORDINATE-anchored fetch counts as a "fresh located slice".
+      // With no GPS fix AND no home base, `home` is null and we fetched the
+      // bundled/cached highlights (always-visible majors), NOT the user's local
+      // slice — so we must NOT stamp lastFetchAt. Otherwise the first real GPS
+      // fix's re-fetch (gated on STALE_MS below) and refresh() (gated on 2s) get
+      // suppressed and the map shows only majors forever. (Bug: a user who
+      // skipped the onboarding home-base step saw only major spots near them in
+      // Yanchep, never the local tier-1 ones.)
+      if (home) lastFetchAt.current = Date.now();
     } catch {
       // Keep whatever slice we already have (cached/bundled).
     } finally {
@@ -145,7 +153,12 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     const pos = await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.BestForNavigation,
     });
-    return { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+    const coords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+    // Keep the located-fetch key (lastFixCoords) in sync with this authoritative
+    // fresh fix so a follow-up refresh()/doFetch re-centers the slice on it
+    // rather than a stale value (or, for a user with no home base, nothing).
+    lastFixCoords.current = coords;
+    return coords;
   }, []);
 
   // — Server-controlled gameplay settings: hydrate the last cached values, then
