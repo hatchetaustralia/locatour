@@ -24,27 +24,33 @@ class DatabaseSeeder extends Seeder
             SettingSeeder::class,
         ]);
 
-        // Admin (super admin) — full access incl. user/role management.
-        // Credentials documented in docs/locatour/05-backend.md.
-        $admin = User::updateOrCreate(
-            ['email' => 'admin@locatour.test'],
-            [
-                'name' => 'Admin',
-                'password' => Hash::make('password'),
-                'is_super_admin' => true,
-            ]
-        );
-        $admin->syncRoles(['admin']);
+        // Demo admin + contributor accounts are DEV-ONLY. They use the trivial
+        // password 'password', so seeding them into production would create
+        // exploitable (super-)admin accounts. Production admins are provisioned
+        // solely via the Google allowlist (GoogleAdminAuthController).
+        if (app()->environment('local')) {
+            // Admin (super admin) — full access incl. user/role management.
+            // Credentials documented in docs/locatour/05-backend.md.
+            $admin = User::updateOrCreate(
+                ['email' => 'admin@locatour.test'],
+                [
+                    'name' => 'Admin',
+                    'password' => Hash::make('password'),
+                    'is_super_admin' => true,
+                ]
+            );
+            $admin->syncRoles(['admin']);
 
-        // Example contributor — can submit locations for moderation only.
-        $contributor = User::updateOrCreate(
-            ['email' => 'contributor@locatour.test'],
-            [
-                'name' => 'Casey Contributor',
-                'password' => Hash::make('password'),
-            ]
-        );
-        $contributor->syncRoles(['contributor']);
+            // Example contributor — can submit locations for moderation only.
+            $contributor = User::updateOrCreate(
+                ['email' => 'contributor@locatour.test'],
+                [
+                    'name' => 'Casey Contributor',
+                    'password' => Hash::make('password'),
+                ]
+            );
+            $contributor->syncRoles(['contributor']);
+        }
 
         // Categories + tags must exist before LocationSeeder attaches them.
         $this->call([

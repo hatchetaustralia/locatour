@@ -34,8 +34,10 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
-            // Self-registration → new users get the 'contributor' role.
-            ->registration(Register::class)
+            // Self-registration is DEV-ONLY. On production the admin is locked to the
+            // Google allowlist (GoogleAdminAuthController) — public signup would let
+            // anyone create a panel account, so it is disabled outside local.
+            ->registration(app()->environment('local') ? Register::class : null)
             ->colors([
                 'primary' => Color::Amber,
             ])
