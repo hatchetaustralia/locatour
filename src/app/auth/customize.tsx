@@ -12,7 +12,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandText, StampButton } from '@/components/brand';
-import { DateOfBirthInput, DateParts, partsToIsoDate } from '@/components/dob-input';
 import { Brand, BrandFonts, BrandRadius, stampBorder } from '@/constants/theme';
 import { storage } from '@/utils/storage';
 import { registerAccount } from '@/utils/account';
@@ -23,23 +22,6 @@ import { fetchSuburbs, fetchPlaceCoordinates, SuburbSuggestion } from '@/utils/p
 // Data
 // ---------------------------------------------------------------------------
 const GENDERS = ['Male', 'Female', 'Prefer not to say'];
-
-// Backend age gate: Locatour is 13+. Shown both as instant client-side feedback
-// and as the fallback for the server's 422 (same wording on purpose).
-const MIN_AGE = 13;
-const AGE_GATE_MESSAGE = 'Locatour is currently available for users aged 13 and above.';
-
-/** Whole years between an ISO birth date and today. */
-function ageInYears(isoDate: string): number {
-  const dob = new Date(isoDate);
-  const today = new Date();
-  let age = today.getFullYear() - dob.getFullYear();
-  const monthDiff = today.getMonth() - dob.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
-    age -= 1;
-  }
-  return age;
-}
 
 // ---------------------------------------------------------------------------
 // Screen
@@ -57,7 +39,6 @@ export default function CustomizeScreen() {
   const [suburbSuggestions, setSuburbSuggestions] = useState<SuburbSuggestion[]>([]);
   const [suburbLoading, setSuburbLoading] = useState(false);
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
-  const [dob, setDob] = useState<DateParts>({ day: '', month: '', year: '' });
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -120,18 +101,6 @@ export default function CustomizeScreen() {
       return;
     }
 
-    // Date of birth → real past date, then the client-side 13+ check so under-13
-    // users get instant feedback (the server 422 below is the backstop).
-    const isoDob = partsToIsoDate(dob);
-    if (!isoDob) {
-      setError('Please enter a valid date of birth');
-      return;
-    }
-    if (ageInYears(isoDob) < MIN_AGE) {
-      setError(AGE_GATE_MESSAGE);
-      return;
-    }
-
     if (!agreedToTerms) {
       setError('Please agree to the Terms and Conditions to continue');
       return;
@@ -171,24 +140,18 @@ export default function CustomizeScreen() {
     }
 
     // Register the real, persistent server account now that the local user is
-    // saved (device_id = the local uid). We await this so the backend age gate
-    // (422) can be surfaced inline before entering the app. Network failures stay
-    // fail-soft: onboarding still completes and syncAccount() retries on the next
-    // app start. Only an explicit age-gate rejection blocks entry here.
+    // saved (device_id = the local uid). Network failures stay fail-soft:
+    // onboarding still completes and syncAccount() retries on the next app start.
     const finalUser = await storage.getUser();
     if (finalUser) {
       setSubmitting(true);
-      const result = await registerAccount(finalUser, isoDob);
+      await registerAccount(finalUser);
       setSubmitting(false);
-      if (!result.ok && result.reason === 'age_gate') {
-        setError(result.message || AGE_GATE_MESSAGE);
-        return;
-      }
     }
 
     // Setup done — enter the app on the MAP (the game walkthrough now runs
     // up-front, before account creation).
-    router.replace('/explore');
+    router.replace('/');
   };
 
   return (
@@ -245,21 +208,6 @@ export default function CustomizeScreen() {
                 ))}
               </View>
             )}
-          </View>
-
-          {/* ── Date of birth (13+ age gate) ── */}
-          <View style={styles.field}>
-            <BrandText weight="medium" style={styles.label}>
-              Date of birth{' '}
-              <BrandText weight="medium" color="#EA739C">*</BrandText>
-            </BrandText>
-            <DateOfBirthInput
-              value={dob}
-              onChange={next => {
-                setDob(next);
-                if (error) setError('');
-              }}
-            />
           </View>
 
           {/* ── Home suburb autocomplete

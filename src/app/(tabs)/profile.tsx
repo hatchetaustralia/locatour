@@ -33,7 +33,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { BrandText } from '@/components/brand';
 import { ConfirmModal } from '@/components/confirm-modal';
-import { DateOfBirthInput, DateParts, partsToIsoDate } from '@/components/dob-input';
 import { Brand, BrandFonts, BrandRadius, stampBorder, Spacing } from '@/constants/theme';
 import { storage } from '@/utils/storage';
 import { changeBaseLocation, checkUsernameAvailable, deleteAccount, deleteCheckInNow, shareCheckIn, signOut, UsernameStatus } from '@/utils/account';
@@ -66,36 +65,6 @@ const AVATAR_PRESETS = [
   'https://api.dicebear.com/7.x/adventurer/png?seed=Jack&backgroundColor=c0aede',
   'https://api.dicebear.com/7.x/adventurer/png?seed=Mia&backgroundColor=d1f4c9',
 ];
-
-// Backend age gate: Locatour is 13+. Mirrors auth/customize.tsx so editing your
-// DOB applies the same instant client-side check as onboarding did.
-const MIN_AGE = 13;
-const AGE_GATE_MESSAGE = 'Locatour is currently available for users aged 13 and above.';
-// kv key the DOB is persisted under client-side. There is NO User.dateOfBirth
-// field and NO backend DOB-update endpoint yet (registerAccount sends it once at
-// onboarding; sync/updateProfile don't), so an edited DOB is stored locally only.
-// See the report — a backend endpoint is still needed to round-trip this change.
-const DOB_STORAGE_KEY = 'locatour_dob';
-
-/** Whole years between an ISO birth date and today (lifted from auth/customize). */
-function ageInYears(isoDate: string): number {
-  const dob = new Date(isoDate);
-  const today = new Date();
-  let age = today.getFullYear() - dob.getFullYear();
-  const monthDiff = today.getMonth() - dob.getMonth();
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
-    age -= 1;
-  }
-  return age;
-}
-
-/** Split a stored ISO `YYYY-MM-DD` back into the DateParts the picker expects. */
-function isoToParts(iso: string | null): DateParts {
-  if (!iso) return { day: '', month: '', year: '' };
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
-  if (!m) return { day: '', month: '', year: '' };
-  return { year: m[1], month: m[2], day: m[3] };
-}
 
 type ProfileTab = 'overview' | 'checkins' | 'achievements';
 
@@ -362,13 +331,6 @@ export default function ProfileScreen() {
   const [baseLocationMsg, setBaseLocationMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const editSuburbReqId = useRef(0);
 
-  // ── Date-of-birth edit state ──
-  // Persisted client-side only (DOB_STORAGE_KEY) — there is no backend update
-  // endpoint yet (see report). Seeded from the kv store when entering edit mode.
-  const [editDob, setEditDob] = useState<DateParts>({ day: '', month: '', year: '' });
-  const [dobError, setDobError] = useState('');
-  const [dobSaved, setDobSaved] = useState(false);
-
   // Auto-save plumbing. `editDirtyRef` guards against the no-op save that would
   // otherwise fire the instant we populate the form on entering edit mode — it's
   // flipped true only on a genuine user edit, and reset when we leave edit mode.
@@ -575,10 +537,6 @@ export default function ProfileScreen() {
     setEditSuburbSuggestions([]);
     setBaseLocationMsg(null);
     setSavingBase(false);
-    // Seed DOB from the client-side kv store (no User field / endpoint yet).
-    setEditDob(isoToParts(storage.getItem(DOB_STORAGE_KEY)));
-    setDobError('');
-    setDobSaved(false);
     editDirtyRef.current = false; // populating the form is not a user change
     setIsEditing(true);
   };
@@ -592,8 +550,6 @@ export default function ProfileScreen() {
     setJustSaved(false);
     setShowEditSuburbs(false);
     setBaseLocationMsg(null);
-    setDobError('');
-    setDobSaved(false);
     setIsEditing(false);
   };
 
@@ -666,27 +622,6 @@ export default function ProfileScreen() {
     } else {
       setBaseLocationMsg({ kind: 'error', text: "Couldn't update your base location — please try again." });
     }
-  };
-
-  // Persist an edited date of birth. There is NO backend DOB-update endpoint yet
-  // (registerAccount only sends it once at onboarding), so this validates with the
-  // SAME 13+ age gate as onboarding and stores the ISO value client-side via the
-  // kv passthrough. See the report: a backend endpoint is still needed.
-  const handleSaveDob = () => {
-    const iso = partsToIsoDate(editDob);
-    if (!iso) {
-      setDobSaved(false);
-      setDobError('Please enter a valid date of birth.');
-      return;
-    }
-    if (ageInYears(iso) < MIN_AGE) {
-      setDobSaved(false);
-      setDobError(AGE_GATE_MESSAGE);
-      return;
-    }
-    storage.setItem(DOB_STORAGE_KEY, iso);
-    setDobError('');
-    setDobSaved(true);
   };
 
   // Toggle background Nearby Alerts. Turning ON shows the required prominent
@@ -1109,34 +1044,6 @@ export default function ProfileScreen() {
                 Changing your base location is rate-limited.
               </BrandText>
             )}
-          </View>
-
-          {/* Date of birth — same 13+ age gate as onboarding. Persisted
-              client-side only for now (no backend DOB-update endpoint yet). */}
-          <View style={styles.fieldGroup}>
-            <BrandText weight="medium" style={styles.label}>Date of birth</BrandText>
-            <DateOfBirthInput
-              value={editDob}
-              onChange={(next) => {
-                setEditDob(next);
-                if (dobError) setDobError('');
-                if (dobSaved) setDobSaved(false);
-              }}
-            />
-            <TouchableOpacity
-              style={[styles.baseUpdateBtn, stampBorder]}
-              activeOpacity={0.85}
-              onPress={handleSaveDob}
-            >
-              <BrandText weight="bold" color={Brand.bg} style={styles.baseUpdateText}>
-                Update date of birth
-              </BrandText>
-            </TouchableOpacity>
-            {dobError ? (
-              <BrandText weight="medium" style={styles.errorText}>{dobError}</BrandText>
-            ) : dobSaved ? (
-              <BrandText weight="medium" style={styles.availableText}>Date of birth saved.</BrandText>
-            ) : null}
           </View>
 
           {/* Interests — refine the categories you care about */}
@@ -2823,7 +2730,7 @@ const styles = StyleSheet.create({
   },
 
   // ---- Base-location editor (suburb autocomplete + Update) ----
-  // Needs a high zIndex so the absolute dropdown overlays the DOB field below it
+  // Needs a high zIndex so the absolute dropdown overlays the field below it
   // (mirrors the suburbField fix in auth/customize.tsx).
   baseLocationGroup: {
     position: 'relative',

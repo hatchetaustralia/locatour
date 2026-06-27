@@ -366,22 +366,17 @@ function noteBlockedIf403(res: Response): boolean {
 /** Outcome of a register attempt, so callers can surface an inline message. */
 export type RegisterResult =
   | { ok: true }
-  | { ok: false; reason: 'age_gate' | 'rejected' | 'offline'; message?: string };
+  | { ok: false; reason: 'rejected' | 'offline'; message?: string };
 
 /**
  * Register (or re-register) this device's account and persist the issued token.
  * Called at the END of onboarding, after the local user is saved. Never throws.
  *
- * `dateOfBirth` (ISO `YYYY-MM-DD`) is sent as `date_of_birth` for the backend's
- * 13+ age gate. It is optional because the self-heal re-register path (syncAccount)
- * has no DOB to hand and the backend field is nullable. When the server rejects an
- * under-13 user it answers 422 with a message; that is returned as `reason:
- * 'age_gate'` so the screen can show it inline.
+ * The app collects no birth date — it relies on the store's 13+ age rating
+ * rather than in-app age collection. The backend's birth-date field is nullable,
+ * so the register payload simply omits it.
  */
-export async function registerAccount(
-  user: User,
-  dateOfBirth?: string,
-): Promise<RegisterResult> {
+export async function registerAccount(user: User): Promise<RegisterResult> {
   try {
     const res = await fetchWithFallback('/api/account/register', {
       method: 'POST',
@@ -392,16 +387,9 @@ export async function registerAccount(
       body: JSON.stringify({
         device_id: user.uid,
         ...profilePayload(user),
-        ...(dateOfBirth ? { date_of_birth: dateOfBirth } : {}),
       }),
     });
     if (!res) return { ok: false, reason: 'offline' };
-
-    // 422 = the backend age gate (or other validation) rejected the registration.
-    if (res.status === 422) {
-      const body = (await res.json().catch(() => ({}))) as { message?: string };
-      return { ok: false, reason: 'age_gate', message: body.message };
-    }
     if (!res.ok) return { ok: false, reason: 'rejected' };
 
     const body = (await res.json()) as { token?: string };
@@ -430,8 +418,7 @@ export async function syncAccount(): Promise<boolean> {
     const user = await storage.getUser();
     if (!user) return false;
 
-    // No token yet → register first (which also persists the token). No DOB to
-    // re-send here; the backend field is nullable, so the self-heal still works.
+    // No token yet → register first (which also persists the token).
     if (!token) return (await registerAccount(user)).ok;
 
     const res = await fetchWithFallback('/api/account/sync', {
