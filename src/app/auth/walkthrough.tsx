@@ -70,15 +70,18 @@ export default function WalkthroughScreen() {
   const listRef = useRef<FlatList<Slide>>(null);
   const [index, setIndex] = useState(0);
 
-  // The story now runs AFTER sign-in for new users, so finishing it drops them
-  // into the app. When re-opened as help (from profile), just pop back.
+  // For new users the story runs right after sign-in, then leads INTO the rest of
+  // onboarding (profile → customize, which sets the home base). It must NOT drop
+  // them on /explore: the (tabs) onboarding gate bounces an un-onboarded user
+  // straight back here, which reads as the walkthrough endlessly restarting. When
+  // re-opened as help (from the profile tab), just pop back instead.
   const finish = () => {
     if (isHelp) {
       if (router.canGoBack()) router.back();
       else router.replace('/profile');
       return;
     }
-    router.replace('/explore');
+    router.replace('/auth/profile');
   };
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
