@@ -36,7 +36,7 @@ import { getConfig, tierRadiusBoost } from '@/utils/runtime-config';
 import { useLocationContext } from '@/context/location-context';
 import { formatDistance, openDirections, isWithinVicinity } from '@/utils/geo';
 import { avatarUri } from '@/utils/avatar';
-import { ExploreLocation, CheckIn, Coordinates } from '@/types';
+import { ExploreLocation, CheckIn, Coordinates, LocationCategory } from '@/types';
 
 // Native Map imports (conditionally rendered)
 let MapView: any = null;
@@ -56,6 +56,16 @@ if (Platform.OS !== 'web') {
 // You must be within this many metres of a spot to suggest it (mirrors the
 // server's 150m enforcement; the client pre-check just saves a round-trip).
 const SUGGEST_RADIUS_M = 150;
+
+// Canonical map categories (mirrors LocationCategory in types) + their display
+// labels. The filter chips REUSE the map's own getPinColor/getCategoryIcon so a
+// chip looks exactly like the pin it toggles. "food" was retired, so only the
+// two live categories are offered; the catch-all "other" is folded into Parks /
+// Scenic — an unknown category still shows whenever ALL chips are on (default).
+const CATEGORY_FILTERS: { key: LocationCategory; label: string }[] = [
+  { key: 'parks', label: 'Parks' },
+  { key: 'scenic', label: 'Scenic' },
+];
 
 // POI label NOISE we never want on either basemap (schools — e.g. the beach
 // primary school — shops, clinics, government, places of worship, transit). The
@@ -176,6 +186,30 @@ export default function ExploreScreen() {
   // Standard vs satellite (hybrid) basemap. Online-only for now; offline tiles
   // are a future MapLibre migration (see docs/locatour/02-map-stack-decision.md).
   const [satellite, setSatellite] = useState(false);
+
+  // Category filter (client-side, over the SHARED located slice — no extra fetch
+  // or GPS watch). Defaults to ALL categories selected so the map is unchanged
+  // until the user narrows it. `filterOpen` toggles the chip sheet.
+  const [activeCategories, setActiveCategories] = useState<Set<LocationCategory>>(
+    () => new Set(CATEGORY_FILTERS.map((c) => c.key))
+  );
+  const [filterOpen, setFilterOpen] = useState(false);
+  // True only while some (but possibly not all) categories are hidden — drives
+  // the active dot on the filter FAB so the user knows a filter is on.
+  const filterActive = activeCategories.size < CATEGORY_FILTERS.length;
+  const toggleCategory = (key: LocationCategory) => {
+    setActiveCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        // Never let the user hide EVERYTHING — the last selected chip stays on,
+        // so the map can't go fully blank (an empty-map dead end).
+        if (next.size > 1) next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
   // Captured ONCE at mount (synchronously) so the very first paint can already be
   // centred on home; null on a cold start before the profile finished loading.
   const initialHome = useRef(storage.getCachedUser()?.homeCoordinates ?? null).current;
@@ -671,6 +705,11 @@ export default function ExploreScreen() {
     ? { latitude: userLocation.coords.latitude, longitude: userLocation.coords.longitude }
     : homeCoords;
   const visibleLocations = reachable.filter((loc) => {
+    // Client-side category filter (default = all on, so this is a no-op until the
+    // user narrows it). Only KNOWN categories are gated; an unrecognised category
+    // (none today, but future-proof) is never hidden by a chip it has no toggle for.
+    const isKnownCategory = CATEGORY_FILTERS.some((c) => c.key === loc.category);
+    if (isKnownCategory && !activeCategories.has(loc.category)) return false;
     // A hidden spot the user has physically UNLOCKED (reached within range) is
     // always on their map from then on — it bypasses the tier + vicinity gates.
     if (unlockedIds.has(loc.id)) return true;
@@ -943,6 +982,19 @@ export default function ExploreScreen() {
               activeOpacity={0.85}
             >
               <Ionicons name="locate" size={20} color={Brand.ink} />
+            </TouchableOpacity>
+
+            {/* Category filter — bottom-LEFT, inline with the recenter FAB so the
+                two read as a matched pair. A purple dot shows when a filter is on. */}
+            <TouchableOpacity
+              style={[styles.filterBtn, stampBorder, { bottom: insets.bottom + 88 }]}
+              onPress={() => setFilterOpen(true)}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Filter map by category"
+            >
+              <Ionicons name="options-outline" size={20} color={Brand.ink} />
+              {filterActive && <View style={styles.filterActiveDot} />}
             </TouchableOpacity>
           </>
         )}
@@ -1221,6 +1273,74 @@ export default function ExploreScreen() {
         )}
       </Modal>
 
+      {/* Category filter sheet — a compact bottom sheet of selectable chips that
+          REUSE the map's pin colour + icon, so a chip looks like the pin it
+          toggles. Selecting/deselecting filters markers client-side; default is
+          all-on (unchanged map). Tap the dim backdrop or Done to close. */}
+      <Modal
+        visible={filterOpen}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setFilterOpen(false)}
+      >
+        <Pressable style={styles.filterBackdrop} onPress={() => setFilterOpen(false)}>
+          {/* Stop taps on the card from closing the sheet. */}
+          <Pressable
+            style={[styles.filterSheet, stampBorder, { paddingBottom: insets.bottom + Spacing.three }]}
+            onPress={() => {}}
+          >
+            <View style={styles.filterGrabber} />
+            <BrandText weight="semibold" style={styles.filterHeading}>
+              Show on map
+            </BrandText>
+            <View style={styles.filterChipRow}>
+              {CATEGORY_FILTERS.map(({ key, label }) => {
+                const selected = activeCategories.has(key);
+                const tint = getPinColor(key);
+                return (
+                  <TouchableOpacity
+                    key={key}
+                    style={[
+                      styles.filterChip,
+                      stampBorder,
+                      {
+                        backgroundColor: selected ? tint : Brand.surface,
+                        opacity: selected ? 1 : 0.55,
+                      },
+                    ]}
+                    onPress={() => toggleCategory(key)}
+                    activeOpacity={0.85}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: selected }}
+                    accessibilityLabel={`${label} locations`}
+                  >
+                    <Ionicons
+                      name={getCategoryIcon(key)}
+                      size={16}
+                      color={selected ? Brand.ink : Brand.inkSecondary}
+                    />
+                    <BrandText weight="bold" style={styles.filterChipText}>
+                      {label}
+                    </BrandText>
+                    {selected && <Ionicons name="checkmark" size={15} color={Brand.ink} />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <TouchableOpacity
+              style={[styles.filterDoneBtn, stampBorder]}
+              onPress={() => setFilterOpen(false)}
+              activeOpacity={0.85}
+            >
+              <BrandText weight="bold" color={Brand.bg} style={styles.filterDoneText}>
+                DONE
+              </BrandText>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* Community "Suggest a location" sheet — opened by a POI tap / long-press. */}
       <SuggestLocationSheet
         visible={suggestVisible}
@@ -1369,6 +1489,86 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: Brand.surface,
     zIndex: 20,
+  },
+  // Category filter FAB — mirrors recenterBtn but anchored LEFT, inline with the
+  // recenter button (same `bottom` inset) so the two form a matched pair.
+  filterBtn: {
+    position: 'absolute',
+    left: Spacing.three,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Brand.surface,
+    zIndex: 20,
+  },
+  // Small accent dot on the filter FAB while a filter is active.
+  filterActiveDot: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 9,
+    height: 9,
+    borderRadius: BrandRadius.pill,
+    backgroundColor: Brand.purple,
+    borderWidth: 1.5,
+    borderColor: Brand.surface,
+  },
+  // Filter chip sheet (compact bottom sheet over a dim, tap-to-close backdrop).
+  filterBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  filterSheet: {
+    backgroundColor: Brand.bg,
+    borderTopLeftRadius: BrandRadius.sticker,
+    borderTopRightRadius: BrandRadius.sticker,
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.two,
+    gap: Spacing.three,
+  },
+  filterGrabber: {
+    width: 44,
+    height: 4,
+    borderRadius: BrandRadius.pill,
+    backgroundColor: 'rgba(42,36,33,0.22)',
+    alignSelf: 'center',
+    marginBottom: Spacing.one,
+  },
+  filterHeading: {
+    fontSize: 15,
+    color: Brand.ink,
+  },
+  filterChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one + 2,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: BrandRadius.pill,
+  },
+  filterChipText: {
+    fontSize: 13,
+    color: Brand.ink,
+    letterSpacing: 0.2,
+  },
+  filterDoneBtn: {
+    backgroundColor: Brand.purple,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 44,
+    borderRadius: BrandRadius.control,
+  },
+  filterDoneText: {
+    fontSize: 13,
+    letterSpacing: 0.65,
   },
   // Live "you are here" avatar marker.
   userMarkerRing: {
