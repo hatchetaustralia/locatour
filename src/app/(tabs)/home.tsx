@@ -5,7 +5,6 @@ import {
   ScrollView,
   Image,
   TouchableOpacity,
-  ActivityIndicator,
   Modal,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -16,7 +15,7 @@ import { BrandAssets, BrandText } from '@/components/brand';
 import { HiddenHeroCard } from '@/components/hidden-hero-card';
 import { AchievementGrid } from '@/components/achievement-grid';
 import { BlurredText } from '@/components/blurred-text';
-import { LocationLoadingBar } from '@/components/location-loading-bar';
+import { Skeleton, SkeletonGroup } from '@/components/skeleton';
 import { Brand, BrandRadius, Spacing, stampBorder } from '@/constants/theme';
 import { storage } from '@/utils/storage';
 import { unlockedTier, rarityForTier } from '@/utils/leveling';
@@ -51,7 +50,7 @@ export default function HomeScreen() {
   // for the whole tab group — see LocationProvider). Home derives its card lists
   // from `reachable` and reads the live hidden-nearby readout from here, so it
   // no longer runs its own GPS watch or located fetch.
-  const { user, activeCoords, reachable, hiddenWarm, hiddenDistanceM, hiddenInRange, nearestHidden } =
+  const { user, activeCoords, reachable, hiddenWarm, hiddenDistanceM, hiddenInRange, nearestHidden, locationsLoading } =
     useLocationContext();
 
   // Location ids the user has checked in at THIS calendar month — shown as
@@ -121,12 +120,13 @@ export default function HomeScreen() {
     }, [])
   );
 
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Brand.sticker.pink} />
-      </View>
-    );
+  // Skeleton placeholders mirror the real feed (achievement grid, challenge
+  // cards, top picks) while BOTH the home dashboard data and the shared located
+  // slice load — so the sections never flash empty and there's no janky floating
+  // "Loading nearby spots…" pill / progress bar. Swapped for real content once
+  // both settle.
+  if (isLoading || locationsLoading) {
+    return <HomeSkeleton insets={insets} />;
   }
 
   if (!user) return null;
@@ -223,9 +223,6 @@ export default function HomeScreen() {
           <Image source={BrandAssets.logo} style={styles.logo} resizeMode="contain" />
         </View>
 
-        {/* Transient "pulling nearby spots" indicator while GPS / locations load. */}
-        <LocationLoadingBar topOffset={50} />
-
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={[
@@ -246,7 +243,7 @@ export default function HomeScreen() {
                     ? { name: nearestHidden.spot.name, image: nearestHidden.spot.imageUrls?.[0] ?? null }
                     : null
                 }
-                onPress={() => router.push(hiddenInRange ? '/camera' : '/explore')}
+                onPress={() => router.push(hiddenInRange ? '/camera' : '/')}
               />
             </View>
           )}
@@ -296,7 +293,7 @@ export default function HomeScreen() {
                   onPress={() =>
                     locked
                       ? setLockedInfo(item)
-                      : router.push({ pathname: '/explore', params: { selectedId: item.id } })
+                      : router.push({ pathname: '/', params: { selectedId: item.id } })
                   }
                 >
                   <Image source={{ uri: item.imageUrls[0] }} style={styles.challengeImage} />
@@ -407,7 +404,7 @@ export default function HomeScreen() {
                   onPress={() =>
                     locked
                       ? setLockedInfo(item)
-                      : router.push({ pathname: '/explore', params: { selectedId: item.id } })
+                      : router.push({ pathname: '/', params: { selectedId: item.id } })
                   }
                 >
                   <Image source={{ uri: item.imageUrls[0] }} style={styles.challengeImage} />
@@ -521,6 +518,99 @@ export default function HomeScreen() {
   );
 }
 
+/**
+ * HomeSkeleton — placeholder layout shown while the home dashboard data and the
+ * shared located slice load. Mirrors the real feed section-for-section (the
+ * "Closing in on" 2x2 grid, "This month's challenges" list, "This weeks top
+ * picks" list) so content fades in place instead of popping in over empty space.
+ * One shared pulse via <SkeletonGroup> keeps every block breathing together.
+ */
+function HomeSkeleton({ insets }: { insets: { bottom: number } }): React.JSX.Element {
+  // A single placeholder card: thumbnail + two text lines + a meta chip row,
+  // matching the real challenge / top-pick card geometry.
+  const SkeletonCard = () => (
+    <View style={styles.skeletonCard}>
+      <Skeleton width={64} height={64} radius={BrandRadius.sticker - 2} />
+      <View style={styles.skeletonCardBody}>
+        <Skeleton width="70%" height={14} radius={6} />
+        <Skeleton width="45%" height={11} radius={6} />
+        <View style={styles.skeletonChipRow}>
+          <Skeleton width={54} height={16} radius={BrandRadius.pill} />
+          <Skeleton width={40} height={16} radius={BrandRadius.pill} />
+        </View>
+      </View>
+    </View>
+  );
+
+  return (
+    <View style={styles.screen}>
+      <SafeAreaView style={styles.safeArea} edges={['top']}>
+        {/* Real header (logo) — only the content below it is a placeholder. */}
+        <View style={styles.header}>
+          <Image source={BrandAssets.logo} style={styles.logo} resizeMode="contain" />
+        </View>
+
+        <SkeletonGroup>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            scrollEnabled={false}
+            contentContainerStyle={[
+              styles.scrollContent,
+              { paddingTop: Spacing.two, paddingBottom: insets.bottom + 72 },
+            ]}
+          >
+            {/* ── "Closing in on" achievements (2x2 grid) ── */}
+            <View style={styles.section}>
+              <View style={[styles.sectionTitleRow, { marginBottom: Spacing.three }]}>
+                <Skeleton width={18} height={18} radius={6} />
+                <Skeleton width={120} height={15} radius={6} />
+              </View>
+              <View style={styles.skeletonGrid}>
+                {[0, 1, 2, 3].map((i) => (
+                  <View key={i} style={styles.skeletonGridCell}>
+                    <View style={styles.skeletonGridTop}>
+                      <Skeleton width={40} height={40} radius={BrandRadius.pill} />
+                      <Skeleton width={44} height={16} radius={BrandRadius.pill} />
+                    </View>
+                    <Skeleton width="85%" height={13} radius={6} />
+                    <Skeleton width="100%" height={7} radius={BrandRadius.pill} />
+                  </View>
+                ))}
+              </View>
+            </View>
+
+            {/* ── "This month's challenges" list ── */}
+            <View style={styles.section}>
+              <View style={[styles.sectionTitleRow, { marginBottom: Spacing.three }]}>
+                <Skeleton width={18} height={18} radius={6} />
+                <Skeleton width={170} height={15} radius={6} />
+              </View>
+              <View style={styles.verticalList}>
+                {[0, 1, 2].map((i) => (
+                  <SkeletonCard key={i} />
+                ))}
+              </View>
+            </View>
+
+            {/* ── "This weeks top picks" list ── */}
+            <View style={styles.section}>
+              <View style={[styles.sectionTitleRow, { marginBottom: Spacing.three }]}>
+                <Skeleton width={18} height={18} radius={6} />
+                <Skeleton width={150} height={15} radius={6} />
+              </View>
+              <View style={styles.verticalList}>
+                {[0, 1].map((i) => (
+                  <SkeletonCard key={i} />
+                ))}
+              </View>
+            </View>
+          </ScrollView>
+        </SkeletonGroup>
+      </SafeAreaView>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -529,11 +619,43 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: Brand.bg,
+  // ── Skeleton loading placeholders (mirror the real card geometry) ───────────
+  skeletonCard: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: Brand.surface,
+    padding: Spacing.two + 4,
+    gap: Spacing.three,
+    ...stampBorder,
+    borderRadius: BrandRadius.sticker,
+  },
+  skeletonCardBody: {
+    flex: 1,
+    gap: Spacing.two,
+  },
+  skeletonChipRow: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    marginTop: 2,
+  },
+  skeletonGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+  },
+  skeletonGridCell: {
+    width: '48.5%',
+    padding: Spacing.three,
+    gap: Spacing.two,
+    backgroundColor: Brand.surface,
+    ...stampBorder,
+    borderRadius: BrandRadius.sticker,
+  },
+  skeletonGridTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.one,
   },
 
   // ── Header ──────────────────────────────────────────────────────────────────
