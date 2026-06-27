@@ -33,9 +33,11 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { BrandText } from '@/components/brand';
 import { ConfirmModal } from '@/components/confirm-modal';
+import { DateOfBirthInput, DateParts, partsToIsoDate } from '@/components/dob-input';
 import { Brand, BrandFonts, BrandRadius, stampBorder, Spacing } from '@/constants/theme';
 import { storage } from '@/utils/storage';
-import { checkUsernameAvailable, deleteAccount, deleteCheckInNow, shareCheckIn, signOut, UsernameStatus } from '@/utils/account';
+import { changeBaseLocation, checkUsernameAvailable, deleteAccount, deleteCheckInNow, shareCheckIn, signOut, UsernameStatus } from '@/utils/account';
+import { fetchSuburbs, SuburbSuggestion } from '@/utils/places';
 import {
   enableNearbyAlerts,
   disableNearbyAlerts,
@@ -64,6 +66,36 @@ const AVATAR_PRESETS = [
   'https://api.dicebear.com/7.x/adventurer/png?seed=Jack&backgroundColor=c0aede',
   'https://api.dicebear.com/7.x/adventurer/png?seed=Mia&backgroundColor=d1f4c9',
 ];
+
+// Backend age gate: Locatour is 13+. Mirrors auth/customize.tsx so editing your
+// DOB applies the same instant client-side check as onboarding did.
+const MIN_AGE = 13;
+const AGE_GATE_MESSAGE = 'Locatour is currently available for users aged 13 and above.';
+// kv key the DOB is persisted under client-side. There is NO User.dateOfBirth
+// field and NO backend DOB-update endpoint yet (registerAccount sends it once at
+// onboarding; sync/updateProfile don't), so an edited DOB is stored locally only.
+// See the report — a backend endpoint is still needed to round-trip this change.
+const DOB_STORAGE_KEY = 'locatour_dob';
+
+/** Whole years between an ISO birth date and today (lifted from auth/customize). */
+function ageInYears(isoDate: string): number {
+  const dob = new Date(isoDate);
+  const today = new Date();
+  let age = today.getFullYear() - dob.getFullYear();
+  const monthDiff = today.getMonth() - dob.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+    age -= 1;
+  }
+  return age;
+}
+
+/** Split a stored ISO `YYYY-MM-DD` back into the DateParts the picker expects. */
+function isoToParts(iso: string | null): DateParts {
+  if (!iso) return { day: '', month: '', year: '' };
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return { day: '', month: '', year: '' };
+  return { year: m[1], month: m[2], day: m[3] };
+}
 
 type ProfileTab = 'overview' | 'checkins' | 'achievements';
 
@@ -314,6 +346,29 @@ export default function ProfileScreen() {
   // Transient "Saved ✓" badge — true for ~1.5s after a successful auto-save.
   const [justSaved, setJustSaved] = useState(false);
 
+  // ── Base-location edit state (suburb autocomplete, mirrors auth/customize) ──
+  // The base location changes through the SERVER's cooldown-guarded endpoint
+  // (changeBaseLocation), NOT the auto-save above — so it has its own explicit
+  // "Update" action and its own success/cooldown messaging.
+  const [editSuburbQuery, setEditSuburbQuery] = useState('');
+  const [editSelectedSuburb, setEditSelectedSuburb] = useState('');
+  const [editSelectedPlaceId, setEditSelectedPlaceId] = useState('');
+  const [showEditSuburbs, setShowEditSuburbs] = useState(false);
+  const [editSuburbSuggestions, setEditSuburbSuggestions] = useState<SuburbSuggestion[]>([]);
+  const [editSuburbLoading, setEditSuburbLoading] = useState(false);
+  const [savingBase, setSavingBase] = useState(false);
+  // Inline status under the suburb field: success confirmation or the
+  // cooldown/offline/error explanation surfaced from changeBaseLocation.
+  const [baseLocationMsg, setBaseLocationMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  const editSuburbReqId = useRef(0);
+
+  // ── Date-of-birth edit state ──
+  // Persisted client-side only (DOB_STORAGE_KEY) — there is no backend update
+  // endpoint yet (see report). Seeded from the kv store when entering edit mode.
+  const [editDob, setEditDob] = useState<DateParts>({ day: '', month: '', year: '' });
+  const [dobError, setDobError] = useState('');
+  const [dobSaved, setDobSaved] = useState(false);
+
   // Auto-save plumbing. `editDirtyRef` guards against the no-op save that would
   // otherwise fire the instant we populate the form on entering edit mode — it's
   // flipped true only on a genuine user edit, and reset when we leave edit mode.
@@ -432,6 +487,29 @@ export default function ProfileScreen() {
     return () => clearTimeout(handle);
   }, [editUsername, isEditing, userUid, currentHandle]);
 
+  // ── Live suburb autocomplete for the base-location field (debounced ~320ms) ─
+  // Mirrors auth/customize.tsx. Only runs in edit mode; the last query wins, and
+  // we don't re-search the exact value the user just picked. Sits ABOVE the early
+  // returns to preserve hook order.
+  useEffect(() => {
+    if (!isEditing) return;
+    const q = editSuburbQuery.trim();
+    if (!q || q === editSelectedSuburb) {
+      setEditSuburbSuggestions([]);
+      setEditSuburbLoading(false);
+      return;
+    }
+    setEditSuburbLoading(true);
+    const reqId = ++editSuburbReqId.current;
+    const handle = setTimeout(async () => {
+      const results = await fetchSuburbs(q);
+      if (reqId !== editSuburbReqId.current) return; // a newer keystroke won
+      setEditSuburbSuggestions(results);
+      setEditSuburbLoading(false);
+    }, 320);
+    return () => clearTimeout(handle);
+  }, [editSuburbQuery, editSelectedSuburb, isEditing]);
+
   // ── Debounced auto-save (~600ms) ──────────────────────────────────────────
   // Saves edits as the user makes them — no explicit Save button. The
   // editDirtyRef guard prevents a no-op save firing the moment we enter edit
@@ -488,6 +566,19 @@ export default function ProfileScreen() {
     setUsernameError('');
     setUsernameStatus(null);
     setJustSaved(false);
+    // Seed the base-location field from the saved home suburb (no placeId yet —
+    // re-picking from the autocomplete supplies one for a precise geocode).
+    setEditSuburbQuery(user.homeSuburb || '');
+    setEditSelectedSuburb(user.homeSuburb || '');
+    setEditSelectedPlaceId('');
+    setShowEditSuburbs(false);
+    setEditSuburbSuggestions([]);
+    setBaseLocationMsg(null);
+    setSavingBase(false);
+    // Seed DOB from the client-side kv store (no User field / endpoint yet).
+    setEditDob(isoToParts(storage.getItem(DOB_STORAGE_KEY)));
+    setDobError('');
+    setDobSaved(false);
     editDirtyRef.current = false; // populating the form is not a user change
     setIsEditing(true);
   };
@@ -499,6 +590,10 @@ export default function ProfileScreen() {
       savedTimerRef.current = null;
     }
     setJustSaved(false);
+    setShowEditSuburbs(false);
+    setBaseLocationMsg(null);
+    setDobError('');
+    setDobSaved(false);
     setIsEditing(false);
   };
 
@@ -514,6 +609,84 @@ export default function ProfileScreen() {
     setEditInterests((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
+  };
+
+  // Pick a suburb suggestion → fill the field + remember its placeId for a
+  // precise geocode when the user taps "Update".
+  const handleEditSuburbSelect = (suburb: string, placeId?: string) => {
+    setEditSelectedSuburb(suburb);
+    setEditSelectedPlaceId(placeId ?? '');
+    setEditSuburbQuery(suburb);
+    setShowEditSuburbs(false);
+    setEditSuburbSuggestions([]);
+    setBaseLocationMsg(null);
+  };
+
+  // Commit a base-location change through the SERVER's cooldown-guarded endpoint
+  // (the only path allowed to move it after onboarding). Surfaces the cooldown /
+  // offline / blocked / error result inline rather than silently failing. On
+  // success the local user already mirrors the change (changeBaseLocation does
+  // it), so we refresh from storage to repaint the view-mode suburb.
+  const handleSaveBaseLocation = async () => {
+    const suburb = (editSelectedSuburb || editSuburbQuery).trim();
+    if (!suburb) {
+      setBaseLocationMsg({ kind: 'error', text: 'Please enter your home suburb.' });
+      return;
+    }
+    if (suburb === (user?.homeSuburb || '').trim() && !editSelectedPlaceId) {
+      setBaseLocationMsg({ kind: 'error', text: "That's already your base location." });
+      return;
+    }
+    setSavingBase(true);
+    setBaseLocationMsg(null);
+    const result = await changeBaseLocation(suburb, editSelectedPlaceId || undefined);
+    setSavingBase(false);
+
+    if (result.ok) {
+      setEditSelectedSuburb(suburb);
+      setEditSelectedPlaceId('');
+      const fresh = await storage.getUser();
+      if (fresh) setUser(fresh);
+      setBaseLocationMsg({ kind: 'ok', text: 'Base location updated.' });
+      return;
+    }
+    // Map each failure reason to a clear, branded explanation.
+    if (result.reason === 'cooldown') {
+      const when = result.nextChangeAt ? new Date(result.nextChangeAt) : null;
+      const whenText =
+        when && !Number.isNaN(when.getTime()) ? ` You can change it again ${formatDate(when.toISOString())}.` : '';
+      setBaseLocationMsg({
+        kind: 'error',
+        text: `You've changed your base location recently.${whenText}`,
+      });
+    } else if (result.reason === 'offline') {
+      setBaseLocationMsg({ kind: 'error', text: 'Could not reach the server — check your connection and try again.' });
+    } else if (result.reason === 'blocked') {
+      setBaseLocationMsg({ kind: 'error', text: 'Your account is blocked, so this change was rejected.' });
+    } else {
+      setBaseLocationMsg({ kind: 'error', text: "Couldn't update your base location — please try again." });
+    }
+  };
+
+  // Persist an edited date of birth. There is NO backend DOB-update endpoint yet
+  // (registerAccount only sends it once at onboarding), so this validates with the
+  // SAME 13+ age gate as onboarding and stores the ISO value client-side via the
+  // kv passthrough. See the report: a backend endpoint is still needed.
+  const handleSaveDob = () => {
+    const iso = partsToIsoDate(editDob);
+    if (!iso) {
+      setDobSaved(false);
+      setDobError('Please enter a valid date of birth.');
+      return;
+    }
+    if (ageInYears(iso) < MIN_AGE) {
+      setDobSaved(false);
+      setDobError(AGE_GATE_MESSAGE);
+      return;
+    }
+    storage.setItem(DOB_STORAGE_KEY, iso);
+    setDobError('');
+    setDobSaved(true);
   };
 
   // Toggle background Nearby Alerts. Turning ON shows the required prominent
@@ -841,6 +1014,129 @@ export default function ProfileScreen() {
                 textAlignVertical="top"
               />
             </View>
+          </View>
+
+          {/* Base location — moved through the server's cooldown-guarded endpoint
+              (changeBaseLocation), NOT the auto-save, so it has an explicit
+              "Update" action and its own success/cooldown messaging. The
+              autocomplete dropdown must overlay the field below it. */}
+          <View style={[styles.fieldGroup, styles.baseLocationGroup]}>
+            <BrandText weight="medium" style={styles.label}>Base location</BrandText>
+            <View style={styles.suburbContainer}>
+              <View style={[styles.inputRow, stampBorder]}>
+                <Ionicons name="search-outline" size={18} color={Brand.inkSubtle} />
+                <TextInput
+                  style={styles.inputField}
+                  placeholder="Home suburb"
+                  placeholderTextColor={Brand.inkSubtle}
+                  value={editSuburbQuery}
+                  onChangeText={(text) => {
+                    setEditSuburbQuery(text);
+                    setShowEditSuburbs(true);
+                    setBaseLocationMsg(null);
+                    if (editSelectedSuburb && text !== editSelectedSuburb) {
+                      setEditSelectedSuburb('');
+                      setEditSelectedPlaceId('');
+                    }
+                  }}
+                  onFocus={() => setShowEditSuburbs(true)}
+                  autoCorrect={false}
+                />
+              </View>
+
+              {showEditSuburbs &&
+                editSuburbQuery.trim().length >= 2 &&
+                editSuburbQuery.trim() !== editSelectedSuburb && (
+                  <View style={[styles.suburbDropdown, stampBorder]}>
+                    {editSuburbLoading ? (
+                      <View style={styles.dropdownItem}>
+                        <ActivityIndicator size="small" color={Brand.purple} />
+                        <BrandText weight="medium" color={Brand.inkSubtle} style={styles.dropdownItemText}>
+                          Searching…
+                        </BrandText>
+                      </View>
+                    ) : editSuburbSuggestions.length > 0 ? (
+                      editSuburbSuggestions.map((s, i) => (
+                        <TouchableOpacity
+                          key={s.placeId ?? s.description}
+                          style={[
+                            styles.dropdownItem,
+                            i !== editSuburbSuggestions.length - 1 && styles.dropdownItemBorder,
+                          ]}
+                          onPress={() => handleEditSuburbSelect(s.description, s.placeId)}
+                        >
+                          <Ionicons name="location-outline" size={16} color={Brand.purple} />
+                          <BrandText weight="medium" style={styles.dropdownItemText}>
+                            {s.description}
+                          </BrandText>
+                        </TouchableOpacity>
+                      ))
+                    ) : (
+                      <View style={styles.dropdownItem}>
+                        <Ionicons name="information-circle-outline" size={16} color={Brand.inkSubtle} />
+                        <BrandText weight="medium" color={Brand.inkSubtle} style={styles.dropdownItemText}>
+                          No matches — we&apos;ll use what you typed
+                        </BrandText>
+                      </View>
+                    )}
+                  </View>
+                )}
+            </View>
+
+            <TouchableOpacity
+              style={[styles.baseUpdateBtn, stampBorder, savingBase && styles.baseUpdateBtnDisabled]}
+              activeOpacity={0.85}
+              disabled={savingBase}
+              onPress={handleSaveBaseLocation}
+            >
+              {savingBase ? (
+                <ActivityIndicator size="small" color={Brand.bg} />
+              ) : (
+                <BrandText weight="bold" color={Brand.bg} style={styles.baseUpdateText}>
+                  Update base location
+                </BrandText>
+              )}
+            </TouchableOpacity>
+            {baseLocationMsg ? (
+              <BrandText
+                weight="medium"
+                style={baseLocationMsg.kind === 'ok' ? styles.availableText : styles.errorText}
+              >
+                {baseLocationMsg.text}
+              </BrandText>
+            ) : (
+              <BrandText weight="medium" color={Brand.inkSubtle} style={styles.baseHint}>
+                Changing your base location is rate-limited.
+              </BrandText>
+            )}
+          </View>
+
+          {/* Date of birth — same 13+ age gate as onboarding. Persisted
+              client-side only for now (no backend DOB-update endpoint yet). */}
+          <View style={styles.fieldGroup}>
+            <BrandText weight="medium" style={styles.label}>Date of birth</BrandText>
+            <DateOfBirthInput
+              value={editDob}
+              onChange={(next) => {
+                setEditDob(next);
+                if (dobError) setDobError('');
+                if (dobSaved) setDobSaved(false);
+              }}
+            />
+            <TouchableOpacity
+              style={[styles.baseUpdateBtn, stampBorder]}
+              activeOpacity={0.85}
+              onPress={handleSaveDob}
+            >
+              <BrandText weight="bold" color={Brand.bg} style={styles.baseUpdateText}>
+                Update date of birth
+              </BrandText>
+            </TouchableOpacity>
+            {dobError ? (
+              <BrandText weight="medium" style={styles.errorText}>{dobError}</BrandText>
+            ) : dobSaved ? (
+              <BrandText weight="medium" style={styles.availableText}>Date of birth saved.</BrandText>
+            ) : null}
           </View>
 
           {/* Interests — refine the categories you care about */}
@@ -2525,6 +2821,65 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
+
+  // ---- Base-location editor (suburb autocomplete + Update) ----
+  // Needs a high zIndex so the absolute dropdown overlays the DOB field below it
+  // (mirrors the suburbField fix in auth/customize.tsx).
+  baseLocationGroup: {
+    position: 'relative',
+    zIndex: 20,
+  },
+  suburbContainer: {
+    position: 'relative',
+    zIndex: 50,
+  },
+  suburbDropdown: {
+    position: 'absolute',
+    top: 52,
+    left: 0,
+    right: 0,
+    backgroundColor: Brand.surface,
+    zIndex: 200,
+    shadowColor: Brand.ink,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  dropdownItemBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: `rgba(42,36,33,0.1)`,
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: Brand.ink,
+  },
+  baseUpdateBtn: {
+    height: 44,
+    marginTop: Spacing.two,
+    borderRadius: BrandRadius.control,
+    backgroundColor: Brand.purple,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  baseUpdateBtnDisabled: {
+    opacity: 0.6,
+  },
+  baseUpdateText: {
+    fontSize: 14,
+  },
+  baseHint: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+
   // Transient "Saved ✓" badge in the edit header.
   savedBadge: {
     flexDirection: 'row',
