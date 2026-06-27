@@ -187,9 +187,9 @@ export default function CustomizeScreen() {
       }
     }
 
-    // Setup done — enter the app (the game walkthrough now runs up-front, before
-    // account creation).
-    router.replace('/');
+    // Setup done — enter the app on the MAP (the game walkthrough now runs
+    // up-front, before account creation).
+    router.replace('/explore');
   };
 
   return (

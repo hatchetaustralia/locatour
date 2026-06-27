@@ -78,7 +78,7 @@ export default function WalkthroughScreen() {
       else router.replace('/profile');
       return;
     }
-    router.replace('/');
+    router.replace('/explore');
   };
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
