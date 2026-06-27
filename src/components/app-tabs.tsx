@@ -28,10 +28,10 @@ const PILL_INSET = 8; // horizontal gap between the sliding pill and the tab cel
 export default function AppTabs() {
   const [avatar, setAvatar] = useState<string | null>(null);
   const [level, setLevel] = useState<number | null>(null);
-  // The MAP (explore, index 1) is the landing screen (see (tabs)/_layout.tsx's
-  // initialRouteName), so start the sliding pill on it — no flash of home before
-  // the focused trigger reports in.
-  const [activeIndex, setActiveIndex] = useState(1);
+  // The MAP (explore, index 0) is the landing screen (see (tabs)/_layout.tsx's
+  // initialRouteName) and now the FIRST tab, so start the sliding pill on it —
+  // no flash of home before the focused trigger reports in.
+  const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -50,11 +50,11 @@ export default function AppTabs() {
       <TabSlot style={{ height: '100%' }} />
       <TabList asChild>
         <TabBar activeIndex={activeIndex}>
-          <TabTrigger name="home" href="/" asChild>
-            <TabButton index={0} iconOn="flag" iconOff="flag-outline" onActive={setActiveIndex} />
-          </TabTrigger>
           <TabTrigger name="explore" href="/explore" asChild>
-            <TabButton index={1} iconOn="location" iconOff="location-outline" onActive={setActiveIndex} />
+            <TabButton index={0} iconOn="location" iconOff="location-outline" onActive={setActiveIndex} />
+          </TabTrigger>
+          <TabTrigger name="home" href="/" asChild>
+            <TabButton index={1} iconOn="ribbon" iconOff="ribbon-outline" onActive={setActiveIndex} />
           </TabTrigger>
           <TabTrigger name="camera" href="/camera" asChild>
             <TabButton index={2} iconOn="camera" iconOff="camera-outline" onActive={setActiveIndex} />
@@ -99,7 +99,7 @@ function TabBar({ children, activeIndex, ...props }: TabListProps & { activeInde
                 transform: [{ translateX }],
                 // Fully round the OUTER corners at the ends so the pill nests
                 // cleanly inside the bar's rounded left/right; inner corners stay
-                // softer. Home = left end, Profile/avatar = right end.
+                // softer. Map = left end, Profile/avatar = right end.
                 borderTopLeftRadius: activeIndex === 0 ? 22 : 16,
                 borderBottomLeftRadius: activeIndex === 0 ? 22 : 16,
                 borderTopRightRadius: activeIndex === TAB_COUNT - 1 ? 22 : 16,
