@@ -125,18 +125,6 @@ class AppUsersTable
                         default => 'warning',
                     })
                     ->tooltip(fn (AppUser $record): ?string => $record->last_seen_at?->toDayDateTimeString()),
-                TextColumn::make('last_login_at')
-                    ->label('Last login')
-                    ->since()
-                    ->sortable()
-                    ->placeholder('Never')
-                    ->toggleable()
-                    ->tooltip(fn (AppUser $record): ?string => $record->last_login_at?->toDayDateTimeString()),
-                TextColumn::make('login_count')
-                    ->label('Logins')
-                    ->numeric()
-                    ->sortable()
-                    ->toggleable(),
                 TextColumn::make('created_at')
                     ->label('Joined')
                     ->dateTime()
