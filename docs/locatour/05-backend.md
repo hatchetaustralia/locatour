@@ -8,7 +8,10 @@ drop-in replacement for its mock data layer.
 - **Framework:** Laravel 13.16, Filament 5.6, PHP 8.5
 - **RBAC:** spatie/laravel-permission 7.4 + bezhanSalleh/filament-shield 4.2
   (roles: admin / moderator / contributor — see [Roles & approval workflow](#roles--approval-workflow))
-- **Database:** SQLite (`backend/database/database.sqlite`) — no external DB needed
+- **Database:** PostgreSQL (Herd's bundled Postgres) — local DB `locatour`,
+  connection `pgsql` (`127.0.0.1:5432`, user `postgres`, no password). Create it
+  once with `psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE locatour;"`, then
+  `php artisan migrate --seed`.
 - **Scope:** the backend is fully self-contained under `backend/`. The Expo app
   still runs on its mock (`src/utils/storage.ts`) — wiring it to this API is the
   documented next step, not yet done.
