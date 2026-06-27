@@ -12,8 +12,13 @@
  * and the submitSuggestion() call. This sheet manages only the name/notes inputs
  * and renders the status the parent passes down.
  */
-import React, { useEffect, useState } from 'react';
-import { Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Animated, Dimensions, Modal, Pressable, StyleSheet, View } from 'react-native';
+import {
+  GestureHandlerRootView,
+  GestureDetector,
+  Gesture,
+} from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 
 import { BrandText, StampButton, StampInput } from '@/components/brand';
@@ -46,6 +51,53 @@ export function SuggestLocationSheet({
 }) {
   const [name, setName] = useState('');
   const [notes, setNotes] = useState('');
+  // Keep the Modal mounted through the close animation: the parent flips `visible`
+  // false immediately, but we let the card slide out + the backdrop fade first,
+  // then unmount. `mounted` follows `visible` on open and trails it on close.
+  const [mounted, setMounted] = useState(visible);
+
+  // The card slides on its own translateY; the dim backdrop FADES on its own
+  // opacity. We drive both ourselves (Modal uses animationType="none") so dismiss
+  // SLIDES the card down while the backdrop FADES out — instead of the whole
+  // window (incl. the backdrop's hard top edge) sliding down together. Start the
+  // card off-screen so it never paints seated for a frame before springing up.
+  const SHEET_CLOSED_Y = Dimensions.get('window').height;
+  const translateY = useRef(new Animated.Value(SHEET_CLOSED_Y)).current;
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+
+  // Animate the sheet OUT (card slides down + backdrop fades), THEN call onClose.
+  // Shared by the drag-dismiss, the backdrop tap, and the Android back button.
+  const closeSheet = useCallback(() => {
+    Animated.parallel([
+      Animated.timing(translateY, { toValue: SHEET_CLOSED_Y, duration: 220, useNativeDriver: true }),
+      Animated.timing(backdropOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start(({ finished }) => {
+      if (finished) onClose();
+    });
+  }, [translateY, backdropOpacity, SHEET_CLOSED_Y, onClose]);
+
+  // Drag-to-dismiss MUST use react-native-gesture-handler, not PanResponder: the
+  // sheet lives inside a React Native <Modal>, which on Android is a separate
+  // native window where PanResponder move events don't propagate (taps still do —
+  // that's why the backdrop-tap close worked but the drag didn't). We drive the RN
+  // Animated.Value from the gesture on the JS thread via runOnJS(true); the
+  // gesture activates only on a downward drag past a small threshold.
+  const sheetDrag = Gesture.Pan()
+    .activeOffsetY(8)
+    .failOffsetY(-8)
+    .runOnJS(true)
+    .onUpdate((e) => {
+      if (e.translationY > 0) translateY.setValue(e.translationY);
+    })
+    .onEnd((e) => {
+      if (e.translationY > 110) {
+        // Past the threshold → animate the rest of the way out from where the
+        // finger left the card, fading the backdrop as it goes.
+        closeSheet();
+      } else {
+        Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 4 }).start();
+      }
+    });
 
   // Reseed the fields each time a new spot is picked (the sheet re-opens with a
   // fresh coordinate / POI name); clear them when it closes.
@@ -56,14 +108,39 @@ export function SuggestLocationSheet({
     }
   }, [visible, prefilledName, coordinate?.latitude, coordinate?.longitude]);
 
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        {/* Tap the dimmed area above the card to dismiss. */}
-        <TouchableOpacity style={styles.backdropFill} activeOpacity={1} onPress={onClose} />
+  // Mount on open and spring the card up from off-screen while the backdrop fades
+  // in — the symmetric counterpart to closeSheet. (Close is animated by closeSheet
+  // before onClose flips `visible`, so here we only need to handle opening.)
+  useEffect(() => {
+    if (visible) {
+      setMounted(true);
+      translateY.setValue(SHEET_CLOSED_Y);
+      backdropOpacity.setValue(0);
+      Animated.parallel([
+        Animated.spring(translateY, { toValue: 0, useNativeDriver: true, bounciness: 6 }),
+        Animated.timing(backdropOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      ]).start();
+    } else {
+      setMounted(false);
+    }
+  }, [visible, translateY, backdropOpacity, SHEET_CLOSED_Y]);
 
-        <View style={[styles.sheet, stampBorder]}>
-          <View style={styles.grabber} />
+  return (
+    <Modal visible={mounted} transparent animationType="none" onRequestClose={closeSheet}>
+      <GestureHandlerRootView style={styles.modalRoot}>
+        {/* Dim is a PURE visual layer (pointerEvents none) so its opacity is driven
+            only by our fade animation — never by a TouchableOpacity's internal
+            press-opacity, which fought the fade and flashed. A separate full-screen
+            Pressable handles tap-to-close. */}
+        <Animated.View
+          style={[styles.backdrop, { opacity: backdropOpacity }]}
+          pointerEvents="none"
+        />
+        <Pressable style={StyleSheet.absoluteFill} onPress={closeSheet} />
+
+        <GestureDetector gesture={sheetDrag}>
+          <Animated.View style={[styles.sheet, stampBorder, { transform: [{ translateY }] }]}>
+            <View style={styles.grabber} />
 
           {submitted ? (
             // Success state — the suggestion is queued for staff review.
@@ -148,20 +225,25 @@ export function SuggestLocationSheet({
               />
             </>
           )}
-        </View>
-      </View>
+          </Animated.View>
+        </GestureDetector>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
+  // Anchors the card to the bottom of the window; the dim layer + tap target fill
+  // the rest behind it.
+  modalRoot: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(42,36,33,0.35)',
   },
-  backdropFill: {
-    flex: 1,
+  // Pure dim layer — its opacity is animated (fades in/out, decoupled from the
+  // card slide). pointerEvents none; the sibling Pressable handles tap-to-close.
+  backdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(42,36,33,0.35)',
   },
   sheet: {
     backgroundColor: Brand.bg,
