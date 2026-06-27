@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
-  Image,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -12,7 +11,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { BrandAssets, BrandText, StampButton } from '@/components/brand';
+import { BrandText, StampButton } from '@/components/brand';
 import { DateOfBirthInput, DateParts, partsToIsoDate } from '@/components/dob-input';
 import { Brand, BrandFonts, BrandRadius, stampBorder } from '@/constants/theme';
 import { storage } from '@/utils/storage';
@@ -199,12 +198,11 @@ export default function CustomizeScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* ── Header row: title left, logomark right ── */}
+        {/* ── Header row: title only ── */}
         <View style={styles.headerRow}>
           <BrandText weight="bold" style={styles.title}>
             Customise your account
           </BrandText>
-          <Image source={BrandAssets.logo} style={styles.logomark} resizeMode="contain" />
         </View>
 
         <View style={styles.formStack}>
@@ -356,22 +354,25 @@ export default function CustomizeScreen() {
                     key={item.id}
                     style={[
                       styles.interestCard,
-                      {
-                        borderWidth: 1,
-                        borderBottomWidth: 2,
-                        borderColor: isSelected
-                          ? Brand.teal
-                          : `rgba(42,36,33,0.2)`,
-                        backgroundColor: isSelected ? Brand.teal : Brand.bg,
-                      },
+                      // Each card wears its category tint; selection deepens the
+                      // border and lifts the card with an elevated black shadow.
+                      { backgroundColor: item.color },
+                      isSelected
+                        ? styles.interestCardSelected
+                        : styles.interestCardUnselected,
                     ]}
                     activeOpacity={0.8}
                     onPress={() => handleInterestToggle(item.id)}
                   >
+                    {isSelected && (
+                      <View style={styles.interestCheck}>
+                        <Ionicons name="checkmark" size={14} color={Brand.surface} />
+                      </View>
+                    )}
                     <Ionicons
                       name={item.icon}
                       size={36}
-                      color={isSelected ? Brand.ink : Brand.ink}
+                      color={Brand.ink}
                       style={styles.interestIcon}
                     />
                     <BrandText
@@ -451,11 +452,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: Brand.ink,
     flex: 1,
-    marginRight: 8,
-  },
-  logomark: {
-    width: 38,
-    height: 38,
   },
 
   // Form container
@@ -574,7 +570,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: 12,
-    overflow: 'hidden',
+  },
+  interestCardUnselected: {
+    borderWidth: 1,
+    borderBottomWidth: 2,
+    borderColor: `rgba(42,36,33,0.2)`,
+  },
+  // Selected = a solid ink border plus the elevated black shadow so the card
+  // visibly lifts off the page (mirrors the dropdownPanel shadow recipe).
+  interestCardSelected: {
+    borderWidth: 1,
+    borderBottomWidth: 2,
+    borderColor: Brand.ink,
+    shadowColor: Brand.ink,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  // Corner badge confirming the pick, sitting above the card's tint.
+  interestCheck: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: Brand.ink,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
   },
   interestIcon: {
     marginTop: 4,
