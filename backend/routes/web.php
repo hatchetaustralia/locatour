@@ -6,9 +6,9 @@ use App\Http\Controllers\ShareController;
 use Filament\Http\Middleware\Authenticate;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+// Homepage → the admin panel. Visiting the root lands you on the Filament
+// (Google) login when you're not signed in, so "/" effectively is the login.
+Route::redirect('/', '/admin');
 
 // Admin "Sign in with Google" (Socialite). PUBLIC — these routes ARE the login.
 // The callback gates by the services.google.admin_emails allowlist and creates an
