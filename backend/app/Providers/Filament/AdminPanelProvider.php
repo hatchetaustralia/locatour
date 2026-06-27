@@ -51,6 +51,11 @@ class AdminPanelProvider extends PanelProvider
                 PanelsRenderHook::HEAD_END,
                 fn (): string => view('filament.maps-scripts')->render(),
             )
+            // "Sign in with Google" (+ grayed Apple) on the admin login form.
+            ->renderHook(
+                PanelsRenderHook::AUTH_LOGIN_FORM_AFTER,
+                fn (): string => view('filament.google-login-button')->render(),
+            )
             // Inject a search field at the START of the Locations list table
             // toolbar (left side).  The default right-side search is disabled via
             // ->searchable(false) on the table so the toolbar layout becomes:

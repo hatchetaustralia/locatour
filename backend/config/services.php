@@ -49,6 +49,11 @@ return [
     // verified here.) Apple/phone creds will join this block as they land.
     'google' => [
         'client_id' => env('GOOGLE_CLIENT_ID'),
+        // Admin Filament Google login (Socialite). The mobile app uses only client_id.
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT'), // the controller overrides this per-request
+        // Comma-separated allowlist of Google emails permitted into the admin panel.
+        'admin_emails' => env('ADMIN_GOOGLE_EMAILS', ''),
     ],
 
 ];

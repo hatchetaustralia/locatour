@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\GoogleAdminAuthController;
 use App\Http\Controllers\Admin\LocationPopupController;
 use App\Http\Controllers\ShareController;
 use Filament\Http\Middleware\Authenticate;
@@ -8,6 +9,14 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return view('welcome');
 });
+
+// Admin "Sign in with Google" (Socialite). PUBLIC — these routes ARE the login.
+// The callback gates by the services.google.admin_emails allowlist and creates an
+// 'admin'-role user on first sign-in.
+Route::get('/admin/oauth/google/redirect', [GoogleAdminAuthController::class, 'redirect'])
+    ->name('admin.google.redirect');
+Route::get('/admin/oauth/google/callback', [GoogleAdminAuthController::class, 'callback'])
+    ->name('admin.google.callback');
 
 // PUBLIC shared check-in page (no auth). Unguessable token; renders a card with
 // Open Graph / Twitter meta so the link unfurls a rich photo preview when shared

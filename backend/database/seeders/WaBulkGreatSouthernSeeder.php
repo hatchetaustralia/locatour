@@ -4,16 +4,18 @@ namespace Database\Seeders;
 
 use App\Models\Location;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Str;
 
 /**
  * REAL public locations across the Great Southern region of Western
  * Australia (Albany, Denmark, Walpole, Porongurup, Stirling Range),
  * sourced from the Google Places API (New) Text Search.
  *
- * Idempotent: upserts by `name`. `points` is set from
- * Location::defaultPointsForTier(tier); the model's saving() hook then
- * re-derives tier from points, so the two stay consistent. updateOrCreate
- * runs save() so that hook fires.
+ * Idempotent: upserts by `name`. `points` comes from
+ * Location::defaultPointsForTier(tier) and `slug` is derived from the name
+ * explicitly here — DatabaseSeeder runs WithoutModelEvents, so the
+ * Location::saving() hook that would normally fill slug/tier does NOT fire
+ * during seeding (which is why a fresh seed must set slug itself).
  */
 class WaBulkGreatSouthernSeeder extends Seeder
 {
@@ -1511,13 +1513,16 @@ class WaBulkGreatSouthernSeeder extends Seeder
         ];
 
         foreach ($locations as $data) {
-            // points drives tier via the model's saving() hook; use the
-            // per-tier default so the explicit tier and the derived tier agree.
+            // Points come from the per-tier default so points + the explicit tier stay aligned.
             $data['points'] = Location::defaultPointsForTier($data['tier']);
 
             Location::updateOrCreate(
                 ['name' => $data['name']],
                 array_merge($data, [
+                    // Seeding mutes model events (WithoutModelEvents), so the
+                    // saving() hook can't fill this — derive the slug explicitly,
+                    // exactly as the model would, to satisfy the NOT NULL unique column.
+                    'slug' => Str::slug($data['name'], '_'),
                     'verification_tags' => [],
                     'active' => true,
                     'status' => Location::STATUS_APPROVED,
