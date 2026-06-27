@@ -13,7 +13,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { BrandAssets, BrandText, StampButton } from '@/components/brand';
+import { BrandText, StampButton } from '@/components/brand';
 import { Brand, BrandFonts, BrandRadius, stampBorder } from '@/constants/theme';
 import { storage } from '@/utils/storage';
 import { checkUsernameAvailable, UsernameStatus } from '@/utils/account';
@@ -42,8 +42,12 @@ export default function ProfileScreen() {
     ? params.email.split('@')[0].replace(/[^a-zA-Z0-9_.]/g, '').toLowerCase()
     : '';
 
+  // The provider avatar (preferred from route params, else the signed-in Google
+  // account's stored picture — see the mount effect below).
+  const [providerAvatar, setProviderAvatar] = useState<string | null>(params.avatarUrl || null);
+
   // Surface the provider avatar as the first (pre-selected) preset.
-  const presets = params.avatarUrl ? [params.avatarUrl, ...AVATAR_PRESETS] : AVATAR_PRESETS;
+  const presets = providerAvatar ? [providerAvatar, ...AVATAR_PRESETS] : AVATAR_PRESETS;
 
   const [avatar, setAvatar] = useState<string | null>(params.avatarUrl || null);
   const [displayName, setDisplayName] = useState(params.displayName || '');
@@ -52,6 +56,30 @@ export default function ProfileScreen() {
   const [displayNameError, setDisplayNameError] = useState('');
   const [usernameError, setUsernameError] = useState('');
   const [usernameStatus, setUsernameStatus] = useState<UsernameStatus | 'checking' | null>(null);
+
+  // When reached from the walkthrough there are no route params, but the signed-in
+  // Google user already has a name + picture on their account. Seed the empty
+  // fields from the stored profile so the display name is pre-filled and the
+  // Google picture shows selected by default (instead of a blank placeholder).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const user = await storage.getUser();
+      if (cancelled || !user) return;
+      if (!params.displayName && user.displayName) {
+        setDisplayName((prev) => prev || user.displayName);
+      }
+      if (!params.avatarUrl && user.avatarUrl) {
+        setProviderAvatar((prev) => prev ?? user.avatarUrl);
+        setAvatar((prev) => prev ?? user.avatarUrl);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Run once on mount; params are stable for a given navigation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleUsernameChange = (text: string) => {
     // Strip special characters and spaces, keep lowercase.
@@ -139,12 +167,11 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* ── Header row: title left, logomark right ── */}
+        {/* ── Header row: title ── */}
         <View style={styles.header}>
           <BrandText weight="semibold" style={styles.pageTitle}>
             Create your profile
           </BrandText>
-          <Image source={BrandAssets.logo} style={styles.logomark} resizeMode="contain" />
         </View>
 
         {/* ── Form body ── */}
@@ -194,6 +221,8 @@ export default function ProfileScreen() {
                 style={styles.inputField}
                 placeholder="Display name"
                 placeholderTextColor={Brand.inkSubtle}
+                cursorColor={Brand.ink}
+                selectionColor={Brand.ink}
                 value={displayName}
                 onChangeText={(text) => {
                   setDisplayName(text);
@@ -298,10 +327,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: Brand.ink,
   },
-  logomark: {
-    width: 38,
-    height: 38,
-  },
 
   // ── Form container ──
   form: {
@@ -398,6 +423,12 @@ const styles = StyleSheet.create({
     color: Brand.ink,
     height: '100%',
     flex: 1,
+    // Match StampInput: without these Android adds font padding and top-aligns
+    // the text inside the 40px row, clipping it out of view so only the cursor
+    // shows. Keep the typed text readable and vertically centred.
+    padding: 0,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   inputFieldFlex: {
     // Already flex:1 in inputField; kept for clarity when used alongside atPrefix.
