@@ -74,6 +74,25 @@ class AppUserInfolist
                         ]),
                     ]),
 
+                Section::make('Activity')
+                    ->schema([
+                        Grid::make(3)->schema([
+                            TextEntry::make('last_login_at')
+                                ->label('Last login')
+                                ->dateTime()
+                                ->since()
+                                ->placeholder('Never'),
+                            TextEntry::make('last_seen_at')
+                                ->label('Last seen')
+                                ->dateTime()
+                                ->since()
+                                ->placeholder('Never'),
+                            TextEntry::make('login_count')
+                                ->label('Logins')
+                                ->numeric(),
+                        ]),
+                    ]),
+
                 // Shown only when the account has at least one unresolved flag.
                 // Admins resolve flags via the "Resolve flags" action in the page header.
                 Section::make('Flags')

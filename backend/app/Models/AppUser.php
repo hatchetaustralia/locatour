@@ -49,6 +49,11 @@ class AppUser extends Authenticatable
         'current_level',
         'day_streak',
         'status',
+        // Activity tracking: login timestamps/count are written on Google sign-in;
+        // last_seen_at is touched (throttled) on authenticated API activity.
+        'last_login_at',
+        'last_seen_at',
+        'login_count',
         // Scrape detection (volume): last_location_query_at = the current
         // counting window's start; suspicious_query_count = queries in that window.
         'last_location_query_at',
@@ -67,6 +72,9 @@ class AppUser extends Authenticatable
         'total_xp' => 'integer',
         'current_level' => 'integer',
         'day_streak' => 'integer',
+        'last_login_at' => 'datetime',
+        'last_seen_at' => 'datetime',
+        'login_count' => 'integer',
         'last_location_query_at' => 'datetime',
         'suspicious_query_count' => 'integer',
         'date_of_birth' => 'date',

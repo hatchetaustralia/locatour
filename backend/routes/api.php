@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\PlacesController;
 use App\Http\Controllers\Api\SuggestionController;
 use App\Http\Controllers\ShareController;
 use App\Http\Middleware\EnsureAppUserNotBlocked;
+use App\Http\Middleware\TouchAppUserLastSeen;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -28,7 +29,7 @@ Route::get('/account/username-available', [AccountController::class, 'usernameAv
 // issues a Sanctum token. Google now; Apple + phone to follow.
 Route::post('/auth/google', [AuthController::class, 'google']);
 
-Route::middleware(['auth:sanctum', EnsureAppUserNotBlocked::class])->group(function () {
+Route::middleware(['auth:sanctum', EnsureAppUserNotBlocked::class, TouchAppUserLastSeen::class])->group(function () {
     Route::post('/account/sync', [AccountController::class, 'sync']);
     // Full account state for hydrating the app's local DB on sign-in.
     Route::get('/account/me', [AccountController::class, 'me']);

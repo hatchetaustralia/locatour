@@ -22,7 +22,9 @@ class AppUsersTable
     public static function configure(Table $table): Table
     {
         return $table
-            ->defaultSort('created_at', 'desc')
+            // Activity-first: most-recently-active accounts surface at the top so
+            // "who has logged in / used the app lately" is front and centre.
+            ->defaultSort('last_seen_at', 'desc')
             ->columns([
                 ImageColumn::make('avatar_url')
                     ->label('Avatar')
@@ -72,6 +74,35 @@ class AppUsersTable
                     ->falseIcon('heroicon-o-minus')
                     ->trueColor('danger')
                     ->falseColor('gray')
+                    ->toggleable(),
+                // Recency-highlighted activity column: green when the user was
+                // seen in the last ~24h, gray when stale (>14d), neutral in
+                // between. The absolute timestamp lives in the tooltip so the
+                // relative "X ago" stays scannable.
+                TextColumn::make('last_seen_at')
+                    ->label('Last seen')
+                    ->since()
+                    ->sortable()
+                    ->badge()
+                    ->placeholder('Never')
+                    ->color(fn (AppUser $record): string => match (true) {
+                        $record->last_seen_at === null => 'gray',
+                        $record->last_seen_at->gt(now()->subDay()) => 'success',
+                        $record->last_seen_at->lt(now()->subDays(14)) => 'danger',
+                        default => 'warning',
+                    })
+                    ->tooltip(fn (AppUser $record): ?string => $record->last_seen_at?->toDayDateTimeString()),
+                TextColumn::make('last_login_at')
+                    ->label('Last login')
+                    ->since()
+                    ->sortable()
+                    ->placeholder('Never')
+                    ->toggleable()
+                    ->tooltip(fn (AppUser $record): ?string => $record->last_login_at?->toDayDateTimeString()),
+                TextColumn::make('login_count')
+                    ->label('Logins')
+                    ->numeric()
+                    ->sortable()
                     ->toggleable(),
                 TextColumn::make('created_at')
                     ->label('Joined')

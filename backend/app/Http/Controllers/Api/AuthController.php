@@ -78,6 +78,11 @@ class AuthController extends Controller
         if (empty($user->username)) {
             $user->username = $this->uniqueUsername($email);
         }
+        // Activity tracking: record this successful sign-in for BOTH new and
+        // returning users. login_count starts at 0 (DB default) so ++ is correct
+        // even for a brand-new, not-yet-saved account.
+        $user->last_login_at = now();
+        $user->login_count = (int) $user->login_count + 1;
         $user->save();
 
         return response()->json([
