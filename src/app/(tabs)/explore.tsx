@@ -864,8 +864,8 @@ export default function ExploreScreen() {
                 center={userCoords}
                 radius={getConfig().vicinityRadiusM * tierRadiusBoost(userLevel)}
                 strokeWidth={1}
-                strokeColor="rgba(125,227,231,0.5)"
-                fillColor="rgba(125,227,231,0.06)"
+                strokeColor="rgba(125,227,231,0.65)"
+                fillColor="rgba(125,227,231,0.14)"
               />
             )}
 
