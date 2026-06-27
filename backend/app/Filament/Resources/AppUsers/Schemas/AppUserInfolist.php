@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AppUsers\Schemas;
 
+use App\Filament\Resources\AppUsers\Tables\AppUsersTable;
 use App\Models\AppUser;
 use Filament\Infolists\Components\ImageEntry;
 use Filament\Infolists\Components\RepeatableEntry;
@@ -46,6 +47,12 @@ class AppUserInfolist
                                 AppUser::STATUS_BLOCKED => 'danger',
                                 default => 'gray',
                             }),
+                        // App-level privilege role (separate from Filament/admin
+                        // roles). Labels + colours shared with the table column.
+                        TextEntry::make('role')
+                            ->badge()
+                            ->formatStateUsing(fn (?string $state): string => AppUsersTable::ROLE_LABELS[$state] ?? ucfirst((string) $state))
+                            ->color(fn (?string $state): string => AppUsersTable::ROLE_COLORS[$state] ?? 'gray'),
                         TextEntry::make('bio')
                             ->placeholder('—')
                             ->columnSpanFull(),

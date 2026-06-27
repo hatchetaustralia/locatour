@@ -24,6 +24,35 @@ class AppUser extends Authenticatable
 
     public const STATUS_BLOCKED = 'blocked';
 
+    /**
+     * App-level roles on the mobile-player record. SEPARATE from the Filament
+     * admin `users` table and its Spatie roles — these do NOT grant Filament
+     * panel access. They're the foundation for in-app privileges + admin
+     * management of players. Persisted in the `role` column (NOT NULL, defaults
+     * to ROLE_PLAYER). No privilege-enforcement logic lives here yet — just the
+     * data + constants.
+     */
+    public const ROLE_PLAYER = 'player';
+
+    public const ROLE_COLLABORATOR = 'collaborator';
+
+    public const ROLE_ADMIN = 'admin';
+
+    public const ROLE_SUPER_ADMIN = 'super_admin';
+
+    /**
+     * Map of role value => human display label, in ascending privilege order.
+     * Handy for admin select inputs / badges (see the admin Filament resource).
+     *
+     * @var array<string, string>
+     */
+    public const ROLE_LABELS = [
+        self::ROLE_PLAYER => 'Player',
+        self::ROLE_COLLABORATOR => 'Collaborator',
+        self::ROLE_ADMIN => 'Admin',
+        self::ROLE_SUPER_ADMIN => 'Super admin',
+    ];
+
     protected $fillable = [
         'device_id',
         'google_id',
@@ -49,6 +78,9 @@ class AppUser extends Authenticatable
         'current_level',
         'day_streak',
         'status',
+        // App-level player role (player|collaborator|admin|super_admin).
+        // SEPARATE from Filament/admin Spatie roles — see ROLE_* constants.
+        'role',
         // Activity tracking: login timestamps/count are written on Google sign-in;
         // last_seen_at is touched (throttled) on authenticated API activity.
         'last_login_at',
