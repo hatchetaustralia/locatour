@@ -187,6 +187,39 @@ export async function ensureGeofencePermissions(): Promise<boolean> {
   return bg.status === 'granted';
 }
 
+/** The TRUE state of Nearby Alerts, combining the stored opt-in with the real OS
+ *  permissions. The stored toggle alone can LIE: the user can revoke "Allow all
+ *  the time" location (or notifications) in Settings while our flag still reads
+ *  on, leaving geofencing silently dead. The UI uses this so it never claims the
+ *  feature is active when the OS won't actually deliver a ping.
+ *   • 'on'              → opted in AND background location AND notifications granted
+ *   • 'needs-permission'→ opted in BUT a required OS permission is missing
+ *   • 'off'             → not opted in (the switch is off) */
+export type NearbyAlertsStatus = 'on' | 'needs-permission' | 'off';
+
+/**
+ * Read the true Nearby Alerts status WITHOUT prompting. Combines the stored
+ * toggle with the OS background-location + notification permissions (all read
+ * via their `get*` accessors, which never surface a dialog). Web has no
+ * background geofencing, so it's always 'off'.
+ */
+export async function getNearbyAlertsStatus(): Promise<NearbyAlertsStatus> {
+  if (Platform.OS === 'web') return 'off';
+  if (!storage.getNearbyAlertsEnabled()) return 'off'; // switch is off → neutral
+  try {
+    const [bg, notif] = await Promise.all([
+      Location.getBackgroundPermissionsAsync(),
+      Notifications.getPermissionsAsync(),
+    ]);
+    // Both must be granted for a ping to actually fire: geofencing needs "Allow
+    // all the time", and a granted notification permission to surface the alert.
+    return bg.granted && notif.granted ? 'on' : 'needs-permission';
+  } catch {
+    // Can't read permissions → treat as needing attention rather than claim "on".
+    return 'needs-permission';
+  }
+}
+
 /**
  * (Re)register geofences for every discoverable, never-visited spot. Idempotent:
  * stops any existing run first, so calling it after a check-in or level-up keeps

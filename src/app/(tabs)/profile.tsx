@@ -13,6 +13,7 @@ import {
   Alert,
   Switch,
   Share,
+  Linking,
   type ListRenderItemInfo,
 } from 'react-native';
 import {
@@ -26,7 +27,7 @@ import Animated, {
   withTiming,
   runOnJS,
 } from 'react-native-reanimated';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -35,7 +36,12 @@ import { ConfirmModal } from '@/components/confirm-modal';
 import { Brand, BrandFonts, BrandRadius, stampBorder, Spacing } from '@/constants/theme';
 import { storage } from '@/utils/storage';
 import { checkUsernameAvailable, deleteAccount, deleteCheckInNow, shareCheckIn, signOut, UsernameStatus } from '@/utils/account';
-import { enableNearbyAlerts, disableNearbyAlerts } from '@/utils/geofencing';
+import {
+  enableNearbyAlerts,
+  disableNearbyAlerts,
+  getNearbyAlertsStatus,
+  type NearbyAlertsStatus,
+} from '@/utils/geofencing';
 import { NEARBY_ALERTS_BONUS_PCT, deriveLevelStats } from '@/utils/leveling';
 import { avatarUri } from '@/utils/avatar';
 import { User, Achievement, CheckIn, ExploreLocation } from '@/types';
@@ -253,6 +259,14 @@ const DIFFICULTY_COLOR: Record<string, string> = {
   Elite: '#ef4444', Master: '#9333ea', Grandmaster: '#db2777',
 };
 
+// Dot colour + label for the Nearby-alerts true-state indicator. GREEN = really
+// active; AMBER = opted in but the OS isn't permitting it; neutral grey = off.
+const ALERTS_STATUS_META: Record<NearbyAlertsStatus, { color: string; label: string }> = {
+  on: { color: Brand.sticker.green, label: 'Active' },
+  'needs-permission': { color: '#E0922F', label: 'Needs permission' },
+  off: { color: Brand.inkSubtle, label: 'Off' },
+};
+
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -261,6 +275,12 @@ export default function ProfileScreen() {
   // Background "Nearby alerts" opt-in (off by default). Initialised synchronously
   // from storage so the switch reflects the saved preference on first paint.
   const [nearbyAlerts, setNearbyAlerts] = useState(() => storage.getNearbyAlertsEnabled());
+  // The TRUE state of Nearby Alerts (stored toggle + real OS permissions), so the
+  // card's indicator never claims "Active" when the OS won't deliver a ping. Seeded
+  // 'off'/'on' from the stored flag and reconciled against the OS on focus below.
+  const [alertsStatus, setAlertsStatus] = useState<NearbyAlertsStatus>(() =>
+    storage.getNearbyAlertsEnabled() ? 'on' : 'off',
+  );
   // Branded confirm/info dialogs that replace the native Alert.alert popups.
   const [logoutConfirm, setLogoutConfirm] = useState(false);
   const [alertsConfirm, setAlertsConfirm] = useState(false);
@@ -354,17 +374,47 @@ export default function ProfileScreen() {
     loadData();
   }, [loadData]);
 
+  // ── Reconcile Nearby Alerts against the real OS permissions ────────────────
+  // The stored toggle can DRIFT from the OS: the user can revoke "Allow all the
+  // time" location (or notifications) in Settings while our flag still reads on,
+  // leaving geofencing silently dead. So on every focus (and after any toggle) we
+  // read the true state and, if the toggle says on but the OS no longer permits
+  // it, flip the stored flag off — the indicator then shows the honest state
+  // ('needs-permission') and the switch returns to off rather than lying.
+  const refreshAlertsStatus = useCallback(async () => {
+    const status = await getNearbyAlertsStatus();
+    setAlertsStatus(status);
+    // Keep the switch in sync with the stored flag (getNearbyAlertsStatus may have
+    // been reconciled elsewhere, e.g. refreshGeofencesOnFocus flipping it off).
+    setNearbyAlerts(storage.getNearbyAlertsEnabled());
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshAlertsStatus();
+    }, [refreshAlertsStatus]),
+  );
+
   // ── Live username availability check (debounced ~400ms) ───────────────────
   // Mirrors the onboarding screen. Pass user.uid as device_id so the user's OWN
   // current username reads as available, not "taken". Sits ABOVE the early
   // returns to preserve hook order.
+  //
+  // Depend on the two PRIMITIVE values this effect reads (uid + current handle),
+  // NOT the whole `user` object: the auto-save effect calls setUser() with a
+  // fresh object on every save, and depending on that reference re-ran this
+  // check, which re-set usernameStatus, which re-triggered auto-save → setUser →
+  // an infinite "checking ⇄ taken" loop (spinner spinning, message flashing).
+  const userUid = user?.uid;
+  const currentHandle = user
+    ? (user.username.startsWith('@') ? user.username.slice(1) : user.username)
+    : '';
   useEffect(() => {
-    if (!isEditing || !user) return;
+    if (!isEditing || !userUid) return;
     const u = editUsername.trim();
     // No feedback when the handle is unchanged from the user's current one —
     // they haven't made a change, so don't flash "that one's free".
-    const current = user.username.startsWith('@') ? user.username.slice(1) : user.username;
-    if (u.toLowerCase() === current.toLowerCase()) {
+    if (u.toLowerCase() === currentHandle.toLowerCase()) {
       setUsernameStatus(null);
       return;
     }
@@ -375,12 +425,12 @@ export default function ProfileScreen() {
     setUsernameStatus('checking');
     const reqId = ++usernameReqId.current;
     const handle = setTimeout(async () => {
-      const status = await checkUsernameAvailable(u, user.uid);
+      const status = await checkUsernameAvailable(u, userUid);
       if (reqId !== usernameReqId.current) return; // a newer keystroke won
       setUsernameStatus(status);
     }, 400);
     return () => clearTimeout(handle);
-  }, [editUsername, isEditing, user]);
+  }, [editUsername, isEditing, userUid, currentHandle]);
 
   // ── Debounced auto-save (~600ms) ──────────────────────────────────────────
   // Saves edits as the user makes them — no explicit Save button. The
@@ -471,20 +521,33 @@ export default function ProfileScreen() {
   // policy); turning OFF stops monitoring immediately.
   const handleToggleAlerts = (value: boolean) => {
     if (!value) {
-      void disableNearbyAlerts();
       setNearbyAlerts(false);
+      setAlertsStatus('off');
+      void disableNearbyAlerts();
       return;
     }
     setAlertsConfirm(true);
   };
 
   // Confirmed the disclosure → request permission + enable. On failure (the OS
-  // didn't grant "Allow all the time") surface the branded settings explainer.
+  // didn't grant "Allow all the time" — often because it was permanently denied
+  // and can no longer be prompted in-app) surface the branded settings explainer,
+  // whose action deep-links to Settings so they can grant it manually.
   const doEnableAlerts = async () => {
     setAlertsConfirm(false);
     const ok = await enableNearbyAlerts();
-    setNearbyAlerts(ok);
+    // Re-derive the honest status (covers the case where background was granted
+    // but notifications weren't — 'needs-permission', not a flat on/off).
+    await refreshAlertsStatus();
     if (!ok) setAlertsPermInfo(true);
+  };
+
+  // Send the user to the OS app settings to grant "Allow all the time" location
+  // (and notifications) manually when it can't be requested in-app. The focus
+  // effect re-checks the true status when they return.
+  const openAppSettings = () => {
+    setAlertsPermInfo(false);
+    void Linking.openSettings();
   };
 
   // Run the pending delete (a single check-in, or 'all' for the dev clear). The
@@ -980,7 +1043,9 @@ export default function ProfileScreen() {
               <StatCard icon="map" color={Brand.sticker.green} value={totalCheckInsCount} label="Total check-ins" />
             </View>
 
-            {/* Nearby alerts opt-in — incentivised with a points multiplier. */}
+            {/* Nearby alerts opt-in — incentivised with a points multiplier. The
+                status pill reflects the TRUE state (toggle + real OS permissions),
+                so it never claims "Active" when the OS won't deliver a ping. */}
             <View style={[styles.alertsCard, stampBorder]}>
               <View style={styles.alertsInfo}>
                 <View style={styles.alertsTitleRow}>
@@ -990,9 +1055,33 @@ export default function ProfileScreen() {
                     <BrandText weight="bold" color={Brand.bg} style={styles.alertsBonusText}>+{NEARBY_ALERTS_BONUS_PCT}% pts</BrandText>
                   </View>
                 </View>
+                {/* Honest red/green/neutral status indicator. */}
+                <View style={styles.alertsStatusRow}>
+                  <View style={[styles.alertsStatusDot, { backgroundColor: ALERTS_STATUS_META[alertsStatus].color }]} />
+                  <BrandText
+                    weight="semibold"
+                    color={ALERTS_STATUS_META[alertsStatus].color}
+                    style={styles.alertsStatusText}
+                  >
+                    {ALERTS_STATUS_META[alertsStatus].label}
+                  </BrandText>
+                </View>
                 <BrandText weight="medium" color={Brand.inkSecondary} style={styles.alertsSubtitle}>
                   Get pinged when you wander near a hidden spot — and earn +{NEARBY_ALERTS_BONUS_PCT}% points on every check-in.
                 </BrandText>
+                {/* Toggle reads on but the OS isn't permitting it → direct them to fix it. */}
+                {alertsStatus === 'needs-permission' ? (
+                  <TouchableOpacity
+                    style={styles.alertsFixRow}
+                    activeOpacity={0.7}
+                    onPress={() => setAlertsPermInfo(true)}
+                  >
+                    <Ionicons name="warning" size={13} color={ALERTS_STATUS_META['needs-permission'].color} />
+                    <BrandText weight="semibold" color={Brand.purple} style={styles.alertsFixText}>
+                      Location permission needed — tap to fix
+                    </BrandText>
+                  </TouchableOpacity>
+                ) : null}
               </View>
               <Switch
                 value={nearbyAlerts}
@@ -1460,10 +1549,10 @@ export default function ProfileScreen() {
       <ConfirmModal
         visible={alertsPermInfo}
         title={'Allow location “All the time”'}
-        body={'To get nearby alerts, set Locatour’s location permission to “Allow all the time” in your phone’s Settings.'}
-        confirmLabel="Got it"
-        hideCancel
-        onConfirm={() => setAlertsPermInfo(false)}
+        body={'To get nearby alerts, Locatour needs location set to “Allow all the time” (and notifications enabled) in your phone’s Settings. Open Settings to grant it — we’ll re-check when you come back.'}
+        confirmLabel="Open Settings"
+        cancelLabel="Not now"
+        onConfirm={openAppSettings}
         onCancel={() => setAlertsPermInfo(false)}
       />
     </SafeAreaView>
@@ -1702,6 +1791,30 @@ const styles = StyleSheet.create({
   alertsSubtitle: {
     fontSize: 13,
     lineHeight: 18,
+  },
+  alertsStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one + 1,
+  },
+  alertsStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  alertsStatusText: {
+    fontSize: 12,
+    letterSpacing: 0.2,
+  },
+  alertsFixRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one + 1,
+    marginTop: 2,
+  },
+  alertsFixText: {
+    fontSize: 12,
+    textDecorationLine: 'underline',
   },
   bioText: {
     fontSize: 14,
