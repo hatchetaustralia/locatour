@@ -180,6 +180,11 @@ export default function ExploreScreen() {
   // — so the avatar vanishes. On focus we flip this true for a brief window to force
   // a re-paint, then settle back to the frozen (performant) state.
   const [remarkAvatar, setRemarkAvatar] = useState(false);
+  // Bumped on every map-tab focus. Folded into the avatar Marker's `key` so the
+  // marker fully RE-MOUNTS when you return to the map — the only reliable cure for
+  // the snapshot vanishing after a tab switch (toggling tracksViewChanges doesn't
+  // make Android re-capture a marker whose view didn't structurally change).
+  const [focusNonce, setFocusNonce] = useState(0);
   // Live map heading (degrees) — drives the compass rose's north needle.
   const [mapHeading, setMapHeading] = useState(0);
   const [visitedLogs, setVisitedLogs] = useState<CheckIn[]>([]);
@@ -405,16 +410,17 @@ export default function ExploreScreen() {
     }, [refresh])
   );
 
-  // On focus, force the avatar marker to re-snapshot for a short window so it
-  // reappears every time the map regains focus (react-native-maps drops the frozen
-  // custom-marker bitmap on a focus change). We settle back to the frozen state
-  // after a beat so tracksViewChanges isn't left permanently true (which hurts map
-  // perf). See remarkAvatar above.
+  // Every time the map regains focus, RE-MOUNT the avatar marker (via focusNonce in
+  // its key) and restart its snapshot cycle (avatarLoaded=false → tracks until the
+  // image repaints → onLoad re-freezes). This replays the exact sequence that works
+  // on initial load, instead of toggling tracksViewChanges — which Android ignores
+  // for a marker whose view didn't structurally change, so the dropped snapshot was
+  // never re-taken and the avatar vanished after a tab switch.
   useFocusEffect(
     useCallback(() => {
-      setRemarkAvatar(true);
-      const t = setTimeout(() => setRemarkAvatar(false), 600);
-      return () => clearTimeout(t);
+      setFocusNonce((n) => n + 1);
+      setAvatarLoaded(false);
+      setAvatarFailed(false);
     }, [])
   );
 
@@ -925,7 +931,7 @@ export default function ExploreScreen() {
                 // the marker re-mounts with a clean snapshot cycle (avatarLoaded is
                 // false again), instead of reusing a stale empty-ring snapshot taken
                 // before the URL was known.
-                key={`user-${userAvatar}`}
+                key={`user-${userAvatar}-${focusNonce}`}
                 coordinate={{
                   latitude: userLocation.coords.latitude,
                   longitude: userLocation.coords.longitude,
