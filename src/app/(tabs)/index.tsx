@@ -167,24 +167,13 @@ export default function ExploreScreen() {
   // walked within range of. Dismissed-id ref re-arms only after you leave.
   const [arrivalSpot, setArrivalSpot] = useState<ExploreLocation | null>(null);
   const dismissedArrivalRef = useRef<string | null>(null);
-  // react-native-maps snapshots a custom marker to a bitmap; we must keep
-  // tracksViewChanges TRUE until the avatar image has actually painted, else the
-  // marker freezes as an empty ring. Driven by load state (not a guess timer).
-  const [avatarLoaded, setAvatarLoaded] = useState(false);
-  // If the remote avatar image fails (or never loads), fall back to an icon so the
-  // "you are here" marker still shows something (never an empty ring).
+  // The "you are here" avatar marker keeps tracksViewChanges permanently TRUE (see
+  // its render below): one continuously-tracking marker is negligible perf and it
+  // always reflects the currently-painted view, so the avatar can never freeze as a
+  // blank ring (the old cold-load / tab-switch snapshot bugs). The only remaining
+  // state is the failure fallback: if the remote image fails (or never loads), show
+  // a person icon so the marker always shows something — never an empty ring.
   const [avatarFailed, setAvatarFailed] = useState(false);
-  // react-native-maps freezes a custom marker's bitmap once tracksViewChanges goes
-  // false (perf). When the map tab loses then regains focus the OS can drop that
-  // frozen avatar snapshot, and since tracking is already off it never re-snapshots
-  // — so the avatar vanishes. On focus we flip this true for a brief window to force
-  // a re-paint, then settle back to the frozen (performant) state.
-  const [remarkAvatar, setRemarkAvatar] = useState(false);
-  // Bumped on every map-tab focus. Folded into the avatar Marker's `key` so the
-  // marker fully RE-MOUNTS when you return to the map — the only reliable cure for
-  // the snapshot vanishing after a tab switch (toggling tracksViewChanges doesn't
-  // make Android re-capture a marker whose view didn't structurally change).
-  const [focusNonce, setFocusNonce] = useState(0);
   // Live map heading (degrees) — drives the compass rose's north needle.
   const [mapHeading, setMapHeading] = useState(0);
   const [visitedLogs, setVisitedLogs] = useState<CheckIn[]>([]);
@@ -410,20 +399,6 @@ export default function ExploreScreen() {
     }, [refresh])
   );
 
-  // Every time the map regains focus, RE-MOUNT the avatar marker (via focusNonce in
-  // its key) and restart its snapshot cycle (avatarLoaded=false → tracks until the
-  // image repaints → onLoad re-freezes). This replays the exact sequence that works
-  // on initial load, instead of toggling tracksViewChanges — which Android ignores
-  // for a marker whose view didn't structurally change, so the dropped snapshot was
-  // never re-taken and the avatar vanished after a tab switch.
-  useFocusEffect(
-    useCallback(() => {
-      setFocusNonce((n) => n + 1);
-      setAvatarLoaded(false);
-      setAvatarFailed(false);
-    }, [])
-  );
-
   // Whenever a spot is opened (via a marker tap or a deep-link selectedId),
   // glide the camera to it and nudge it upward so the pin sits clear above the
   // detail sheet (which covers the lower portion of the screen).
@@ -442,43 +417,21 @@ export default function ExploreScreen() {
     );
   }, [selectedLoc]);
 
-  // Keep the avatar marker re-rendering until its image actually paints (driven by
-  // onLoad, not a guess timer — the old 3s timer froze the snapshot before slow
-  // images arrived). A 6s backstop falls back to the icon so it can never be stuck
-  // blank. Reset whenever the avatar URL changes.
+  // The avatar marker tracks continuously, so it paints whenever the image arrives —
+  // no snapshot timing to manage. The only timer left is a backstop: if the remote
+  // image neither loads nor errors within 6s (a silent hang), fall back to the person
+  // icon so the ring is never stuck blank. Cleared on a successful load or an error.
+  // Reset whenever the avatar URL changes.
   const avatarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Shared timer for the short post-load re-snapshot pulses (onLoad + first-paint).
-  const remarkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!userAvatar) return;
-    setAvatarLoaded(false);
     setAvatarFailed(false);
     if (avatarTimer.current) clearTimeout(avatarTimer.current);
-    avatarTimer.current = setTimeout(() => {
-      setAvatarFailed(true);
-      setAvatarLoaded(true);
-    }, 6000);
+    avatarTimer.current = setTimeout(() => setAvatarFailed(true), 6000);
     return () => {
       if (avatarTimer.current) clearTimeout(avatarTimer.current);
     };
   }, [userAvatar]);
-
-  // First map load after sign-in: the focus pulse above can fire BEFORE the avatar
-  // URL has loaded from the profile, so its re-snapshot window passes before the
-  // marker even mounts. Pulse remarkAvatar once the moment BOTH the location and the
-  // avatar are first available, so a cold sign-in snapshots a painted avatar (not
-  // only on a later tab focus). Fires once — re-focus handling lives above.
-  const firstAvatarPaintRef = useRef(false);
-  useEffect(() => {
-    if (firstAvatarPaintRef.current || !userLocation || !userAvatar) return;
-    firstAvatarPaintRef.current = true;
-    setRemarkAvatar(true);
-    if (remarkTimer.current) clearTimeout(remarkTimer.current);
-    remarkTimer.current = setTimeout(() => setRemarkAvatar(false), 800);
-    return () => {
-      if (remarkTimer.current) clearTimeout(remarkTimer.current);
-    };
-  }, [userLocation, userAvatar]);
 
   // Centre the map on the user's base once we know it AND the map is mounted, so
   // a cold start that resolves home after first paint still seeds there. Skipped
@@ -923,24 +876,47 @@ export default function ExploreScreen() {
               </Marker>
             ))}
 
+            {/* Pending suggestion pin: while the "suggest a location" flow is open,
+                drop a temporary dashed ghost marker at the exact picked coordinate so
+                the explorer can confirm the spot. Deliberately distinct from real
+                location pins (dashed purple bubble, no XP badge) and removed the
+                moment the flow is cancelled or submitted (suggestVisible → false). */}
+            {suggestVisible && suggestCoord && Marker && (
+              <Marker
+                coordinate={suggestCoord}
+                anchor={{ x: 0.5, y: 1 }}
+                tracksViewChanges={true}
+              >
+                <View style={styles.suggestPinWrap}>
+                  <View style={styles.suggestPinBubble}>
+                    <Ionicons name="add" size={20} color={Brand.bg} />
+                  </View>
+                  <View style={styles.suggestPinArrow} />
+                </View>
+              </Marker>
+            )}
+
             {/* "You are here" — the user's avatar in a teal ring; a pink glow ring
                 appears around it while a hidden spot is nearby. */}
             {userLocation && userAvatar && (
               <Marker
-                // Re-key on the avatar URL so the moment it first becomes available
-                // the marker re-mounts with a clean snapshot cycle (avatarLoaded is
-                // false again), instead of reusing a stale empty-ring snapshot taken
-                // before the URL was known.
-                key={`user-${userAvatar}-${focusNonce}`}
+                // Re-key on the avatar URL so the marker re-mounts cleanly the moment
+                // the URL first becomes available, instead of reusing a stale view.
+                key={`user-${userAvatar}`}
                 coordinate={{
                   latitude: userLocation.coords.latitude,
                   longitude: userLocation.coords.longitude,
                 }}
                 anchor={{ x: 0.5, y: 0.5 }}
-                // Track until the avatar paints; also while a hidden spot is near
-                // so the glow renders, and briefly on focus (remarkAvatar) so the
-                // marker re-snapshots after a tab switch. Frozen otherwise (perf).
-                tracksViewChanges={!avatarLoaded || hiddenNearbyDist != null || remarkAvatar}
+                // Track continuously for THIS single marker. One always-tracking
+                // marker is negligible perf (the perf concern is for many markers),
+                // and it GUARANTEES the bitmap always reflects the currently-painted
+                // view — so the avatar can never freeze as a blank ring on a cold map
+                // load or vanish after a tab switch, and the hidden-nearby glow always
+                // renders. This replaces the old avatarLoaded/remarkAvatar/focusNonce
+                // snapshot machinery, which tried (unreliably) to re-snapshot at the
+                // right moments.
+                tracksViewChanges={true}
               >
                 <View style={styles.userMarkerWrap}>
                   {/* Static rainbow halo (matches the camera shutter glow) shown
@@ -955,21 +931,13 @@ export default function ExploreScreen() {
                       <Image
                         source={{ uri: userAvatar }}
                         style={styles.userMarkerAvatar}
+                        // The marker tracks continuously, so the painted image shows
+                        // on its own — we only cancel the blank-ring backstop here.
                         onLoad={() => {
-                          setAvatarLoaded(true);
                           if (avatarTimer.current) clearTimeout(avatarTimer.current);
-                          // Keep tracking for a short beat AFTER onLoad: on Android the
-                          // bitmap is decoded slightly before it paints into the marker
-                          // view, so freezing the snapshot the instant onLoad fires can
-                          // capture a blank frame (the empty-ring bug). This brief window
-                          // captures the painted avatar, then we settle back to frozen.
-                          setRemarkAvatar(true);
-                          if (remarkTimer.current) clearTimeout(remarkTimer.current);
-                          remarkTimer.current = setTimeout(() => setRemarkAvatar(false), 500);
                         }}
                         onError={() => {
                           setAvatarFailed(true);
-                          setAvatarLoaded(true);
                           if (avatarTimer.current) clearTimeout(avatarTimer.current);
                         }}
                       />
@@ -1755,6 +1723,38 @@ const styles = StyleSheet.create({
     borderTopWidth: 7,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
+    marginTop: -1,
+  },
+
+  // Pending "suggest a location" pin — a dashed purple ghost bubble, intentionally
+  // distinct from the solid category pins so the spot the user is suggesting reads
+  // as tentative/unconfirmed. Temporary: only mounted while the suggest sheet is open.
+  suggestPinWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  suggestPinBubble: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Brand.purple,
+    borderWidth: 2,
+    borderColor: Brand.ink,
+    borderStyle: 'dashed',
+  },
+  suggestPinArrow: {
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 9,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: Brand.ink,
     marginTop: -1,
   },
 
