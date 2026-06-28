@@ -125,6 +125,12 @@ export async function signInWithGoogle(): Promise<GoogleSignInResult> {
     const idToken = response.data.idToken;
     if (!idToken) return { ok: false, reason: 'rejected' };
 
+    // The native Google account picker hands back the user's profile photo
+    // directly (independent of whatever avatar the server has on file). Capture
+    // it now so we can persist it SEPARATELY and keep it selectable in the avatar
+    // picker even after the user switches to a preset.
+    const googlePhoto = response.data.user?.photo ?? null;
+
     // Identity-based: do NOT send the device's account id, so a Google login never
     // inherits an anonymous device account's progress — it's keyed to the Google
     // identity (google_id / verified email) server-side.
@@ -145,7 +151,13 @@ export async function signInWithGoogle(): Promise<GoogleSignInResult> {
     // here (after it) is safe.
     await storage.wipeAllData();
     storage.setToken(body.token);
-    await storage.setUser(mapServerUser(body.user));
+    const mapped = mapServerUser(body.user);
+    // Persist the Google photo separately so the avatar picker can always offer
+    // it back, regardless of the current avatarUrl. For a brand-new account the
+    // server seeds avatarUrl from this same photo; once the user picks a preset
+    // the two diverge and providerAvatarUrl is how we restore the Google one.
+    if (googlePhoto) mapped.providerAvatarUrl = googlePhoto;
+    await storage.setUser(mapped);
     // Restore the account's full state (check-in history + unlocked spots) so a
     // returning user / new device isn't left empty. New users get an empty payload.
     const state = await fetchAccountState();

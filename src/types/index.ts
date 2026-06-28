@@ -17,6 +17,12 @@ export interface User {
   username: string;
   bio: string;
   avatarUrl: string;
+  // The original auth/provider (Google) profile photo, captured at sign-in and
+  // kept SEPARATELY from avatarUrl so it stays selectable in the avatar picker
+  // even after the user picks a preset. Optional: absent for accounts created
+  // before this field existed / device-id-only accounts (recovered on the next
+  // Google sign-in).
+  providerAvatarUrl?: string;
   gender: string;
   homeSuburb: string;
   // Geocoded coordinates of homeSuburb. Used to warm-start the map at the user's
