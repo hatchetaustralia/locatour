@@ -38,7 +38,9 @@ class AdminPanelProvider extends PanelProvider
             // Google allowlist (GoogleAdminAuthController) — public signup would let
             // anyone create a panel account, so it is disabled outside local.
             ->registration(app()->environment('local') ? Register::class : null)
-            ->favicon(asset('favicon.png'))
+            ->favicon(asset('logo.svg'))
+            ->brandLogo(asset('logo.svg'))
+            ->brandLogoHeight('2.25rem')
             ->colors([
                 'primary' => Color::Amber,
             ])
