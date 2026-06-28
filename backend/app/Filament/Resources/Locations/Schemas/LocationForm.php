@@ -6,6 +6,7 @@ use App\Filament\Forms\Components\LocationMapPicker;
 use App\Models\Category;
 use App\Models\Location;
 use App\Models\Tag;
+use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\FileUpload;
@@ -17,10 +18,12 @@ use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Filament\Support\Enums\Width;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 
@@ -53,6 +56,30 @@ class LocationForm
                             ->label('Map')
                             ->dehydrated(false)
                             ->columnSpanFull(),
+                        // Surfaces the full Google Places payload cached by a
+                        // "Sync from Google Places" run (rating, hours, contact,
+                        // address parts, photos, raw JSON). Hidden until there's
+                        // something synced to show.
+                        Actions::make([
+                            Action::make('placeDetails')
+                                ->label('More information')
+                                ->icon('heroicon-o-information-circle')
+                                ->color('gray')
+                                ->link()
+                                ->visible(fn ($livewire): bool => method_exists($livewire, 'syncedPlacesMeta')
+                                    && filled($livewire->syncedPlacesMeta()))
+                                ->modalHeading('Google Places details')
+                                ->modalDescription('Everything pulled from Google for this place.')
+                                ->modalWidth(Width::ThreeExtraLarge)
+                                ->modalSubmitAction(false)
+                                ->modalCancelActionLabel('Close')
+                                ->modalContent(fn ($livewire): HtmlString => new HtmlString(
+                                    view('filament.locations.place-meta', [
+                                        'meta' => $livewire->syncedPlacesMeta(),
+                                    ])->render()
+                                )),
+                        ])
+                            ->columnSpanFull(),
                         TextInput::make('latitude')
                             ->numeric()
                             ->required()
@@ -68,6 +95,9 @@ class LocationForm
                                 maxValue: Location::GEOFENCE_RADIUS_MAX,
                             )
                             ->step(50)
+                            // Snap to whole metres — noUiSlider otherwise emits
+                            // floats like 49.99999 that truncate below the min.
+                            ->decimalPlaces(0)
                             ->default(Location::GEOFENCE_RADIUS_MIN)
                             ->required()
                             ->live()
@@ -98,15 +128,9 @@ class LocationForm
                 Section::make('Details')
                     ->columns(2)
                     ->schema([
-                        TextInput::make('slug')
-                            ->label('ID (slug)')
-                            ->helperText('Stable string id used by the app, e.g. "mueller_park".')
-                            ->required()
-                            ->maxLength(255)
-                            ->unique(ignoreRecord: true)
-                            // Contributors don't craft ids — it's derived from
-                            // the name on create (see CreateLocation).
-                            ->visible(fn (): bool => static::isStaff()),
+                        // The slug / app id is auto-derived from the name on
+                        // create (CreateLocation::uniqueSlugFrom) and never
+                        // changes afterwards — so it's no longer an input.
                         TextInput::make('name')
                             ->required()
                             ->maxLength(255),
@@ -137,19 +161,20 @@ class LocationForm
                             ->label('Points (XP reward)')
                             ->range(minValue: 0, maxValue: Location::maxTierPoints())
                             ->step(50)
+                            // Whole points only — noUiSlider otherwise emits
+                            // floats like 299.99999 that truncate to 299.
+                            ->decimalPlaces(0)
                             ->default(Location::defaultPointsForTier(1))
                             ->required()
                             ->live()
                             ->tooltips()
+                            // Tagged so the live tier preview can read this slider
+                            // directly and update on every drag (not just release).
+                            ->extraAttributes(['data-tier-slider' => 'true'])
                             ->helperText('Drag to set the reward — the tier follows automatically.'),
                         Placeholder::make('tier_preview')
                             ->label('Tier')
-                            ->content(fn (Get $get): HtmlString => static::tierBadge((int) $get('points'))),
-                        Textarea::make('tier_rationale')
-                            ->label('Why this tier?')
-                            ->rows(2)
-                            ->placeholder('e.g. "Huge state attraction with full facilities — can take crowds" or "Fragile, no facilities, unpublicised — protect it".')
-                            ->columnSpanFull(),
+                            ->content(fn (Get $get): HtmlString => static::tierPreview((int) round((float) $get('points')))),
                         Toggle::make('is_major_destination')
                             ->label('Major destination')
                             ->columnSpanFull()
@@ -334,20 +359,21 @@ class LocationForm
             ]);
     }
 
-    /** A coloured tier badge + description derived live from the points value. */
-    protected static function tierBadge(int $points): HtmlString
+    /**
+     * The coloured tier badge + description shown beside the points slider. It
+     * renders correct for the given (server-side) points, then an Alpine snippet
+     * subscribes to the points slider and recomputes the badge on every drag —
+     * so the tier updates live, not only when the slider is released.
+     */
+    protected static function tierPreview(int $points): HtmlString
     {
-        $tier = Location::tierForPoints($points);
-        $colors = ['#16a34a', '#22c55e', '#84cc16', '#eab308', '#f59e0b', '#f97316', '#ef4444', '#dc2626', '#9333ea', '#6b21a8'];
-        $color = $colors[min(9, max(0, $tier - 1))];
-        $desc = e(Location::tierDescription($tier));
-        $pts = number_format($points);
-
         return new HtmlString(
-            '<div style="display:flex;align-items:center;gap:0.5rem;">'
-            .'<span style="display:inline-flex;align-items:center;justify-content:center;width:2.25rem;height:2.25rem;border-radius:0.5rem;background:'.$color.';color:#fff;font-weight:700;">T'.$tier.'</span>'
-            .'<div><div style="font-weight:600;">'.e(Location::rarityForTier($tier)).' · Tier '.$tier.' · '.$pts.' pts</div>'
-            .'<div style="font-size:0.75rem;opacity:0.7;line-height:1.3;">'.$desc.'</div></div></div>'
+            view('filament.locations.tier-preview', [
+                'initialPoints' => $points,
+                'bands' => Location::DEFAULT_POINTS_FOR_TIER,
+                'rarity' => Location::TIER_RARITY,
+                'descriptions' => Location::TIER_DESCRIPTIONS,
+            ])->render()
         );
     }
 
