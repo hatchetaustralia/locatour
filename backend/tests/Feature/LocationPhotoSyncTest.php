@@ -47,6 +47,42 @@ class LocationPhotoSyncTest extends TestCase
         $method->invoke($page, $location);
     }
 
+    /** Invoke a protected EditLocation mutate hook. */
+    private function mutate(string $method, array $data): array
+    {
+        return (new \ReflectionMethod(EditLocation::class, $method))->invoke(new EditLocation, $data);
+    }
+
+    /** Fill turns image_urls into the visible repeater; save rebuilds it, dropping removed rows. */
+    public function test_image_edit_round_trip_shows_and_removes_without_wiping(): void
+    {
+        $original = ['https://images.example/seed.jpg', 'https://r2.example/p/0.jpg', 'locations/uploaded.jpg'];
+
+        // Fill: every current image becomes a visible repeater row; upload field empties.
+        $filled = $this->mutate('mutateFormDataBeforeFill', ['image_urls' => $original]);
+        $this->assertSame(
+            [['url' => $original[0]], ['url' => $original[1]], ['url' => $original[2]]],
+            $filled['existing_images'],
+        );
+        $this->assertSame([], $filled['image_urls']);
+
+        // Save with NOTHING removed + no new uploads → all preserved (no wipe).
+        $saved = $this->mutate('mutateFormDataBeforeSave', $filled);
+        $this->assertSame($original, $saved['image_urls']);
+        $this->assertArrayNotHasKey('existing_images', $saved);
+
+        // Save after REMOVING the middle row + adding a new upload → only that one gone.
+        $edited = $filled;
+        unset($edited['existing_images'][1]);
+        $edited['image_urls'] = ['locations/new-upload.jpg'];
+        $saved2 = $this->mutate('mutateFormDataBeforeSave', $edited);
+        $this->assertSame([
+            'https://images.example/seed.jpg',
+            'locations/uploaded.jpg',
+            'locations/new-upload.jpg',
+        ], $saved2['image_urls']);
+    }
+
     public function test_points_saved_as_whole_integer(): void
     {
         $location = $this->makeLocation();

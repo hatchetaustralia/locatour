@@ -12,6 +12,7 @@ use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Slider;
 use Filament\Forms\Components\TagsInput;
@@ -24,6 +25,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Enums\Width;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
 
@@ -110,8 +112,33 @@ class LocationForm
                 Section::make('Images')
                     ->columnSpanFull()
                     ->schema([
+                        // The location's CURRENT images (uploaded + remote/Google
+                        // Places URLs). The FileUpload below can only render files
+                        // that physically live on the disk, so remote URLs were
+                        // invisible there; this repeater shows them all as
+                        // thumbnails and lets the admin remove / reorder each one.
+                        // EditLocation fills it on load and rebuilds image_urls
+                        // from it (in order) on save.
+                        Repeater::make('existing_images')
+                            ->label('Current images')
+                            ->addable(false)
+                            ->deletable()
+                            ->reorderable()
+                            ->reorderableWithButtons()
+                            ->columnSpanFull()
+                            ->grid(3)
+                            ->visible(fn (Get $get): bool => filled($get('existing_images')))
+                            ->itemLabel(fn (array $state): ?string => static::imageItemLabel($state['url'] ?? null))
+                            ->schema([
+                                Hidden::make('url'),
+                                Placeholder::make('preview')
+                                    ->hiddenLabel()
+                                    ->content(fn (Get $get): HtmlString => static::imageThumb($get('url'))),
+                            ])
+                            ->helperText('Remove or reorder the images already on this location. Add new ones below.'),
+
                         FileUpload::make('image_urls')
-                            ->label('Images')
+                            ->label('Add new images')
                             ->image()
                             ->multiple()
                             ->reorderable()
@@ -122,7 +149,7 @@ class LocationForm
                             ->visibility('public')
                             ->imageEditor()
                             ->columnSpanFull()
-                            ->helperText('Drag to reorder. Uploaded images are served from the public disk; remote seed URLs are preserved.'),
+                            ->helperText('Upload new images. They are added to the gallery above on save; existing remote/Google images are preserved.'),
                     ]),
 
                 Section::make('Details')
@@ -375,6 +402,43 @@ class LocationForm
                 'descriptions' => Location::TIER_DESCRIPTIONS,
             ])->render()
         );
+    }
+
+    /** Resolve a stored image_urls value to a displayable URL (disk path → public URL). */
+    protected static function resolveImageUrl(?string $raw): ?string
+    {
+        if (! is_string($raw) || $raw === '') {
+            return null;
+        }
+
+        return Str::startsWith($raw, ['http://', 'https://'])
+            ? $raw
+            : Storage::disk('public')->url($raw);
+    }
+
+    /** A thumbnail <img> for one current image (or a placeholder when unresolvable). */
+    protected static function imageThumb(?string $raw): HtmlString
+    {
+        $url = static::resolveImageUrl($raw);
+
+        if ($url === null) {
+            return new HtmlString('<span style="opacity:0.6;">(no image)</span>');
+        }
+
+        return new HtmlString(
+            '<img src="'.e($url).'" alt="" loading="lazy" '
+            .'style="height:7rem;width:100%;object-fit:cover;border-radius:0.5rem;display:block;" />'
+        );
+    }
+
+    /** Short label for a current-image repeater row. */
+    protected static function imageItemLabel(?string $raw): ?string
+    {
+        if (! is_string($raw) || $raw === '') {
+            return null;
+        }
+
+        return Str::startsWith($raw, ['http://', 'https://']) ? 'Remote / Google image' : basename($raw);
     }
 
     /**

@@ -120,6 +120,9 @@ class CreateLocation extends CreateRecord
 
         $data['slug'] = $this->uniqueSlugFrom($data['name'] ?? Str::random(8));
 
+        // The "Current images" repeater is edit-only; never persist its key.
+        unset($data['existing_images']);
+
         if ($user && $user->hasRole('contributor') && ! $user->hasAnyRole(['admin', 'moderator'])) {
             $data['status'] = Location::STATUS_PENDING;
             $data['submitted_by'] = $user->id;

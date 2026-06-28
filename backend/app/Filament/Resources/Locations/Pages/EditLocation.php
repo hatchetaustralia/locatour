@@ -7,27 +7,12 @@ use App\Filament\Resources\Locations\LocationResource;
 use App\Models\Location;
 use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
-use Illuminate\Support\Str;
 
 class EditLocation extends EditRecord
 {
     use SyncsLocationFromPlaces;
 
     protected static string $resource = LocationResource::class;
-
-    /**
-     * Remote (http/https) image URLs preserved across the edit. The
-     * FileUpload component only manages uploaded files on the public disk, so
-     * we hold any seeded remote URLs aside on fill and merge them back on save
-     * (spec 06 §4: "the API merges remote URLs + uploaded files").
-     *
-     * Public so Livewire persists it across requests: it's populated on the
-     * mount/fill request but read on the later save request, and a protected
-     * property would reset to [] in between — silently wiping the seed images.
-     *
-     * @var array<int, string>
-     */
-    public array $remoteImageUrls = [];
 
     protected function getHeaderActions(): array
     {
@@ -38,30 +23,41 @@ class EditLocation extends EditRecord
         ];
     }
 
+    /**
+     * Move ALL current images into the "Current images" repeater so the admin
+     * can see + remove + reorder them (the FileUpload can only render files that
+     * physically live on the disk, so remote/Google URLs were invisible). The
+     * FileUpload is left empty and only collects NEW uploads.
+     */
     protected function mutateFormDataBeforeFill(array $data): array
     {
-        $images = $data['image_urls'] ?? [];
+        $images = collect($data['image_urls'] ?? [])
+            ->filter(fn ($p) => is_string($p) && $p !== '')
+            ->values();
 
-        $this->remoteImageUrls = collect($images)
-            ->filter(fn ($path) => is_string($path) && Str::startsWith($path, ['http://', 'https://']))
-            ->values()
-            ->all();
-
-        // The FileUpload only sees disk paths; remote URLs are merged back on save.
-        $data['image_urls'] = collect($images)
-            ->reject(fn ($path) => is_string($path) && Str::startsWith($path, ['http://', 'https://']))
-            ->values()
-            ->all();
+        $data['existing_images'] = $images->map(fn (string $url): array => ['url' => $url])->all();
+        $data['image_urls'] = [];
 
         return $data;
     }
 
+    /**
+     * Rebuild image_urls from the repeater (kept images, in their current order)
+     * plus any new uploads from the FileUpload, de-duped. Removing a row in the
+     * repeater therefore drops it; untouched rows are preserved (no wipe).
+     */
     protected function mutateFormDataBeforeSave(array $data): array
     {
-        $uploaded = array_values($data['image_urls'] ?? []);
+        $kept = collect($data['existing_images'] ?? [])
+            ->map(fn ($row) => is_array($row) ? ($row['url'] ?? null) : null)
+            ->filter(fn ($url) => is_string($url) && $url !== '')
+            ->values()
+            ->all();
 
-        // Remote seed URLs first, then uploaded files, preserving order.
-        $data['image_urls'] = array_merge($this->remoteImageUrls, $uploaded);
+        $uploaded = array_values(array_filter($data['image_urls'] ?? [], fn ($p) => is_string($p) && $p !== ''));
+
+        $data['image_urls'] = array_values(array_unique(array_merge($kept, $uploaded)));
+        unset($data['existing_images']);
 
         return $data;
     }
