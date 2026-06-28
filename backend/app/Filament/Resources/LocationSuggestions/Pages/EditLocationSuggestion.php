@@ -2,14 +2,11 @@
 
 namespace App\Filament\Resources\LocationSuggestions\Pages;
 
+use App\Filament\Resources\Locations\LocationResource;
 use App\Filament\Resources\LocationSuggestions\LocationSuggestionResource;
-use App\Models\Location;
 use App\Models\LocationSuggestion;
 use Filament\Actions\Action;
-use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
-use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Support\Facades\Auth;
@@ -59,79 +56,21 @@ class EditLocationSuggestion extends EditRecord
                     $this->redirect($this->getResource()::getUrl('index'));
                 }),
 
-            // Approve the suggestion and publish it as a new Location.
-            // Only shown on pending suggestions.
-            Action::make('approveAndPublish')
-                ->label('Approve & publish')
+            // Approve → open the FULL Location create form, prefilled from this
+            // suggestion (CreateLocation reads ?suggestion=). Replaces the old
+            // one-click "publish name + coords" flow so the admin sets every field
+            // (category, points, etc.) before the location is created.
+            //
+            // We deliberately do NOT mutate the suggestion here: it is marked
+            // approved and linked (converted_location_id) by the create flow once
+            // the admin actually saves. Marking it on redirect would leave an
+            // "approved" suggestion with no location if the admin cancels.
+            Action::make('approve')
+                ->label('Approve')
                 ->icon('heroicon-o-check-circle')
                 ->color('success')
                 ->visible(fn (): bool => $this->record->status === LocationSuggestion::STATUS_PENDING)
-                ->modalHeading('Approve & publish location')
-                ->modalDescription('Configure the new location before publishing. Name and coordinates are taken from the suggestion.')
-                ->modalSubmitActionLabel('Publish location')
-                ->schema([
-                    Select::make('category')
-                        ->label('Category')
-                        ->options([
-                            'parks' => 'Parks',
-                            'scenic' => 'Scenic',
-                        ])
-                        ->required(),
-
-                    TextInput::make('points')
-                        ->label('Points reward')
-                        ->helperText(fn (): string => sprintf(
-                            'Tier is derived from points (0–%s). Default tier-1 = %s pts.',
-                            number_format(Location::maxTierPoints()),
-                            number_format(Location::defaultPointsForTier(1)),
-                        ))
-                        ->numeric()
-                        ->required()
-                        ->default(Location::defaultPointsForTier(1))
-                        ->minValue(0)
-                        ->maxValue(Location::maxTierPoints()),
-
-                    Toggle::make('is_major_destination')
-                        ->label('Major destination')
-                        ->default(false),
-
-                    Toggle::make('active')
-                        ->label('Active (visible in app)')
-                        ->default(true),
-                ])
-                ->action(function (array $data): void {
-                    /** @var LocationSuggestion $record */
-                    $record = $this->record;
-
-                    // Create the Location — tier is auto-derived from points via
-                    // the Location::booted() saving hook; slug auto-derives from name.
-                    $location = Location::create([
-                        'name' => $record->name,
-                        'latitude' => $record->latitude,
-                        'longitude' => $record->longitude,
-                        'category' => $data['category'],
-                        'points' => (int) $data['points'],
-                        'is_major_destination' => (bool) ($data['is_major_destination'] ?? false),
-                        'active' => (bool) ($data['active'] ?? true),
-                        'status' => Location::STATUS_APPROVED,
-                    ]);
-
-                    // Link suggestion → location and stamp the review.
-                    $record->update([
-                        'status' => LocationSuggestion::STATUS_APPROVED,
-                        'reviewed_by_id' => Auth::id(),
-                        'reviewed_at' => now(),
-                        'converted_location_id' => $location->id,
-                    ]);
-
-                    Notification::make()
-                        ->title('Suggestion approved')
-                        ->body(sprintf('"%s" has been published as a new location (tier %d).', $location->name, $location->tier))
-                        ->success()
-                        ->send();
-
-                    $this->redirect($this->getResource()::getUrl('index'));
-                }),
+                ->url(fn (): string => LocationResource::getUrl('create', ['suggestion' => $this->record->id])),
         ];
     }
 }
