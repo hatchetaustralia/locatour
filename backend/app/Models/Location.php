@@ -148,7 +148,13 @@ class Location extends Model
     protected static function booted(): void
     {
         static::saving(function (self $location): void {
-            $location->tier = self::tierForPoints((int) $location->points);
+            // Points are always whole — round (don't truncate) any float that
+            // slips in from the slider, the API, or a seeder before deriving tier.
+            // Read the RAW attribute: the `integer` cast truncates on read (299.9 →
+            // 299), so reading $location->points here would round the wrong value.
+            $rawPoints = $location->getAttributes()['points'] ?? 0;
+            $location->points = (int) round((float) $rawPoints);
+            $location->tier = self::tierForPoints($location->points);
 
             // Auto-derive a slug from the name when none was provided, so the
             // NOT NULL slug column is always satisfied (some bulk seeders omit it).
