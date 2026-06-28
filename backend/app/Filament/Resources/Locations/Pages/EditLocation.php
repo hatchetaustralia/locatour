@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Locations\Pages;
 
+use App\Filament\Resources\Locations\Concerns\SyncsLocationFromPlaces;
 use App\Filament\Resources\Locations\LocationResource;
 use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
@@ -9,6 +10,8 @@ use Illuminate\Support\Str;
 
 class EditLocation extends EditRecord
 {
+    use SyncsLocationFromPlaces;
+
     protected static string $resource = LocationResource::class;
 
     /**
@@ -24,6 +27,8 @@ class EditLocation extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
+            $this->googlePlacesSyncAction(),
+            $this->generateAiAction(),
             DeleteAction::make(),
         ];
     }
