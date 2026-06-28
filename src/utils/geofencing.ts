@@ -122,6 +122,36 @@ Notifications.setNotificationHandler({
   }),
 });
 
+/**
+ * Fire the nearby-spot notification for a region identifier (`type::name::id`),
+ * subject to the throttle. Shared by the background ENTER task AND the
+ * already-inside sweep in syncGeofences, so both paths build the exact same
+ * notification and honour the same quiet-hours / cooldown / daily-cap limits.
+ * No-op when the throttle says "not now" — keeps the nudge a rare delight.
+ */
+async function fireSpotNotification(identifier: string): Promise<void> {
+  const [type, name, id] = (identifier ?? '').split(SEP);
+
+  // Throttle: quiet hours, per-spot ~30-day cooldown, daily cap — keep it a rare
+  // delight, not a nag (and a commuter passing the same park isn't pinged daily).
+  if (!shouldNotify(id ?? identifier ?? '')) return;
+
+  let title: string;
+  let body: string;
+  if (type === 'hidden') {
+    title = 'Closing in… 🔍';
+    body = "Looks like you're near something hidden. Keep exploring 👀";
+  } else {
+    title = '📍 Spot nearby!';
+    body = name ? `You're near ${name} — go check in for XP!` : "There's a spot nearby — go check in!";
+  }
+
+  await Notifications.scheduleNotificationAsync({
+    content: { title, body, data: { identifier } },
+    trigger: null, // deliver immediately
+  });
+}
+
 // ── The background task. MUST be defined at module top-level so it is
 // registered when the JS bundle loads (including the headless re-launch the OS
 // uses to deliver a geofence event). Pure: reads only the region identifier.
@@ -136,26 +166,7 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
   };
   if (eventType !== Location.GeofencingEventType.Enter) return;
 
-  const [type, name, id] = (region.identifier ?? '').split(SEP);
-
-  // Throttle: quiet hours, per-spot ~30-day cooldown, daily cap — keep it a rare
-  // delight, not a nag (and a commuter passing the same park isn't pinged daily).
-  if (!shouldNotify(id ?? region.identifier ?? '')) return;
-
-  let title: string;
-  let body: string;
-  if (type === 'hidden') {
-    title = 'Closing in… 🔍';
-    body = "Looks like you're near something hidden. Keep exploring 👀";
-  } else {
-    title = '📍 Spot nearby!';
-    body = name ? `You're near ${name} — go check in for XP!` : "There's a spot nearby — go check in!";
-  }
-
-  await Notifications.scheduleNotificationAsync({
-    content: { title, body, data: { identifier: region.identifier } },
-    trigger: null, // deliver immediately
-  });
+  await fireSpotNotification(region.identifier ?? '');
 });
 
 /**
@@ -290,17 +301,57 @@ export async function syncGeofences(): Promise<void> {
       ...candidates.filter((c) => c.hidden).sort(byDist),
       ...candidates.filter((c) => !c.hidden).sort(byDist),
     ];
-    const regions = ranked.slice(0, MAX_REGIONS).map((c) => c.region);
+    const registered = ranked.slice(0, MAX_REGIONS);
+    const regions = registered.map((c) => c.region);
     if (candidates.length > MAX_REGIONS) {
       console.log(
         `[geofence] ${candidates.length} candidates exceed the ${MAX_REGIONS} cap → registered the nearest (hidden-first); some far spots are not monitored in the background.`,
       );
     }
 
+    // Field-test breadcrumb: the hidden-gem ping is validated on-device only, so
+    // surface WHY a spot did/didn't arm. Logs how many candidates we found, how
+    // many we actually registered (after the cap), and how close the NEAREST
+    // hidden spot is. If a hidden gem the user is standing near isn't listed, or
+    // its distance is already < its warm radius (~500 m), they're inside the
+    // region at registration time — the OS only fires Enter on a boundary
+    // CROSSING, so no ping. That's the first thing to check in the logs.
+    const hiddenCandidates = candidates.filter((c) => c.hidden);
+    const nearestHidden = hiddenCandidates.reduce(
+      (min, c) => Math.min(min, c.dist),
+      Number.POSITIVE_INFINITY,
+    );
+    console.log(
+      `[geofence] sync: ${candidates.length} candidates (${hiddenCandidates.length} hidden), ${regions.length} registered, nearest hidden ${
+        Number.isFinite(nearestHidden) ? `${Math.round(nearestHidden)}m` : 'n/a'
+      }${center ? '' : ' (no center fix — distances unranked)'}.`,
+    );
+
     const running = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK).catch(() => false);
     if (running) await Location.stopGeofencingAsync(GEOFENCE_TASK).catch(() => {});
     if (regions.length > 0) {
       await Location.startGeofencingAsync(GEOFENCE_TASK, regions);
+    }
+
+    // Already-inside sweep: the OS only fires ENTER on a boundary CROSSING, so a
+    // user who opens the app while ALREADY within a hidden spot's wide warm ring
+    // would never get the discovery nudge from geofencing alone — the exact case
+    // a field tester hit standing ~500 m from a hidden gem. After arming, take a
+    // cheap last-known fix (no GPS spin-up) and proactively fire the SAME hidden
+    // notification for any registered hidden region we're already inside. The
+    // shared throttle (per-spot cooldown + daily cap + quiet hours) means this
+    // can run on every app-active without ever spamming.
+    const here = (await Location.getLastKnownPositionAsync().catch(() => null))?.coords ?? null;
+    if (here) {
+      for (const c of registered) {
+        if (!c.hidden) continue; // unlocked spots: leave the ENTER ping to do its job
+        const inside =
+          distanceMeters(here, {
+            latitude: c.region.latitude,
+            longitude: c.region.longitude,
+          }) <= c.region.radius;
+        if (inside) await fireSpotNotification(c.region.identifier ?? '');
+      }
     }
   } catch (e) {
     console.warn('[geofence] sync failed', (e as Error).message);
