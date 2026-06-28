@@ -51,7 +51,6 @@ class LocationResource extends JsonResource
 
             // Public-facing visitor metadata (spec 07). All optional — null/empty
             // means "unknown", never "no".
-            'tierRationale' => $this->tier_rationale,
             'accessibility' => $this->accessibility ?? [],
             'amenities' => $this->amenities ?? [],
             'openingHours' => $this->opening_hours,

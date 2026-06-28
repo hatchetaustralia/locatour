@@ -179,7 +179,6 @@ class Location extends Model
         'points',
         'tier',
         'is_major_destination',
-        'tier_rationale',
         'description',
         'image_urls',
         'verification_tags',
