@@ -42,6 +42,14 @@ return [
     // blank. See docs/locatour/05-backend.md.
     'google_maps_key' => env('GOOGLE_MAPS_KEY'),
 
+    // OpenRouter — on-demand LLM copy generation for admin location enrichment
+    // (descriptions, tier rationales) from the enriched Places data. Key + model
+    // are env-driven; never hardcode the key. See app/Services/OpenRouterService.
+    'openrouter' => [
+        'key' => env('OPENROUTER_API_KEY'),
+        'model' => env('OPENROUTER_MODEL', 'anthropic/claude-3.5-haiku'),
+    ],
+
     // SSO: the Google OAuth *Web* client ID. Google ID tokens minted for the app
     // carry this as their `aud`, and AuthController@google rejects any token whose
     // audience doesn't match. (The Android OAuth client — package + SHA-1 — is also

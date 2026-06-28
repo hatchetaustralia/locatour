@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 class Location extends Model
@@ -254,6 +255,15 @@ class Location extends Model
     public function checkIns(): HasMany
     {
         return $this->hasMany(AppCheckIn::class, 'location_id', 'slug');
+    }
+
+    /**
+     * Full Google Places enrichment cache (raw response + downloaded photo
+     * URLs + synced_at). 1:1 sidecar — see LocationMeta + create_location_meta_table.
+     */
+    public function meta(): HasOne
+    {
+        return $this->hasOne(LocationMeta::class);
     }
 
     /**
