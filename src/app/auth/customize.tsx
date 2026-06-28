@@ -225,6 +225,8 @@ export default function CustomizeScreen() {
                   style={styles.suburbTextInput}
                   placeholder="Suburb"
                   placeholderTextColor={Brand.inkSubtle}
+                  cursorColor={Brand.ink}
+                  selectionColor={Brand.ink}
                   value={suburbQuery}
                   onChangeText={text => {
                     setSuburbQuery(text);

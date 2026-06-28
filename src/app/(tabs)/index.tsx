@@ -441,6 +441,8 @@ export default function ExploreScreen() {
   // images arrived). A 6s backstop falls back to the icon so it can never be stuck
   // blank. Reset whenever the avatar URL changes.
   const avatarTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Shared timer for the short post-load re-snapshot pulses (onLoad + first-paint).
+  const remarkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!userAvatar) return;
     setAvatarLoaded(false);
@@ -454,6 +456,23 @@ export default function ExploreScreen() {
       if (avatarTimer.current) clearTimeout(avatarTimer.current);
     };
   }, [userAvatar]);
+
+  // First map load after sign-in: the focus pulse above can fire BEFORE the avatar
+  // URL has loaded from the profile, so its re-snapshot window passes before the
+  // marker even mounts. Pulse remarkAvatar once the moment BOTH the location and the
+  // avatar are first available, so a cold sign-in snapshots a painted avatar (not
+  // only on a later tab focus). Fires once — re-focus handling lives above.
+  const firstAvatarPaintRef = useRef(false);
+  useEffect(() => {
+    if (firstAvatarPaintRef.current || !userLocation || !userAvatar) return;
+    firstAvatarPaintRef.current = true;
+    setRemarkAvatar(true);
+    if (remarkTimer.current) clearTimeout(remarkTimer.current);
+    remarkTimer.current = setTimeout(() => setRemarkAvatar(false), 800);
+    return () => {
+      if (remarkTimer.current) clearTimeout(remarkTimer.current);
+    };
+  }, [userLocation, userAvatar]);
 
   // Centre the map on the user's base once we know it AND the map is mounted, so
   // a cold start that resolves home after first paint still seeds there. Skipped
@@ -902,6 +921,11 @@ export default function ExploreScreen() {
                 appears around it while a hidden spot is nearby. */}
             {userLocation && userAvatar && (
               <Marker
+                // Re-key on the avatar URL so the moment it first becomes available
+                // the marker re-mounts with a clean snapshot cycle (avatarLoaded is
+                // false again), instead of reusing a stale empty-ring snapshot taken
+                // before the URL was known.
+                key={`user-${userAvatar}`}
                 coordinate={{
                   latitude: userLocation.coords.latitude,
                   longitude: userLocation.coords.longitude,
@@ -928,6 +952,14 @@ export default function ExploreScreen() {
                         onLoad={() => {
                           setAvatarLoaded(true);
                           if (avatarTimer.current) clearTimeout(avatarTimer.current);
+                          // Keep tracking for a short beat AFTER onLoad: on Android the
+                          // bitmap is decoded slightly before it paints into the marker
+                          // view, so freezing the snapshot the instant onLoad fires can
+                          // capture a blank frame (the empty-ring bug). This brief window
+                          // captures the painted avatar, then we settle back to frozen.
+                          setRemarkAvatar(true);
+                          if (remarkTimer.current) clearTimeout(remarkTimer.current);
+                          remarkTimer.current = setTimeout(() => setRemarkAvatar(false), 500);
                         }}
                         onError={() => {
                           setAvatarFailed(true);

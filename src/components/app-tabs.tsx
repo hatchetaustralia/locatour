@@ -53,11 +53,11 @@ export default function AppTabs() {
           <TabTrigger name="index" href="/" asChild>
             <TabButton index={0} iconOn="location" iconOff="location-outline" onActive={setActiveIndex} />
           </TabTrigger>
-          <TabTrigger name="home" href="/home" asChild>
-            <TabButton index={1} iconOn="ribbon" iconOff="ribbon-outline" onActive={setActiveIndex} />
-          </TabTrigger>
           <TabTrigger name="camera" href="/camera" asChild>
-            <TabButton index={2} iconOn="camera" iconOff="camera-outline" onActive={setActiveIndex} />
+            <TabButton index={1} iconOn="camera" iconOff="camera-outline" onActive={setActiveIndex} />
+          </TabTrigger>
+          <TabTrigger name="home" href="/home" asChild>
+            <TabButton index={2} iconOn="ribbon" iconOff="ribbon-outline" onActive={setActiveIndex} />
           </TabTrigger>
           <TabTrigger name="profile" href="/profile" asChild>
             <TabButton index={3} iconOn="person" iconOff="person-outline" onActive={setActiveIndex} avatarUrl={avatar} level={level} />
