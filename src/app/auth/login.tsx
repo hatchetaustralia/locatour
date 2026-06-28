@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandAssets, BrandText, Sticker, StampButton, StampInput } from '@/components/brand';
+import { LocatourMark } from '@/components/locatour-mark';
 import { Brand } from '@/constants/theme';
 import { signInWithGoogle, needsOnboarding } from '@/utils/account';
 import { storage } from '@/utils/storage';
@@ -75,7 +76,10 @@ export default function LoginScreen() {
       </View>
 
       <View style={[styles.column, { width: colWidth }]}>
-        <Image source={BrandAssets.logo} style={styles.logo} resizeMode="contain" />
+        <View style={styles.brandLockup}>
+          <LocatourMark size={66} color={Brand.ink} />
+          <Image source={BrandAssets.logo} style={styles.logo} resizeMode="contain" />
+        </View>
 
         <View style={styles.heading}>
           <BrandText weight="semibold" style={styles.title}>Sign in</BrandText>
@@ -165,6 +169,10 @@ const styles = StyleSheet.create({
   column: {
     alignItems: 'center',
     gap: 28,
+  },
+  brandLockup: {
+    alignItems: 'center',
+    gap: 16,
   },
   logo: {
     width: 179,
