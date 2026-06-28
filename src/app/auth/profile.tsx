@@ -14,19 +14,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandText, StampButton } from '@/components/brand';
+import { AvatarPicker } from '@/components/avatar-picker';
 import { Brand, BrandFonts, BrandRadius, stampBorder } from '@/constants/theme';
 import { storage } from '@/utils/storage';
+import { AVATAR_CATALOG } from '@/utils/avatar';
 import { checkUsernameAvailable, UsernameStatus } from '@/utils/account';
-
-// ---------------------------------------------------------------------------
-// Avatar presets — dicebear adventurer illustrations.
-// ---------------------------------------------------------------------------
-const AVATAR_PRESETS = [
-  'https://api.dicebear.com/7.x/adventurer/png?seed=Felix&backgroundColor=b6e3f4',
-  'https://api.dicebear.com/7.x/adventurer/png?seed=Aneka&backgroundColor=ffdfbf',
-  'https://api.dicebear.com/7.x/adventurer/png?seed=Jack&backgroundColor=c0aede',
-  'https://api.dicebear.com/7.x/adventurer/png?seed=Mia&backgroundColor=d1f4c9',
-];
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -46,10 +38,11 @@ export default function ProfileScreen() {
   // account's stored picture — see the mount effect below).
   const [providerAvatar, setProviderAvatar] = useState<string | null>(params.avatarUrl || null);
 
-  // Surface the provider avatar as the first (pre-selected) preset.
-  const presets = providerAvatar ? [providerAvatar, ...AVATAR_PRESETS] : AVATAR_PRESETS;
-
   const [avatar, setAvatar] = useState<string | null>(params.avatarUrl || null);
+  // The signed-in user's level gates the exclusive presets. A returning Google
+  // user re-running onboarding keeps their level; a brand-new account is level 1.
+  const [level, setLevel] = useState(1);
+  const [avatarPickerVisible, setAvatarPickerVisible] = useState(false);
   const [displayName, setDisplayName] = useState(params.displayName || '');
   const [username, setUsername] = useState(suggestedUsername);
   const [bio, setBio] = useState('');
@@ -69,10 +62,14 @@ export default function ProfileScreen() {
       if (!params.displayName && user.displayName) {
         setDisplayName((prev) => prev || user.displayName);
       }
-      if (!params.avatarUrl && user.avatarUrl) {
-        setProviderAvatar((prev) => prev ?? user.avatarUrl);
+      // Prefer the separately-stored Google photo as the provider option; fall
+      // back to the current avatarUrl for accounts saved before that field.
+      const stored = user.providerAvatarUrl || user.avatarUrl;
+      if (!params.avatarUrl && stored) {
+        setProviderAvatar((prev) => prev ?? stored);
         setAvatar((prev) => prev ?? user.avatarUrl);
       }
+      if (user.stats?.currentLevel) setLevel(user.stats.currentLevel);
     })();
     return () => {
       cancelled = true;
@@ -138,7 +135,7 @@ export default function ProfileScreen() {
       displayName: displayName.trim(),
       username: fullUsername,
       bio: bio.trim(),
-      avatarUrl: avatar || presets[0],
+      avatarUrl: avatar || providerAvatar || AVATAR_CATALOG[0].url,
       gender: '',
       homeSuburb: '',
       interests: [],
@@ -191,21 +188,17 @@ export default function ProfileScreen() {
                 Avatar (optional)
               </BrandText>
               {/*
-                Purple pill "Select an image".
+                Purple pill "Change avatar" — opens the slide-up AvatarPicker.
                 StampButton has no purple variant; compose locally so we can
                 control pill radius and background independently.
               */}
               <TouchableOpacity
                 activeOpacity={0.85}
-                onPress={() => {
-                  // Cycle through presets as a simple picker substitute.
-                  const idx = avatar ? presets.indexOf(avatar) : -1;
-                  setAvatar(presets[(idx + 1) % presets.length]);
-                }}
+                onPress={() => setAvatarPickerVisible(true)}
                 style={styles.selectImageBtn}
               >
                 <BrandText weight="semibold" color={Brand.bg} style={styles.selectImageLabel}>
-                  Select an image
+                  Change avatar
                 </BrandText>
               </TouchableOpacity>
             </View>
@@ -300,6 +293,15 @@ export default function ProfileScreen() {
           />
         </View>
       </ScrollView>
+
+      <AvatarPicker
+        visible={avatarPickerVisible}
+        currentAvatar={avatar}
+        providerAvatarUrl={providerAvatar}
+        currentLevel={level}
+        onSelect={setAvatar}
+        onClose={() => setAvatarPickerVisible(false)}
+      />
     </SafeAreaView>
   );
 }

@@ -45,6 +45,7 @@ import {
 } from '@/utils/geofencing';
 import { NEARBY_ALERTS_BONUS_PCT, deriveLevelStats } from '@/utils/leveling';
 import { avatarUri } from '@/utils/avatar';
+import { AvatarPicker } from '@/components/avatar-picker';
 import { User, Achievement, CheckIn, ExploreLocation } from '@/types';
 import { INTERESTS } from '@/constants/interests';
 
@@ -57,14 +58,6 @@ type ViewerPhoto = {
   name: string;
   date: string;
 };
-
-// Preset avatars reused from the onboarding "Create Profile" flow for consistency.
-const AVATAR_PRESETS = [
-  'https://api.dicebear.com/7.x/adventurer/png?seed=Felix&backgroundColor=b6e3f4',
-  'https://api.dicebear.com/7.x/adventurer/png?seed=Aneka&backgroundColor=ffdfbf',
-  'https://api.dicebear.com/7.x/adventurer/png?seed=Jack&backgroundColor=c0aede',
-  'https://api.dicebear.com/7.x/adventurer/png?seed=Mia&backgroundColor=d1f4c9',
-];
 
 type ProfileTab = 'overview' | 'checkins' | 'achievements';
 
@@ -307,6 +300,7 @@ export default function ProfileScreen() {
   const [editUsername, setEditUsername] = useState('');
   const [editBio, setEditBio] = useState('');
   const [editAvatar, setEditAvatar] = useState('');
+  const [avatarPickerVisible, setAvatarPickerVisible] = useState(false);
   const [displayNameError, setDisplayNameError] = useState('');
   const [usernameError, setUsernameError] = useState('');
   const [editInterests, setEditInterests] = useState<string[]>([]);
@@ -824,41 +818,23 @@ export default function ProfileScreen() {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Avatar + presets */}
+          {/* Avatar — tap "Change avatar" to open the level-gated picker sheet. */}
           <View style={styles.editAvatarRow}>
             <View style={[styles.editAvatarCircle, stampBorder, styles.roundedFull]}>
               <Image source={{ uri: editAvatar }} style={styles.editAvatarImage} />
             </View>
             <View style={styles.editAvatarMeta}>
               <BrandText weight="medium" style={styles.label}>Choose avatar</BrandText>
-              <View style={styles.presetsRow}>
-                {AVATAR_PRESETS.map((preset) => {
-                  const selected = editAvatar === preset;
-                  return (
-                    <TouchableOpacity
-                      key={preset}
-                      activeOpacity={0.85}
-                      style={[
-                        styles.presetItem,
-                        stampBorder,
-                        styles.roundedFull,
-                        selected && styles.presetItemSelected,
-                      ]}
-                      onPress={() => {
-                        editDirtyRef.current = true;
-                        setEditAvatar(preset);
-                      }}
-                    >
-                      <Image source={{ uri: preset }} style={styles.presetImage} />
-                      {selected && (
-                        <View style={styles.checkmarkBadge}>
-                          <Ionicons name="checkmark" size={10} color={Brand.surface} />
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setAvatarPickerVisible(true)}
+                style={styles.changeAvatarBtn}
+              >
+                <Ionicons name="happy-outline" size={16} color={Brand.bg} />
+                <BrandText weight="semibold" color={Brand.bg} style={styles.changeAvatarLabel}>
+                  Change avatar
+                </BrandText>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -1126,6 +1102,18 @@ export default function ProfileScreen() {
           {/* No save/done button: edits auto-save as you type, and the back arrow
               (top-left) leaves edit mode. */}
         </ScrollView>
+
+        <AvatarPicker
+          visible={avatarPickerVisible}
+          currentAvatar={editAvatar}
+          providerAvatarUrl={user.providerAvatarUrl}
+          currentLevel={user.stats.currentLevel}
+          onSelect={(url) => {
+            editDirtyRef.current = true;
+            setEditAvatar(avatarUri(url, user.displayName));
+          }}
+          onClose={() => setAvatarPickerVisible(false)}
+        />
       </SafeAreaView>
     );
   }
@@ -2609,38 +2597,19 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: Spacing.two,
   },
-  presetsRow: {
+  changeAvatarBtn: {
+    ...stampBorder,
     flexDirection: 'row',
-    gap: Spacing.two,
-  },
-  presetItem: {
-    width: 44,
-    height: 44,
-    borderBottomWidth: 2,
-    overflow: 'hidden',
-    position: 'relative',
-    backgroundColor: Brand.surface,
-  },
-  presetItemSelected: {
-    borderColor: Brand.purple,
-  },
-  presetImage: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: Brand.surface,
-  },
-  checkmarkBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: Brand.purple,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
     alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: Brand.surface,
+    alignSelf: 'flex-start',
+    gap: Spacing.one + 2,
+    borderRadius: BrandRadius.pill,
+    backgroundColor: Brand.purple,
+    height: 36,
+    paddingHorizontal: Spacing.three,
+  },
+  changeAvatarLabel: {
+    fontSize: 13,
   },
 
   fieldGroup: {
