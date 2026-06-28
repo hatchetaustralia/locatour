@@ -32,9 +32,58 @@ trait SyncsLocationFromPlaces
      * Places payload captured by a sync on the Create page, persisted to a new
      * LocationMeta in afterCreate(). Null on the Edit page (it writes immediately).
      *
+     * Public so Livewire keeps it between the sync request and the later
+     * create/save request — a protected property resets to null in between, so
+     * the captured payload would be lost before afterCreate() runs.
+     *
      * @var array<string, mixed>|null
      */
-    protected ?array $pendingPlacesMeta = null;
+    public ?array $pendingPlacesMeta = null;
+
+    /**
+     * Photo URLs downloaded by a sync, folded into the location's real image
+     * gallery (locations.image_urls) once the row is saved — that's the field
+     * the app and the edit-form gallery display. They're also cached raw in
+     * meta.photo_urls; this makes them actual location images.
+     *
+     * Public for the same cross-request reason as {@see $pendingPlacesMeta}: the
+     * sync captures them, but afterCreate()/afterSave() persists them later.
+     *
+     * @var array<int, string>
+     */
+    public array $pendingPlacesPhotos = [];
+
+    /**
+     * The Places payload to show in the "More information" modal: the persisted
+     * sidecar on the Edit page, or the pending (not-yet-saved) sync on the Create
+     * page. Null when nothing has been synced — the button stays hidden.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function syncedPlacesMeta(): ?array
+    {
+        if (isset($this->record) && $this->record instanceof Location && $this->record->meta) {
+            $meta = $this->record->meta;
+
+            return [
+                'google_place_id' => $meta->google_place_id,
+                'rating' => $meta->rating,
+                'user_ratings_total' => $meta->user_ratings_total,
+                'price_level' => $meta->price_level,
+                'business_status' => $meta->business_status,
+                'website' => $meta->website,
+                'phone' => $meta->phone,
+                'opening_hours' => $meta->opening_hours,
+                'types' => $meta->types,
+                'editorial_summary' => $meta->editorial_summary,
+                'photo_urls' => $meta->photo_urls,
+                'raw' => $meta->raw,
+                'synced_at' => $meta->synced_at,
+            ];
+        }
+
+        return $this->pendingPlacesMeta;
+    }
 
     /** "Sync from Google Places" header action (Create + Edit). */
     protected function googlePlacesSyncAction(): Action
@@ -90,8 +139,10 @@ trait SyncsLocationFromPlaces
 
                 $this->applyPlacesToForm($details);
 
-                // Download photos (resilient — never throws); cache URLs on meta.
+                // Download photos (resilient — never throws); cache URLs on meta
+                // AND fold them into the real image gallery (image_urls) on save.
                 $photoUrls = $places->downloadPhotos($placeId, $details['photo_refs'] ?? []);
+                $this->pendingPlacesPhotos = $photoUrls;
 
                 $payload = $this->buildMetaPayload($placeId, $details, $photoUrls);
 
@@ -105,8 +156,8 @@ trait SyncsLocationFromPlaces
                 Notification::make()
                     ->title('Synced from Google Places')
                     ->body(sprintf(
-                        'Filled the empty fields%s. Review, then save.',
-                        $photoUrls === [] ? '' : ' and cached '.count($photoUrls).' photo(s)',
+                        'Filled any empty fields%s. Open “More information” to see everything Google returned, then save.',
+                        $photoUrls === [] ? '' : ' and added '.count($photoUrls).' photo(s) to the gallery',
                     ))
                     ->success()
                     ->send();
@@ -264,6 +315,30 @@ trait SyncsLocationFromPlaces
             ['location_id' => $location->getKey()],
             $payload,
         );
+    }
+
+    /**
+     * Fold the synced Places photos into a location's real image gallery
+     * (locations.image_urls) and save. The Sync action only cached them in the
+     * meta sidecar before; this makes them actual images the app and the form
+     * gallery show. De-duped and idempotent — re-syncs reuse the same stable
+     * photo URLs, so nothing doubles up.
+     */
+    protected function persistPlacesPhotos(Location $location): void
+    {
+        if ($this->pendingPlacesPhotos === []) {
+            return;
+        }
+
+        $existing = array_values(array_filter((array) $location->image_urls));
+        $merged = array_values(array_unique(array_merge($existing, $this->pendingPlacesPhotos)));
+
+        if ($merged !== $existing) {
+            $location->image_urls = $merged;
+            $location->save();
+        }
+
+        $this->pendingPlacesPhotos = [];
     }
 
     /** System steer for the AI description draft. */

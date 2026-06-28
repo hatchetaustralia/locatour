@@ -92,27 +92,37 @@ class CreateLocation extends CreateRecord
             $this->persistPlacesMeta($this->record, $this->pendingPlacesMeta);
             $this->pendingPlacesMeta = null;
         }
+
+        if ($this->record instanceof Location) {
+            // Make any synced Places photos real images on the new row.
+            $this->persistPlacesPhotos($this->record);
+        }
     }
 
     /**
      * Force submission metadata before the record is created.
      *
-     * Contributors:
+     * Everyone:
+     *   - slug is auto-derived from the name and made unique (it's no longer a
+     *     form field; the app id is never hand-crafted). On edit it never
+     *     changes, so check-ins keyed on slug stay intact.
+     *
+     * Contributors additionally:
      *   - status is forced to pending (they cannot self-approve)
      *   - submitted_by is forced to their own id
-     *   - slug is auto-derived from the name (they don't see/set the slug field)
      *
-     * Staff (admin/moderator) keep whatever they entered in the form
-     * (status defaults to approved, slug is required in their form).
+     * Staff (admin/moderator) keep whatever else they entered (status defaults
+     * to approved in the form).
      */
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $user = Filament::auth()->user();
 
+        $data['slug'] = $this->uniqueSlugFrom($data['name'] ?? Str::random(8));
+
         if ($user && $user->hasRole('contributor') && ! $user->hasAnyRole(['admin', 'moderator'])) {
             $data['status'] = Location::STATUS_PENDING;
             $data['submitted_by'] = $user->id;
-            $data['slug'] = $this->uniqueSlugFrom($data['name'] ?? Str::random(8));
         }
 
         return $data;

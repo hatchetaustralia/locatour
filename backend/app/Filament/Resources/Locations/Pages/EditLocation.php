@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Locations\Pages;
 
 use App\Filament\Resources\Locations\Concerns\SyncsLocationFromPlaces;
 use App\Filament\Resources\Locations\LocationResource;
+use App\Models\Location;
 use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Support\Str;
@@ -20,9 +21,13 @@ class EditLocation extends EditRecord
      * we hold any seeded remote URLs aside on fill and merge them back on save
      * (spec 06 §4: "the API merges remote URLs + uploaded files").
      *
+     * Public so Livewire persists it across requests: it's populated on the
+     * mount/fill request but read on the later save request, and a protected
+     * property would reset to [] in between — silently wiping the seed images.
+     *
      * @var array<int, string>
      */
-    protected array $remoteImageUrls = [];
+    public array $remoteImageUrls = [];
 
     protected function getHeaderActions(): array
     {
@@ -59,5 +64,17 @@ class EditLocation extends EditRecord
         $data['image_urls'] = array_merge($this->remoteImageUrls, $uploaded);
 
         return $data;
+    }
+
+    /**
+     * Fold any photos captured by a "Sync from Google Places" run into the
+     * saved image gallery (image_urls) — runs after the form's own image merge,
+     * so synced photos become real, displayed images. No-op on a plain save.
+     */
+    protected function afterSave(): void
+    {
+        if ($this->record instanceof Location) {
+            $this->persistPlacesPhotos($this->record);
+        }
     }
 }
