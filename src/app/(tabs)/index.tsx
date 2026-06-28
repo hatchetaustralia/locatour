@@ -26,6 +26,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandText } from '@/components/brand';
 import { HiddenNearbyBar } from '@/components/hidden-nearby-bar';
 import { RainbowGlowMarker } from '@/components/rainbow-glow-marker';
+import { useUserAvatarMarker } from '@/components/user-avatar-marker';
 import { SuggestLocationSheet } from '@/components/suggest-location-sheet';
 import { LocationLoadingBar } from '@/components/location-loading-bar';
 import { Brand, Spacing, stampBorder, BrandRadius } from '@/constants/theme';
@@ -659,6 +660,16 @@ export default function ExploreScreen() {
   const hiddenNearbyDist = nearestHidden?.warm ? hiddenDistanceM : null;
   const hiddenInReachId = hiddenInRange ? nearestHidden?.spot.id ?? null : null;
 
+  // Baked "you are here" avatar PNGs (cold + hot) for the native Marker path. On
+  // Android the avatar is a <Marker image={...} /> of this static bitmap — it
+  // tracks the map in lock-step and can't go white or vanish (unlike a View-child
+  // Marker). null while baking / on failure → we fall back to the RN overlay below.
+  const avatarImages = useUserAvatarMarker(userAvatar);
+  const avatarHot = hiddenNearbyDist != null;
+  // Use the native baked marker only on Android (where the View-child snapshot
+  // bugs live). iOS/web keep the projected RN overlay, which is reliable there.
+  const useAvatarMarker = Platform.OS === 'android' && !!avatarImages && !!userLocation;
+
   useEffect(() => {
     // Reaching a hidden spot on the map unlocks it (persists on the map) AND
     // opens its slide card right there — so the explorer can read about it and
@@ -936,6 +947,25 @@ export default function ExploreScreen() {
               </Marker>
             ))}
 
+            {/* "You are here" — native Marker of a STATIC baked PNG (Android). A
+                single bitmap handed to the native Google Maps marker tracks pan/zoom
+                in lock-step and never goes white / is dropped on tab focus, unlike a
+                View-child Marker. The cold/hot variants swap the rainbow halo; the
+                key forces the native icon to refresh on that (infrequent) toggle. */}
+            {useAvatarMarker && Marker && (
+              <Marker
+                key={avatarHot ? 'avatar-hot' : 'avatar-cold'}
+                coordinate={{
+                  latitude: userLocation!.coords.latitude,
+                  longitude: userLocation!.coords.longitude,
+                }}
+                image={{ uri: avatarHot ? avatarImages!.hot : avatarImages!.cold }}
+                anchor={{ x: 0.5, y: 0.5 }}
+                tracksViewChanges={false}
+                zIndex={999}
+              />
+            )}
+
             {/* Pending suggestion pin: while the "suggest a location" flow is open,
                 drop a temporary dashed ghost marker at the exact picked coordinate so
                 the explorer can confirm the spot. Deliberately distinct from real
@@ -970,7 +1000,7 @@ export default function ExploreScreen() {
             white on cold load or vanish after a tab switch; it reprojects on every
             region change so it tracks pan/zoom, and hides when off the visible map.
             pointerEvents="none" so map gestures pass straight through it. */}
-        {Platform.OS !== 'web' && MapView && userLocation && userAvatar && avatarScreenPos && (
+        {Platform.OS !== 'web' && MapView && !useAvatarMarker && userLocation && userAvatar && avatarScreenPos && (
           <View
             pointerEvents="none"
             style={[
