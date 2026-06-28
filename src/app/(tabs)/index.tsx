@@ -174,6 +174,12 @@ export default function ExploreScreen() {
   // If the remote avatar image fails (or never loads), fall back to an icon so the
   // "you are here" marker still shows something (never an empty ring).
   const [avatarFailed, setAvatarFailed] = useState(false);
+  // react-native-maps freezes a custom marker's bitmap once tracksViewChanges goes
+  // false (perf). When the map tab loses then regains focus the OS can drop that
+  // frozen avatar snapshot, and since tracking is already off it never re-snapshots
+  // — so the avatar vanishes. On focus we flip this true for a brief window to force
+  // a re-paint, then settle back to the frozen (performant) state.
+  const [remarkAvatar, setRemarkAvatar] = useState(false);
   // Live map heading (degrees) — drives the compass rose's north needle.
   const [mapHeading, setMapHeading] = useState(0);
   const [visitedLogs, setVisitedLogs] = useState<CheckIn[]>([]);
@@ -397,6 +403,19 @@ export default function ExploreScreen() {
       // Pull the admin-managed announcement (null = show nothing).
       fetchAnnouncement().then(setAnnouncement).catch(() => {});
     }, [refresh])
+  );
+
+  // On focus, force the avatar marker to re-snapshot for a short window so it
+  // reappears every time the map regains focus (react-native-maps drops the frozen
+  // custom-marker bitmap on a focus change). We settle back to the frozen state
+  // after a beat so tracksViewChanges isn't left permanently true (which hurts map
+  // perf). See remarkAvatar above.
+  useFocusEffect(
+    useCallback(() => {
+      setRemarkAvatar(true);
+      const t = setTimeout(() => setRemarkAvatar(false), 600);
+      return () => clearTimeout(t);
+    }, [])
   );
 
   // Whenever a spot is opened (via a marker tap or a deep-link selectedId),
@@ -889,8 +908,9 @@ export default function ExploreScreen() {
                 }}
                 anchor={{ x: 0.5, y: 0.5 }}
                 // Track until the avatar paints; also while a hidden spot is near
-                // so the glow renders. Frozen otherwise (perf).
-                tracksViewChanges={!avatarLoaded || hiddenNearbyDist != null}
+                // so the glow renders, and briefly on focus (remarkAvatar) so the
+                // marker re-snapshots after a tab switch. Frozen otherwise (perf).
+                tracksViewChanges={!avatarLoaded || hiddenNearbyDist != null || remarkAvatar}
               >
                 <View style={styles.userMarkerWrap}>
                   {/* Static rainbow halo (matches the camera shutter glow) shown
