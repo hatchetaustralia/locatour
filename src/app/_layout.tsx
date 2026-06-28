@@ -9,16 +9,17 @@ import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import React, { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
+import { AppState, useColorScheme } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { checkLevelingInvariants } from '@/utils/leveling';
 import { syncAccount, uploadPendingCheckIns, ensureHomeCoordinates } from '@/utils/account';
-// Side-effect import: registers the background geofencing task + the foreground
-// notification handler at module load — including the headless re-launch the OS
-// uses to deliver a geofence event while the app is closed (spec 08, Phase 2).
-import '@/utils/geofencing';
+// Side-effect import registers the background geofencing task + foreground
+// notification handler at module load (incl. the headless re-launch the OS uses
+// to deliver a geofence event while the app is closed, spec 08, Phase 2).
+// `refreshGeofencesOnFocus` re-arms the monitored set as the user moves.
+import { refreshGeofencesOnFocus } from '@/utils/geofencing';
 
 // Dev-only self-check: fail loudly in the console if the OSRS leveling curve or
 // tier/point constants ever drift from the spec (leveling.ts is the single
@@ -57,17 +58,41 @@ export default function RootLayout() {
     void ensureHomeCoordinates();
   }, []);
 
-  // Deep-link a tapped proximity notification straight to the map with that
-  // location pre-selected + ready to check in (spec 08, Phase 2). The geofence
-  // task stamps the region identifier ("type::name::id") into the payload; we
-  // pull the id back out here. Handles both a running app and a cold start.
+  // Re-arm background geofences whenever the app becomes active — at the ROOT,
+  // not just on a single screen. The Home tab also refreshes on focus, but the
+  // app now cold-starts on the map (the index route) and a user can spend a
+  // whole session there without ever opening Home; without this, the monitored
+  // set would never re-sync as they move, so a hidden gem entered far from where
+  // the geofences were last armed never fires. Opt-in + permission gated inside
+  // refreshGeofencesOnFocus, so this is a no-op when Nearby Alerts is off.
+  useEffect(() => {
+    void refreshGeofencesOnFocus();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refreshGeofencesOnFocus();
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Deep-link a tapped proximity notification to the map (spec 08, Phase 2). The
+  // geofence task stamps the region identifier ("type::name::id") into the
+  // payload; we pull the type + id back out here. Branch on the type:
+  //   • UNLOCKED spot → open the map with the spot card selected + ready to
+  //     check in (pass selectedId).
+  //   • HIDDEN spot   → open the MAP ONLY, no selectedId — revealing/opening the
+  //     card would spoil the surprise the hidden-gem nudge is meant to preserve.
+  // Handles both a running app and a cold start.
   useEffect(() => {
     const openFromNotification = (response: Notifications.NotificationResponse | null) => {
       const identifier = response?.notification?.request?.content?.data?.identifier;
       if (typeof identifier !== 'string') return;
-      const id = identifier.split('::')[2];
-      if (!id) return;
+      const [type, , id] = identifier.split('::');
       // Defer a tick so the navigator is mounted on a cold start.
+      if (type === 'hidden') {
+        // Just open the map — don't reveal the hidden spot.
+        setTimeout(() => router.push('/'), 0);
+        return;
+      }
+      if (!id) return;
       setTimeout(() => router.push({ pathname: '/', params: { selectedId: id } }), 0);
     };
 
