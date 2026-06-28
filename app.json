@@ -9,6 +9,12 @@
       }
     },
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "fingerprint"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/df417321-c3f6-409d-8232-019491d948c4"
+    },
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "locatour",

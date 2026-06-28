@@ -13,6 +13,7 @@
     },
     "preview": {
       "distribution": "internal",
+      "channel": "preview",
       "android": {
         "buildType": "apk"
       },
@@ -22,6 +23,7 @@
       }
     },
     "production": {
+      "channel": "production",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://locatour-production-acllqt.laravel.cloud",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "497605846776-r399oopeutqlvf3fpt117774v49m0odm.apps.googleusercontent.com"
