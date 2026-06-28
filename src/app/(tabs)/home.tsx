@@ -18,7 +18,7 @@ import { BlurredText } from '@/components/blurred-text';
 import { Skeleton, SkeletonGroup } from '@/components/skeleton';
 import { Brand, BrandRadius, Spacing, stampBorder } from '@/constants/theme';
 import { storage } from '@/utils/storage';
-import { unlockedTier, rarityForTier } from '@/utils/leveling';
+import { unlockedTier, rarityForTier, levelForTier } from '@/utils/leveling';
 import { getConfig, tierRadiusBoost } from '@/utils/runtime-config';
 import { refreshGeofencesOnFocus } from '@/utils/geofencing';
 import { formatDistanceAway } from '@/utils/hidden-detection';
@@ -132,6 +132,25 @@ export default function HomeScreen() {
   if (!user) return null;
 
   const unlocked = unlockedTier(user.stats.currentLevel);
+
+  // Mystery-preserving teaser for the locked-spot popup: NEVER reveals the name or
+  // any identifying detail (that would defeat the blur). Instead it leans into the
+  // chase — the spot's rarity/tier and exactly how many levels remain to unlock it.
+  // levelForTier is the inverse of unlockedTier, so the gap is the real number of
+  // levels to go. Returns '' when nothing is selected (modal isn't shown then).
+  const lockedTeaser = (): string => {
+    if (!lockedInfo) return '';
+    const tier = lockedInfo.tier;
+    const rarity = rarityForTier(tier);
+    const toGo = Math.max(0, levelForTier(tier) - user.stats.currentLevel);
+    if (toGo <= 0) {
+      // Edge case (already at/over the gate but still flagged locked): stay graceful.
+      return `This is a ${rarity} (Tier ${tier}) spot — you're right on the cusp! One more push and it opens for you to discover.`;
+    }
+    const levels = toGo === 1 ? '1 level' : `${toGo} levels`;
+    return `This is a ${rarity} (Tier ${tier}) spot — you're ${levels} from unlocking it! Keep getting outside and checking in.`;
+  };
+
   // Server-tunable radii/ranges, read at render time so admin edits apply live.
   const cfg = getConfig();
   // The tier-filtered slice that drives the card lists, derived from the shared
@@ -494,12 +513,18 @@ export default function HomeScreen() {
         >
           <View style={styles.confirmOverlay}>
             <View style={[styles.confirmCard, stampBorder]}>
+              {/* Fun hiking mascot — keeps the popup playful and on-brand while the
+                  spot itself stays a mystery (no name, no photo, no location). */}
+              <Image
+                source={BrandAssets.stickerHiking}
+                style={styles.lockedMascot}
+                resizeMode="contain"
+              />
               <BrandText weight="semibold" style={styles.confirmTitle}>
-                Not quite ready
+                🔒 Locked for now
               </BrandText>
               <BrandText weight="medium" color={Brand.inkSecondary} style={styles.confirmBody}>
-                {lockedInfo?.name} is still locked. Keep getting out there and checking in, and as
-                you level up spots like this open for you to discover.
+                {lockedTeaser()}
               </BrandText>
               <TouchableOpacity
                 style={[styles.confirmButton, styles.confirmKeep, stampBorder]}
@@ -944,13 +969,21 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
     gap: Spacing.two,
   },
+  lockedMascot: {
+    width: 88,
+    height: 88,
+    alignSelf: 'center',
+    marginBottom: Spacing.one,
+  },
   confirmTitle: {
     fontSize: 18,
     color: Brand.ink,
+    textAlign: 'center',
   },
   confirmBody: {
     fontSize: 14,
     lineHeight: 20,
+    textAlign: 'center',
   },
   confirmButton: {
     height: 46,
