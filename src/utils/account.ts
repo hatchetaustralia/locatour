@@ -407,10 +407,9 @@ export async function registerAccount(user: User): Promise<RegisterResult> {
 
 /**
  * Push the local profile + stats to the server for the authed account.
- * Fire-and-forget on app start. No-op (returns false) when there's no token yet
- * (the device hasn't completed onboarding/registration) — registerAccount must
- * run first. If the token is somehow missing on a registered device, this falls
- * back to a register so we self-heal.
+ * Fire-and-forget on app start. No-op (returns false) when there's no token —
+ * i.e. the user hasn't signed in with Google yet. Google sign-in is the ONLY path
+ * that may create a backend account, so this never registers/creates one itself.
  */
 export async function syncAccount(): Promise<boolean> {
   try {
@@ -418,8 +417,11 @@ export async function syncAccount(): Promise<boolean> {
     const user = await storage.getUser();
     if (!user) return false;
 
-    // No token yet → register first (which also persists the token).
-    if (!token) return (await registerAccount(user)).ok;
+    // No token → the user hasn't completed Google sign-in. Do NOT register an
+    // anonymous device account: that spawned orphan backend app_users (no email /
+    // google_id, just a device_id) on every fresh launch. Stay signed-out
+    // server-side and let the auth gate route the user to the Google login screen.
+    if (!token) return false;
 
     const res = await fetchWithFallback('/api/account/sync', {
       method: 'POST',
@@ -433,13 +435,13 @@ export async function syncAccount(): Promise<boolean> {
     if (!res) return false;
     if (noteBlockedIf403(res)) return false;
     // 401 = the stored token is stale/invalid (e.g. the backend DB was reset, so
-    // the server no longer knows this token). Without this we'd be stuck forever:
-    // the device HAS a token so it never re-registers, but every sync 401s and no
-    // app_user is ever created. Clear the dead token and register fresh —
-    // registerAccount upserts by device_id and mints a new valid token.
+    // the server no longer knows this token). Drop the dead token, but do NOT
+    // re-register: minting a fresh device account here would create an anonymous
+    // app_user divorced from the Google identity. The user must sign in with
+    // Google again, which re-mints a valid token against their real account.
     if (res.status === 401) {
       storage.clearToken();
-      return (await registerAccount(user)).ok;
+      return false;
     }
     return res.ok;
   } catch (e) {

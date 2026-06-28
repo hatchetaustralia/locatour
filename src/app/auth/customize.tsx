@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BrandText, StampButton } from '@/components/brand';
 import { Brand, BrandFonts, BrandRadius, stampBorder } from '@/constants/theme';
 import { storage } from '@/utils/storage';
-import { registerAccount } from '@/utils/account';
+import { syncAccount } from '@/utils/account';
 import { INTERESTS } from '@/constants/interests';
 import { fetchSuburbs, fetchPlaceCoordinates, SuburbSuggestion } from '@/utils/places';
 
@@ -139,13 +139,16 @@ export default function CustomizeScreen() {
       await storage.customizeInterests(gender, suburb, selectedInterests, homeCoordinates);
     }
 
-    // Register the real, persistent server account now that the local user is
-    // saved (device_id = the local uid). Network failures stay fail-soft:
-    // onboarding still completes and syncAccount() retries on the next app start.
+    // Push the onboarding profile (home base, interests, gender) to the server.
+    // The backend account already exists from the Google sign-in that gated entry
+    // here, so we SYNC the existing Google-owned account rather than registering a
+    // new one — registering would spawn an anonymous device account. Network
+    // failures stay fail-soft: onboarding still completes and the next app start
+    // re-syncs.
     const finalUser = await storage.getUser();
     if (finalUser) {
       setSubmitting(true);
-      await registerAccount(finalUser);
+      await syncAccount();
       setSubmitting(false);
     }
 
