@@ -51,6 +51,9 @@ Data held only on your device is also wiped when you delete from within the app.
 - **Aggregated, anonymised statistics** that are not linked to you as an
   individual (for example, total visits to a public location) may be retained,
   as they contain no personal information.
+- **Community location suggestions** you submitted are kept so the places you
+  helped add stay on the map, but they are **de-identified** — the link to your
+  account is removed when you delete it.
 - We may retain limited records where the law requires us to (for example, to
   comply with a legal obligation). Where this applies, the data is kept only as
   long as necessary and then deleted.
