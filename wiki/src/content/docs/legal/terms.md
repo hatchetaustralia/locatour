@@ -1,6 +1,6 @@
 ---
 title: Terms & Conditions
-description: The terms for using Locatour — eligibility, acceptable use, your photos and content, safety and assumption of risk, intellectual property, and the legal basics.
+description: "The terms for using Locatour: eligibility, acceptable use, your photos and content, safety and assumption of risk, intellectual property, and the legal basics."
 ---
 
 **Effective date:** 29 June 2026
@@ -64,8 +64,8 @@ that violates these Terms.
 
 ## 6. Our intellectual property
 
-The Service — including the Locatour name, logo, software, design, game systems,
-and content we provide — is owned by **Hatchet Pty Ltd** or its licensors and
+The Service, including the Locatour name, logo, software, design, game systems,
+and content we provide, is owned by **Hatchet Pty Ltd** or its licensors and
 is protected by intellectual property laws. We grant you a limited, personal,
 non-transferable, revocable licence to use the Service for its intended purpose.
 You may not copy, modify, distribute, or create derivative works from it except

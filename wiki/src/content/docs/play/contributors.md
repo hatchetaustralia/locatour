@@ -1,6 +1,6 @@
 ---
 title: Becoming a contributor
-description: How trusted, high-level Locatour players help curate the map — suggesting and reviewing public locations through a community moderation system, RuneScape- and Wikipedia-style.
+description: How trusted, high-level Locatour players help curate the map, suggesting and reviewing public locations through a community moderation system, RuneScape- and Wikipedia-style.
 ---
 
 Locatour's map is curated with the help of its most dedicated players. As you
@@ -16,10 +16,10 @@ designed to work; exact availability may vary as we expand it.
 
 Trusted players help keep the map great:
 
-- **Suggest new locations** — public, non-commercial places worth adding.
-- **Improve existing ones** — better descriptions, photos, categories, and
+- **Suggest new locations:** public, non-commercial places worth adding.
+- **Improve existing ones:** better descriptions, photos, categories, and
   accuracy.
-- **Help review submissions** — so the places that go live are genuinely
+- **Help review submissions:** so the places that go live are genuinely
   public, safe, and worth visiting.
 
 ## Why it's earned, not open
@@ -37,15 +37,15 @@ anyone passing through.
 
 Keep playing, keep exploring, and keep levelling up. As you reach the higher
 levels, you become eligible to be invited into contributor and moderator roles.
-It's a natural extension of the journey — the explorers who've seen the most are
+It's a natural extension of the journey: the explorers who've seen the most are
 the ones best placed to help others discover it too.
 
 ## The standard we hold
 
 Every location on Locatour should be:
 
-- **Public and non-commercial** — owned by everyone, free to visit.
+- **Public and non-commercial:** owned by everyone, free to visit.
 - **Safe and accessible** to reach responsibly.
-- **Worth the trip** — somewhere that helps create a memorable experience.
+- **Worth the trip:** somewhere that helps create a memorable experience.
 
 Contributors are the guardians of that standard.

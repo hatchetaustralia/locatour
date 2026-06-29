@@ -1,13 +1,13 @@
 ---
 title: Delete Your Account & Data
-description: How to permanently delete your Locatour account and all associated data — directly in the app, or by request — and exactly what gets removed.
+description: How to permanently delete your Locatour account and all associated data, directly in the app or by request, and exactly what gets removed.
 ---
 
 **Effective date:** 29 June 2026
 
 Locatour gives you a way to **permanently delete your account and all of your
 data, directly from within the app**. This page explains how, and what is
-removed — it is also the public deletion request URL referenced in our Google
+removed. It is also the public deletion request URL referenced in our Google
 Play Data Safety declaration.
 
 ## Delete your account in the app (recommended)
@@ -16,7 +16,7 @@ Play Data Safety declaration.
 2. Scroll to the bottom and tap **Delete account**.
 3. Confirm when prompted. The action is **immediate and irreversible**.
 
-You don't need to contact us — this removes everything below straight away.
+You don't need to contact us. This removes everything below straight away.
 
 ## Request deletion without the app
 
@@ -27,7 +27,7 @@ us to delete it. We'll verify your identity and process the deletion within
 
 ## What gets deleted
 
-Deleting your account **permanently removes all of the following** — there is no
+Deleting your account **permanently removes all of the following**. There is no
 recovery and no grace period:
 
 - Your **account** (name, email, and the identifier linking you to your Google
@@ -46,7 +46,7 @@ Data held only on your device is also wiped when you delete from within the app.
   individual (for example, total visits to a public location) may be retained,
   as they contain no personal information.
 - **Community location suggestions** you submitted are kept so the places you
-  helped add stay on the map, but they are **de-identified** — the link to your
+  helped add stay on the map, but they are **de-identified**: the link to your
   account is removed when you delete it.
 - We may retain limited records where the law requires us to (for example, to
   comply with a legal obligation). Where this applies, the data is kept only as

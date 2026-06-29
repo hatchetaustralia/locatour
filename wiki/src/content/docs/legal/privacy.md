@@ -1,6 +1,6 @@
 ---
 title: Privacy Policy
-description: How Locatour collects, uses, and protects your information — your account, location at check-in, photos, and gameplay data — and the privacy controls you have, including data deletion.
+description: How Locatour collects, uses, and protects your information (your account, location at check-in, photos, and gameplay data), and the privacy controls you have, including data deletion.
 ---
 
 **Effective date:** 29 June 2026
@@ -16,24 +16,24 @@ use the Service.
 
 **Information you provide**
 
-- **Account details** — such as your name, avatar, and the email address or
+- **Account details:** such as your name, avatar, and the email address or
   sign-in identifier you register with.
-- **Profile preferences** — the interest categories you select.
+- **Profile preferences:** the interest categories you select.
 
 **Information from playing the game**
 
-- **Location data** — at the time you check in, we collect your device's GPS
+- **Location data:** at the time you check in, we collect your device's GPS
   position and accuracy to verify you are at a location. By default we do **not**
   collect your location in the background. If you opt in to **Nearby alerts**
   (see Section 3), we additionally use background location to notify you when you
   are near a location, matched against nearby places on your device.
-- **Photos** — the photos you take in the app when you check in.
-- **Gameplay data** — your check-ins, experience, levels, streaks,
+- **Photos:** the photos you take in the app when you check in.
+- **Gameplay data:** your check-ins, experience, levels, streaks,
   achievements, and history.
 
 **Information collected automatically**
 
-- **Device and usage data** — basic technical information such as device type,
+- **Device and usage data:** basic technical information such as device type,
   operating system, app version, and diagnostic/crash data, used to operate and
   improve the Service.
 
@@ -43,7 +43,7 @@ We do not knowingly collect more than we need to run the game.
 
 We use your information to:
 
-- Provide the core game — verify check-ins, award experience, and track your
+- Provide the core game: verify check-ins, award experience, and track your
   progress.
 - Personalise the places and content we show you based on your interests.
 - Maintain your history of visited places and photos.
@@ -61,7 +61,7 @@ and we do **not** run background location tracking.
 
 **Optional background location (Nearby alerts).** You may choose to enable
 "Nearby alerts," which uses your device's background location to notify you when
-you are near a Locatour place — including when the app is closed. This feature:
+you are near a Locatour place, including when the app is closed. This feature:
 
 - is **off by default** and never enabled without your action;
 - requests background ("allow all the time") location permission only **after**

@@ -1,6 +1,6 @@
 ---
 title: Locatour FAQ
-description: Common questions about Locatour answered — what it is, how check-ins work, whether it's free, how to unlock hidden places, what data it uses, and how to get help.
+description: "Common questions about Locatour answered: what it is, how check-ins work, whether it's free, how to unlock hidden places, what data it uses, and how to get help."
 head:
   - tag: script
     attrs:
@@ -92,7 +92,7 @@ Common questions about playing Locatour. Can't find what you need? Reach us at
 ## What is Locatour?
 
 Locatour is a real-world exploration game. You physically visit public,
-non-commercial places — parks, lookouts, beaches, trails — check in with your
+non-commercial places (parks, lookouts, beaches, trails), check in with your
 phone's location and a photo, and earn experience that unlocks more of the map,
 including hidden places. See [What is Locatour?](/start/what-is-locatour/).
 
@@ -125,14 +125,14 @@ locations](/play/hidden-locations/).
 
 **Not by default.** Out of the box, Locatour uses your location **only at the
 moment you check in**. Background location is used **only if you choose to turn
-on [Nearby alerts](/play/nearby-alerts/)** — and even then your position is
+on [Nearby alerts](/play/nearby-alerts/)**, and even then your position is
 matched against nearby spots on your device, never recorded as a trail or
 shared.
 
 ## What are Nearby alerts?
 
 An optional, opt-in feature that gives you a gentle notification when you wander
-near a Locatour spot — even with the app closed — and earns you a permanent
+near a Locatour spot, even with the app closed, and earns you a permanent
 **+20% points bonus** on every check-in. It's off by default, sips battery, is
 strictly throttled so it never spams you, and can be switched off any time. See
 [Nearby alerts](/play/nearby-alerts/).
@@ -145,10 +145,10 @@ security](/trust/data-and-security/).
 
 ## Can I delete my account and data?
 
-Yes. You can request deletion of your account and associated data — see the
+Yes. You can request deletion of your account and associated data. See the
 [Privacy Policy](/legal/privacy/) for how.
 
-## A check-in won't go through — what do I do?
+## A check-in won't go through. What do I do?
 
 It's almost always something simple: get closer to the exact spot, step into the
 open for a better GPS signal, make sure location is enabled, or wait until

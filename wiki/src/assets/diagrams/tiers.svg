@@ -4,18 +4,18 @@
 
   <!-- low tier -->
   <rect x="40" y="70" width="840" height="62" rx="12" fill="#dcefdf" stroke="#3aa05a" stroke-width="2"/>
-  <text x="64" y="98" font-size="15" font-weight="700" fill="#2a1a14">🌳 Open to everyone — low tier</text>
+  <text x="64" y="98" font-size="15" font-weight="700" fill="#2a1a14">🌳 Open to everyone: low tier</text>
   <text x="64" y="120" font-size="13" fill="#4a3a30">Robust, well-serviced, already-popular places (a big city park, a famous lookout). Modest reward.</text>
 
   <!-- middle -->
   <rect x="40" y="142" width="840" height="62" rx="12" fill="#FCF0E8" stroke="#b46c00" stroke-width="2"/>
-  <text x="64" y="170" font-size="15" font-weight="700" fill="#2a1a14">⛰️ Unlocks as you level — middle tiers</text>
+  <text x="64" y="170" font-size="15" font-weight="700" fill="#2a1a14">⛰️ Unlocks as you level: middle tiers</text>
   <text x="64" y="192" font-size="13" fill="#4a3a30">Quieter trails, reserves and spots that reward your growing experience.</text>
 
   <!-- high tier -->
   <rect x="40" y="214" width="840" height="62" rx="12" fill="#f7d9d5" stroke="#d1453b" stroke-width="2"/>
-  <text x="64" y="242" font-size="15" font-weight="700" fill="#2a1a14">🔒 Hidden &amp; level-gated — high tier</text>
-  <text x="64" y="264" font-size="13" fill="#4a3a30">Fragile, facility-free, unpublicised gems (a secret waterfall). Greatest reward — and protected by progression.</text>
+  <text x="64" y="242" font-size="15" font-weight="700" fill="#2a1a14">🔒 Hidden &amp; level-gated: high tier</text>
+  <text x="64" y="264" font-size="13" fill="#4a3a30">Fragile, facility-free, unpublicised gems (a secret waterfall). Greatest reward, and protected by progression.</text>
 
   <!-- arrow up the side -->
   <line x1="22" y1="270" x2="22" y2="84" stroke="#d1453b" stroke-width="2.5" marker-end="url(#au)"/>

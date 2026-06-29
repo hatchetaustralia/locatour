@@ -1,6 +1,6 @@
 ---
 title: Your data & security
-description: A plain-language summary of what Locatour collects and why — your account, location at check-in, and check-in photos — how we protect it, and the controls you have. The full detail is in the Privacy Policy.
+description: A plain-language summary of what Locatour collects and why (your account, location at check-in, and check-in photos), how we protect it, and the controls you have. The full detail is in the Privacy Policy.
 ---
 
 Here's the honest, plain-language version of what Locatour collects, why, and
@@ -9,16 +9,16 @@ Policy](/legal/privacy/); this page is the friendly summary.
 
 ## What we collect, and why
 
-- **Your account** — things like your name, avatar, and sign-in details, so you
+- **Your account:** things like your name, avatar, and sign-in details, so you
   have a profile and can come back to your progress.
-- **Your interests** — the categories you choose (hiking, fishing, photography,
+- **Your interests:** the categories you choose (hiking, fishing, photography,
   and so on), so the app can surface places you'll enjoy.
-- **Your location, at check-in** — we use your device's GPS to confirm you're
+- **Your location, at check-in:** we use your device's GPS to confirm you're
   at a place when you check in. This is the core of the game; without it, a
   check-in can't be verified.
-- **Your check-in photos** — the photos you take on the spot, which become your
+- **Your check-in photos:** the photos you take on the spot, which become your
   personal history of places you've visited.
-- **Basic gameplay data** — your experience, levels, streaks, achievements, and
+- **Basic gameplay data:** your experience, levels, streaks, achievements, and
   check-in history, so the game works and remembers your journey.
 
 We collect what the game needs to work, and not more.
@@ -27,7 +27,7 @@ We collect what the game needs to work, and not more.
 
 - We **don't** send you to businesses or sell your attention to advertisers.
 - We **don't** sell your personal data.
-- We **don't** track your location in the background **by default** — out of the
+- We **don't** track your location in the background **by default**. Out of the
   box, location is used **only at the moment you check in**. Background location
   is used **only if you choose to turn on [Nearby
   alerts](/play/nearby-alerts/)** (see below), and even then it's matched against
@@ -52,7 +52,7 @@ choice.
 ## Nearby alerts & background location
 
 If you turn on [Nearby alerts](/play/nearby-alerts/), Locatour uses your phone's
-low-power background location to notify you when you're near a Locatour spot —
+low-power background location to notify you when you're near a Locatour spot,
 even when the app is closed. Here's exactly what that does and doesn't mean:
 
 - **What it does:** your phone checks your rough position against nearby Locatour
@@ -69,7 +69,7 @@ even when the app is closed. Here's exactly what that does and doesn't mean:
 
 We take reasonable, industry-standard steps to keep your data secure in transit
 and at rest, and we limit access to it. No system is perfectly secure, and we
-won't pretend otherwise — but protecting your information is something we take
+won't pretend otherwise. Protecting your information is something we take
 seriously.
 
 ## Your controls
@@ -79,7 +79,7 @@ seriously.
 - **Manage permissions.** Turn location and camera access on or off in your
   device settings.
 - **Delete your account.** You can request deletion of your account and
-  associated data — see the [Privacy Policy](/legal/privacy/) for how.
+  associated data; see the [Privacy Policy](/legal/privacy/) for how.
 
 ## Questions
 
