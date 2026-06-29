@@ -265,6 +265,101 @@ class GooglePlacesService
     }
 
     /**
+     * Suburb autocomplete (locality/sublocality, Australia) for the admin
+     * home-base picker. Mirrors Api\PlacesController::suburbs so the admin form
+     * and the app onboarding behave identically. Returns a list of
+     * ['description' => string, 'placeId' => ?string]; empty on any failure
+     * (never throws — a flaky lookup must not break the form).
+     *
+     * @return array<int, array{description: string, placeId: ?string}>
+     */
+    public function suburbAutocomplete(string $query): array
+    {
+        $key = $this->key();
+        $query = trim($query);
+        if (! $key || mb_strlen($query) < 2) {
+            return [];
+        }
+
+        try {
+            $response = Http::timeout(6)
+                ->withHeaders([
+                    'Content-Type' => 'application/json',
+                    'X-Goog-Api-Key' => $key,
+                    'X-Goog-FieldMask' => 'suggestions.placePrediction.text.text,suggestions.placePrediction.placeId',
+                ])
+                ->post(self::BASE . '/places:autocomplete', [
+                    'input' => $query,
+                    'includedPrimaryTypes' => ['locality', 'sublocality'],
+                    'includedRegionCodes' => ['au'],
+                ]);
+
+            if (! $response->successful()) {
+                return [];
+            }
+
+            return collect($response->json('suggestions', []))
+                ->map(fn ($s) => [
+                    'description' => $s['placePrediction']['text']['text'] ?? null,
+                    'placeId' => $s['placePrediction']['placeId'] ?? null,
+                ])
+                ->filter(fn ($s) => ! empty($s['description']))
+                ->values()
+                ->all();
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
+     * Resolve a suburb to ['lat' => float, 'lng' => float] (or null). Prefers a
+     * precise Place Details lookup by placeId; falls back to AU-biased geocoding
+     * of the free-typed suburb string. Mirrors Api\PlacesController::coordinates.
+     *
+     * @return array{lat: float, lng: float}|null
+     */
+    public function suburbCoordinates(?string $placeId, ?string $suburb): ?array
+    {
+        $key = $this->key();
+        if (! $key) {
+            return null;
+        }
+
+        $placeId = trim((string) $placeId);
+        $suburb = trim((string) $suburb);
+
+        try {
+            if ($placeId !== '') {
+                $details = Http::timeout(6)
+                    ->withHeaders(['X-Goog-Api-Key' => $key, 'X-Goog-FieldMask' => 'location'])
+                    ->get(self::BASE . "/places/{$placeId}");
+
+                $loc = $details->successful() ? $details->json('location') : null;
+                if (is_array($loc) && isset($loc['latitude'], $loc['longitude'])) {
+                    return ['lat' => (float) $loc['latitude'], 'lng' => (float) $loc['longitude']];
+                }
+            }
+
+            if ($suburb !== '') {
+                $geo = Http::timeout(6)->get('https://maps.googleapis.com/maps/api/geocode/json', [
+                    'address' => $suburb,
+                    'components' => 'country:AU',
+                    'key' => $key,
+                ]);
+
+                $result = $geo->successful() ? $geo->json('results.0.geometry.location') : null;
+                if (is_array($result) && isset($result['lat'], $result['lng'])) {
+                    return ['lat' => (float) $result['lat'], 'lng' => (float) $result['lng']];
+                }
+            }
+
+            return null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
      * Map the New API's price-level enum to a 0-4 integer (legacy scale):
      * FREE→0, INEXPENSIVE→1, MODERATE→2, EXPENSIVE→3, VERY_EXPENSIVE→4.
      */

@@ -2,9 +2,12 @@
 
 namespace App\Filament\Resources\AppUsers\Schemas;
 
+use App\Services\GooglePlacesService;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 
 /**
@@ -48,16 +51,37 @@ class AppUserForm
                 ->maxLength(50)
                 ->nullable(),
 
-            TextInput::make('home_suburb')
+            Select::make('home_suburb')
                 ->label('Home suburb')
-                ->maxLength(255)
-                ->nullable()
-                ->helperText('Setting a home base lets the user skip onboarding on their next sign-in.'),
+                ->searchable()
+                // Live Google Places autocomplete (locality/sublocality, AU) — the
+                // same proxy the app's onboarding uses, so admin + app agree.
+                ->getSearchResultsUsing(fn (string $search): array => collect(
+                    app(GooglePlacesService::class)->suburbAutocomplete($search)
+                )->mapWithKeys(fn ($s) => [$s['description'] => $s['description']])->all())
+                // An already-saved suburb string labels itself (no extra lookup).
+                ->getOptionLabelUsing(fn ($value): ?string => $value)
+                ->live()
+                ->afterStateUpdated(function ($state, Set $set): void {
+                    // Picking a real suburb resolves + fills the coordinates so the
+                    // map warm-starts at the user's home base.
+                    if (! $state) {
+                        return;
+                    }
+                    $coords = app(GooglePlacesService::class)->suburbCoordinates(null, (string) $state);
+                    if ($coords) {
+                        $set('home_lat', $coords['lat']);
+                        $set('home_lng', $coords['lng']);
+                    }
+                })
+                ->helperText('Search a real Australian suburb (Google Places). Picking one auto-fills the coordinates below; a home base lets the user skip onboarding on next sign-in.')
+                ->nullable(),
 
             TextInput::make('home_lat')
                 ->label('Home latitude')
                 ->numeric()
-                ->nullable(),
+                ->nullable()
+                ->helperText('Auto-filled from the suburb — override only if needed.'),
 
             TextInput::make('home_lng')
                 ->label('Home longitude')
