@@ -77,7 +77,7 @@ export type AvatarMarkerImages = { cold: string; hot: string };
 // re-bakes). Promise-cached so concurrent callers share the in-flight bake.
 const cache = new Map<string, Promise<AvatarMarkerImages | null>>();
 
-async function bakeVariant(img: ReturnType<typeof Skia.Image.MakeImageFromEncoded>, hot: boolean): Promise<string | null> {
+async function bakeVariant(img: ReturnType<typeof Skia.Image.MakeImageFromEncoded>, hot: boolean, key: string): Promise<string | null> {
   const s = DENSITY; // scale dp → device px
   const picture = await drawAsPicture(
     <Group transform={[{ scale: s }]}>
@@ -119,7 +119,10 @@ async function bakeVariant(img: ReturnType<typeof Skia.Image.MakeImageFromEncode
   surface.flush();
   const bytes = surface.makeImageSnapshot().encodeToBytes(ImageFormat.PNG);
 
-  const file = new File(Paths.cache, `locatour-avatar-${hot ? 'hot' : 'cold'}.png`);
+  // Unique filename PER AVATAR (was a fixed name): a changed avatar must produce
+  // a NEW file:// uri, otherwise the native <Marker image> keeps the stale/blank
+  // cached bitmap (it has tracksViewChanges={false} and Android caches by uri).
+  const file = new File(Paths.cache, `locatour-avatar-${hot ? 'hot' : 'cold'}-${key}.png`);
   file.create({ overwrite: true });
   file.write(bytes);
   return file.uri;
@@ -141,6 +144,14 @@ async function fetchSkiaImage(uri: string): Promise<ReturnType<typeof Skia.Image
   return Skia.Image.MakeImageFromEncoded(data);
 }
 
+/** Short filesystem-safe token (djb2 hash → base36) so each avatar URL bakes to
+ *  its own cache file — see the unique-filename note in bakeVariant. */
+function fsKey(uri: string): string {
+  let h = 5381;
+  for (let i = 0; i < uri.length; i++) h = ((h * 33) ^ uri.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
 async function bake(avatarUri: string): Promise<AvatarMarkerImages | null> {
   try {
     // 1. Download + decode the remote avatar into a Skia image (CPU; no GPU context).
@@ -155,7 +166,8 @@ async function bake(avatarUri: string): Promise<AvatarMarkerImages | null> {
     }
 
     if (!img) return null;
-    const [cold, hot] = await Promise.all([bakeVariant(img, false), bakeVariant(img, true)]);
+    const key = fsKey(avatarUri);
+    const [cold, hot] = await Promise.all([bakeVariant(img, false, key), bakeVariant(img, true, key)]);
     if (!cold || !hot) return null;
     return { cold, hot };
   } catch (e) {

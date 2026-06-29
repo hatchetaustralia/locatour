@@ -973,11 +973,14 @@ export default function ExploreScreen() {
             {/* "You are here" — native Marker of a STATIC baked PNG (Android). A
                 single bitmap handed to the native Google Maps marker tracks pan/zoom
                 in lock-step and never goes white / is dropped on tab focus, unlike a
-                View-child Marker. The cold/hot variants swap the rainbow halo; the
-                key forces the native icon to refresh on that (infrequent) toggle. */}
+                View-child Marker. The cold/hot variants swap the rainbow halo. The
+                key is the baked image URI itself, so the native marker REMOUNTS
+                whenever the bitmap changes — the hot/cold halo toggle AND a profile
+                avatar change (which bakes a new per-avatar file). A stable key with
+                tracksViewChanges={false} would keep the stale/blank bitmap. */}
             {useAvatarMarker && Marker && (
               <Marker
-                key={avatarHot ? 'avatar-hot' : 'avatar-cold'}
+                key={avatarHot ? avatarImages!.hot : avatarImages!.cold}
                 coordinate={{
                   latitude: userLocation!.coords.latitude,
                   longitude: userLocation!.coords.longitude,
