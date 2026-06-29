@@ -7,6 +7,7 @@ import {
 } from '@expo-google-fonts/poppins';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
 import React, { useEffect } from 'react';
 import { AppState, useColorScheme } from 'react-native';
@@ -20,6 +21,13 @@ import { syncAccount, uploadPendingCheckIns, ensureHomeCoordinates } from '@/uti
 // to deliver a geofence event while the app is closed, spec 08, Phase 2).
 // `refreshGeofencesOnFocus` re-arms the monitored set as the user moves.
 import { refreshGeofencesOnFocus } from '@/utils/geofencing';
+
+// Hide the native splash with NO fade-out (duration 0). Default is a 400ms fade,
+// which dissolves the native splash over the JS splash overlay beneath — making
+// the build marker (only on the JS layer) appear to "fade in". Instant hide =
+// the marker snaps in. Called in global scope (per the docs) so it's set before
+// Expo Router auto-hides the splash. `fade` is iOS-only; `duration` covers both.
+SplashScreen.setOptions({ duration: 0, fade: false });
 
 // Dev-only self-check: fail loudly in the console if the OSRS leveling curve or
 // tier/point constants ever drift from the spec (leveling.ts is the single
