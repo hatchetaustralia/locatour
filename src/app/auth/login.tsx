@@ -1,19 +1,51 @@
 import React, { useState } from 'react';
 import { Image, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { Keyframe } from 'react-native-reanimated';
 
 import { BrandAssets, BrandText, Sticker, StampButton, StampInput } from '@/components/brand';
-import { LocatourMark } from '@/components/locatour-mark';
 import { Brand } from '@/constants/theme';
 import { signInWithGoogle, needsOnboarding } from '@/utils/account';
 import { storage } from '@/utils/storage';
 
+// Passport-stamp entrance: a quiet fade-in with a barely-there settle (no bounce).
+// Each sharp stamp uses a later delay so they appear one after another, like a
+// passport getting stamped. A fresh Keyframe is built per stamp (delay differs).
+const stampIn = (delay: number) =>
+  new Keyframe({
+    0: { opacity: 0, transform: [{ scale: 1.05 }] },
+    100: { opacity: 1, transform: [{ scale: 1 }] },
+  })
+    .duration(450)
+    .delay(delay);
+
 export default function LoginScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   // Design board is 400px wide; clamp the content column the same way.
   const colWidth = Math.min(300, width - 48);
+
+  // Soft, out-of-focus stamps behind everything for depth — big, clearly visible,
+  // sitting in the open space above the logo and below the form (incl. the teal/blue
+  // one). They only fade in (no stamp), so they read as "background".
+  const blurStamps = [
+    // small soft teal coin tucked just above the Google button (left side)
+    { kind: 'teal' as const, size: 54, opacity: 0.55, pos: { top: '39%', left: width * 0.04 } },
+    // larger soft yellow coin hanging off the right edge, mid-screen
+    { kind: 'hiking' as const, size: 150, opacity: 0.5, pos: { top: '50%', right: -56 } },
+  ];
+  // Sharp stamps tucked into the four corners, FULLY on-screen (small positive
+  // margins) so none of them is clipped by a screen edge. Top ones sit below the
+  // status bar, bottom ones below the form text. `delay` lands them one after
+  // another (the passport-stamp sequence).
+  const sharpStamps = [
+    { kind: 'boot' as const, size: 86, delay: 0, pos: { top: insets.top + 10, left: 6 } },
+    { kind: 'camera' as const, size: 114, delay: 150, pos: { top: insets.top + 12, right: 6 } },
+    { kind: 'hat' as const, size: 114, delay: 300, pos: { bottom: insets.bottom + 10, left: 6 } },
+    { kind: 'hiking' as const, size: 90, delay: 450, pos: { bottom: insets.bottom + 8, right: 6 } },
+  ];
 
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
@@ -63,21 +95,27 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.screen}>
-      {/* Passport-stamp stickers clustered across the top (bleed off the top
-          edge like the Figma board; kept clear of the centred content below) */}
+      {/* Passport-stamp stickers scattered around the whole screen (bleeding off
+          every edge like the Figma board), with soft out-of-focus copies behind
+          for depth. The sharp ones "stamp" in one after another on mount — like a
+          passport getting stamped. Kept to the corners/edges so the centred
+          content below stays clear. */}
       <View pointerEvents="none" style={styles.stickerLayer}>
-        <Sticker kind="camera" size={146} style={[styles.sticker, { top: -6, left: -34 }]} />
-        <Sticker kind="hiking" size={92} style={[styles.sticker, { top: 30, left: 78 }]} />
-        <Sticker kind="hat" size={158} style={[styles.sticker, { top: -18, left: 214 }]} />
-        {/* Anchored to the right edge so it always bleeds cleanly off-screen on
-            any width (no hard right edge shown), rather than a fixed left that
-            lands on-screen on wider phones. */}
-        <Sticker kind="boot" size={96} style={[styles.sticker, { top: 30, right: -22 }]} />
+        {blurStamps.map((s, i) => (
+          <View key={`blur-${i}`} style={[styles.sticker, s.pos as object, { opacity: s.opacity }]}>
+            <Sticker kind={s.kind} size={s.size} blur />
+          </View>
+        ))}
+        {sharpStamps.map((s, i) => (
+          <Animated.View key={`sharp-${i}`} entering={stampIn(s.delay)} style={[styles.sticker, s.pos as object]}>
+            <Sticker kind={s.kind} size={s.size} />
+          </Animated.View>
+        ))}
       </View>
 
       <View style={[styles.column, { width: colWidth }]}>
         <View style={styles.brandLockup}>
-          <LocatourMark size={66} color={Brand.ink} />
+          {/* Wordmark already includes the knot mark — no separate LocatourMark above it. */}
           <Image source={BrandAssets.logo} style={styles.logo} resizeMode="contain" />
         </View>
 
@@ -157,11 +195,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   stickerLayer: {
-    position: 'absolute',
-    top: 6,
-    left: 0,
-    right: 0,
-    height: 150,
+    ...StyleSheet.absoluteFillObject,
   },
   sticker: {
     position: 'absolute',

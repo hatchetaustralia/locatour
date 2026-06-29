@@ -24,6 +24,15 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { Brand, BrandFonts, stampBorder } from '@/constants/theme';
 
+// Passport-stamp stickers as crisp vectors (react-native-svg-transformer turns a
+// `.svg` import into a component). Exported from the Figma board, backgrounds
+// stripped so they composite transparently on the cream page.
+import StickerBootSvg from '../../../assets/images/brand/sticker-boot.svg';
+import StickerCameraSvg from '../../../assets/images/brand/sticker-camera.svg';
+import StickerHatSvg from '../../../assets/images/brand/sticker-hat.svg';
+import StickerHikingSvg from '../../../assets/images/brand/sticker-hiking.svg';
+import StickerCoinTealSvg from '../../../assets/images/brand/sticker-coin-teal.svg';
+
 // ---------------------------------------------------------------------------
 // Assets (logo + the four passport-stamp stickers, exported from Figma).
 // Stickers already include their rotation + drop shadow baked in, and their
@@ -37,6 +46,14 @@ export const BrandAssets = {
   stickerCamera: require('../../../assets/images/brand/sticker-camera.png'),
   stickerHat: require('../../../assets/images/brand/sticker-hat.png'),
   stickerHiking: require('../../../assets/images/brand/sticker-hiking.png'),
+  // Teal coin (recoloured from the green S coin) so the scatter includes a blue.
+  stickerCoinTeal: require('../../../assets/images/brand/sticker-coin-teal.png'),
+  // Pre-blurred copies used as soft, out-of-focus background stamps (depth).
+  stickerBootBlur: require('../../../assets/images/brand/sticker-boot-blur.png'),
+  stickerCameraBlur: require('../../../assets/images/brand/sticker-camera-blur.png'),
+  stickerHatBlur: require('../../../assets/images/brand/sticker-hat-blur.png'),
+  stickerHikingBlur: require('../../../assets/images/brand/sticker-hiking-blur.png'),
+  stickerCoinTealBlur: require('../../../assets/images/brand/sticker-coin-teal-blur.png'),
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -151,23 +168,49 @@ export function StampInput({
 // ---------------------------------------------------------------------------
 // Sticker — a single passport-stamp decoration.
 // ---------------------------------------------------------------------------
-const STICKERS = {
-  boot: BrandAssets.stickerBoot,
-  camera: BrandAssets.stickerCamera,
-  hat: BrandAssets.stickerHat,
-  hiking: BrandAssets.stickerHiking,
+// Sharp stamps = crisp SVG components. preserveAspectRatio (default on
+// react-native-svg) means a square width×height box just "contains" wider cards
+// without distorting them — same effect the PNGs got from resizeMode="contain".
+const STICKERS_SVG = {
+  boot: StickerBootSvg,
+  camera: StickerCameraSvg,
+  hat: StickerHatSvg,
+  hiking: StickerHikingSvg,
+  teal: StickerCoinTealSvg,
+} as const;
+
+// Soft background copies stay raster (SVG gaussian blur is unreliable on Android).
+const STICKERS_BLUR = {
+  boot: BrandAssets.stickerBootBlur,
+  camera: BrandAssets.stickerCameraBlur,
+  hat: BrandAssets.stickerHatBlur,
+  hiking: BrandAssets.stickerHikingBlur,
+  teal: BrandAssets.stickerCoinTealBlur,
 } as const;
 
 export function Sticker({
   kind,
   size = 90,
+  blur = false,
   style,
 }: {
-  kind: keyof typeof STICKERS;
+  kind: keyof typeof STICKERS_SVG;
   size?: number;
+  /** Use the soft, out-of-focus raster copy (for background depth). */
+  blur?: boolean;
   style?: StyleProp<ImageStyle>;
 }) {
-  return <Image source={STICKERS[kind]} style={[{ width: size, height: size }, style]} resizeMode="contain" />;
+  if (blur) {
+    return (
+      <Image
+        source={STICKERS_BLUR[kind]}
+        style={[{ width: size, height: size }, style]}
+        resizeMode="contain"
+      />
+    );
+  }
+  const Svg = STICKERS_SVG[kind];
+  return <Svg width={size} height={size} style={style as StyleProp<ViewStyle>} />;
 }
 
 const styles = StyleSheet.create({
