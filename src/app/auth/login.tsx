@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
-import { Image, StyleSheet, View, useWindowDimensions } from 'react-native';
+import React, { useState, useRef } from 'react';
+import { Image, StyleSheet, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { Keyframe } from 'react-native-reanimated';
 
 import { BrandAssets, BrandText, Sticker, StampButton, StampInput } from '@/components/brand';
 import { Brand } from '@/constants/theme';
-import { signInWithGoogle, needsOnboarding } from '@/utils/account';
+import { signInWithGoogle, signInWithDemo, needsOnboarding } from '@/utils/account';
 import { storage } from '@/utils/storage';
 
 // Passport-stamp entrance: a quiet fade-in with a barely-there settle (no bounce).
@@ -49,7 +49,54 @@ export default function LoginScreen() {
 
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
-  const [connecting, setConnecting] = useState<'google' | 'apple' | null>(null);
+  const [connecting, setConnecting] = useState<'google' | 'apple' | 'demo' | null>(null);
+
+  // Hidden reviewer access: 5 quick taps on the logo reveal a code field that
+  // signs in to the sandboxed demo account — for app-store reviewers who can't
+  // use Google sign-in. The code is provided in the store's App access notes.
+  const [showReviewer, setShowReviewer] = useState(false);
+  const [reviewerCode, setReviewerCode] = useState('');
+  const logoTaps = useRef(0);
+  const logoTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleLogoTap = () => {
+    if (showReviewer) return;
+    logoTaps.current += 1;
+    if (logoTapTimer.current) clearTimeout(logoTapTimer.current);
+    if (logoTaps.current >= 5) {
+      logoTaps.current = 0;
+      setShowReviewer(true);
+      return;
+    }
+    logoTapTimer.current = setTimeout(() => {
+      logoTaps.current = 0;
+    }, 1500);
+  };
+
+  const handleDemoSignIn = async () => {
+    if (connecting) return;
+    if (!reviewerCode.trim()) {
+      setError('Enter the reviewer code');
+      return;
+    }
+    setError('');
+    setConnecting('demo');
+    try {
+      const result = await signInWithDemo(reviewerCode);
+      if (result.ok) {
+        const localUser = await storage.getUser();
+        router.replace(needsOnboarding(localUser) ? '/auth/walkthrough' : '/');
+        return;
+      }
+      setError(
+        result.reason === 'offline'
+          ? 'Couldn’t reach the server — check your connection.'
+          : 'Invalid reviewer code.',
+      );
+    } finally {
+      setConnecting(null);
+    }
+  };
 
   const handleLogin = () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -115,8 +162,11 @@ export default function LoginScreen() {
 
       <View style={[styles.column, { width: colWidth }]}>
         <View style={styles.brandLockup}>
-          {/* Wordmark already includes the knot mark — no separate LocatourMark above it. */}
-          <Image source={BrandAssets.logo} style={styles.logo} resizeMode="contain" />
+          {/* Wordmark already includes the knot mark — no separate LocatourMark above it.
+              Tapping it 5× reveals the hidden reviewer code field (store-review access). */}
+          <TouchableOpacity activeOpacity={1} onPress={handleLogoTap}>
+            <Image source={BrandAssets.logo} style={styles.logo} resizeMode="contain" />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.heading}>
@@ -149,6 +199,30 @@ export default function LoginScreen() {
 
         {error ? (
           <BrandText weight="medium" style={styles.error}>{error}</BrandText>
+        ) : null}
+
+        {/* Hidden reviewer access (revealed by 5 taps on the logo). For app-store
+            reviewers who can't use Google sign-in — signs into the demo account. */}
+        {showReviewer ? (
+          <View style={styles.group}>
+            <StampInput
+              icon="key-outline"
+              placeholder="Reviewer code"
+              autoCapitalize="none"
+              value={reviewerCode}
+              onChangeText={(t) => {
+                setReviewerCode(t);
+                if (error) setError('');
+              }}
+            />
+            <StampButton
+              variant="primary"
+              label={connecting === 'demo' ? 'Signing in…' : 'Reviewer sign-in'}
+              loading={connecting === 'demo'}
+              disabled={!!connecting}
+              onPress={handleDemoSignIn}
+            />
+          </View>
         ) : null}
 
         {/* Email / mobile sign-in is grayed out for now — Google only. */}

@@ -174,6 +174,39 @@ export async function signInWithGoogle(): Promise<GoogleSignInResult> {
 }
 
 /**
+ * App-store reviewer / demo sign-in. POSTs a secret code to /api/auth/demo and,
+ * on success, adopts the returned sandboxed demo account — which is pre-onboarded
+ * (home base set) so the app lands straight on the map with no Google flow. The
+ * code is provided to reviewers in the store's "App access" notes and entered via
+ * the hidden logo-tap on the login screen. Mirrors the tail of signInWithGoogle.
+ */
+export async function signInWithDemo(code: string): Promise<GoogleSignInResult> {
+  try {
+    const res = await fetchWithFallback('/api/auth/demo', {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: code.trim() }),
+    });
+    if (!res) return { ok: false, reason: 'offline' };
+    if (!res.ok) return { ok: false, reason: 'rejected' };
+
+    const body = (await res.json()) as { token?: string; is_new?: boolean; user?: ServerAppUser };
+    if (!body.token || !body.user) return { ok: false, reason: 'rejected' };
+
+    await storage.wipeAllData();
+    storage.setToken(body.token);
+    await storage.setUser(mapServerUser(body.user));
+
+    const state = await fetchAccountState();
+    if (state) await storage.hydrateFromServer(state.checkIns, state.unlockedIds);
+    return { ok: true, isNew: false };
+  } catch (e) {
+    console.warn('[account] signInWithDemo failed', e);
+    return { ok: false, reason: 'offline' };
+  }
+}
+
+/**
  * Sign out: end the Google session, drop the Sanctum token, and clear the local
  * user so the app returns to the login screen. Local game data (check-ins etc.)
  * stays on the device — the server account is unaffected and re-adopts on the next

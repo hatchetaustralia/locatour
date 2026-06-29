@@ -28,6 +28,10 @@ Route::get('/account/username-available', [AccountController::class, 'usernameAv
 // SSO sign-in (public): verifies a provider token, links/creates the AppUser, and
 // issues a Sanctum token. Google now; Apple + phone to follow.
 Route::post('/auth/google', [AuthController::class, 'google']);
+// App-store reviewer access: a secret code → token for ONE sandboxed, pre-onboarded
+// demo account (Google/Apple reviewers can't use Google Sign-In). Disabled unless
+// DEMO_LOGIN_CODE is set. Entered via the hidden logo-tap on the login screen.
+Route::post('/auth/demo', [AuthController::class, 'demo']);
 
 Route::middleware(['auth:sanctum', EnsureAppUserNotBlocked::class, TouchAppUserLastSeen::class])->group(function () {
     Route::post('/account/sync', [AccountController::class, 'sync']);

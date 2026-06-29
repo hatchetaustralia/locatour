@@ -95,6 +95,47 @@ class AuthController extends Controller
     }
 
     /**
+     * App-store reviewer / demo sign-in. Google and Apple reviewers cannot use
+     * Google Sign-In, so a secret code (config('services.demo_login_code')) signs
+     * them into ONE shared, sandboxed demo account. The account is pre-onboarded
+     * (home base set) so the app lands straight on the map — no Google flow.
+     * Disabled (401) when no code is configured. Constant-time compare.
+     */
+    public function demo(Request $request): JsonResponse
+    {
+        $data = $request->validate(['code' => ['required', 'string']]);
+
+        $expected = config('services.demo_login_code');
+        if (! $expected || ! hash_equals((string) $expected, (string) $data['code'])) {
+            return response()->json(['message' => 'Invalid reviewer code.'], 401);
+        }
+
+        $user = AppUser::firstOrCreate(
+            ['email' => 'reviewer@locatour.com.au'],
+            [
+                'device_id' => 'demo_reviewer',
+                'auth_provider' => 'demo',
+                'username' => 'reviewer',
+                'display_name' => 'Play Reviewer',
+                'home_suburb' => 'Perth WA 6000',
+                'home_lat' => -31.9523,
+                'home_lng' => 115.8613,
+                'status' => 'active',
+            ],
+        );
+
+        $user->last_login_at = now();
+        $user->login_count = (int) $user->login_count + 1;
+        $user->save();
+
+        return response()->json([
+            'token' => $user->createToken('app')->plainTextToken,
+            'is_new' => false,
+            'user' => $user->fresh(),
+        ]);
+    }
+
+    /**
      * Resolve the account to sign into: existing provider id → linked device account
      * → existing verified email → a fresh (unsaved) account. Returns [user, isNew].
      *

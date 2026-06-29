@@ -42,6 +42,13 @@ return [
     // blank. See docs/locatour/05-backend.md.
     'google_maps_key' => env('GOOGLE_MAPS_KEY'),
 
+    // App-store reviewer access. Google/Apple reviewers can't sign in with their
+    // own Google account, so a secret code (entered via the hidden logo-tap on the
+    // login screen) signs them into ONE sandboxed, pre-onboarded demo account via
+    // AuthController@demo. Unset = the endpoint is disabled. Provide the code to
+    // reviewers in the store's "App access" sign-in details.
+    'demo_login_code' => env('DEMO_LOGIN_CODE'),
+
     // OpenRouter — on-demand LLM copy generation for admin location enrichment
     // (descriptions, tier rationales) from the enriched Places data. Key + model
     // are env-driven; never hardcode the key. See app/Services/OpenRouterService.
