@@ -5,9 +5,9 @@ Play Store listing needs, the exact specs, and the brand palette to work from.
 The full set of console settings/answers (data safety, ratings, descriptions,
 etc.) lives in **[configuration-overview.md](./configuration-overview.md)**.
 
-> The graphics here are **auto-generated working versions** (good enough to ship
-> internal/closed testing). A designer should replace them with polished art at
-> the **same dimensions** listed below.
+> The **icon and feature graphic** here are auto-generated working versions; the
+> **screenshots are framed from real device captures** of the live app. A designer
+> can replace any of them with polished art at the **same dimensions** below.
 
 ---
 
@@ -17,7 +17,7 @@ etc.) lives in **[configuration-overview.md](./configuration-overview.md)**.
 |------|-----------|-------------------------------|
 | `app-icon-512.png` | App icon | **512 × 512** PNG/JPEG, ≤ 1 MB, no alpha/rounding (Play masks it) |
 | `feature-graphic-1024x500.png` | Feature graphic (top banner) | **1024 × 500** PNG/JPEG, ≤ 15 MB. Keep text away from edges |
-| `screenshots/01-home.png` … `04-profile.png` | Phone screenshots | **1080 × 1920** (9:16) PNG/JPEG, ≤ 8 MB each, 2–8 shots. Same files satisfy 7" and 10" **tablet** too (1080–7680 px) |
+| `screenshots/01-discover.png` … `05-history.png` | Phone screenshots (5, framed from real device captures) | **1080 × 1920** (9:16) PNG/JPEG, ≤ 8 MB each, 2–8 shots. Same files satisfy 7" and 10" **tablet** too (1080–7680 px) |
 | *(not yet made)* Promo video | Optional | YouTube URL (public/unlisted, ads off, not age-restricted) |
 
 ### Apple App Store note
@@ -50,9 +50,10 @@ res so both stores can be exported.
 - **What the app is:** a real-world exploration game — visit public parks, lookouts, beaches and hidden spots, check in with a photo, earn XP and level up. Brand is warm, outdoorsy, playful (passport-stamp motif).
 
 ## Screenshot captions (current)
-1. **Real places near you** — "Parks, lookouts, beaches & hidden gems"
-2. **Explore the map** — "Every pin is a spot worth visiting"
-3. **Check in & earn XP** — "Snap a photo to prove you were there"
-4. **Level up as you explore** — "Track your streak, XP and discoveries"
+1. **Discover places near you** — "Spots ranked by rarity and distance" (home/challenges)
+2. **Check in with a photo** — "You have to actually be there" (camera, real sunset)
+3. **Level up as you explore** — "Earn XP, streaks and badges" (profile, level 20)
+4. **Unlock 90+ achievements** — "From First Steps to Seasoned Voyager"
+5. **Keep your check-in history** — "Every place you have been"
 
 A designer can keep these captions or rework them — just stay within the 9:16 frame and the palette above.

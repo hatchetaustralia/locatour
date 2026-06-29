@@ -1101,7 +1101,9 @@ class StorageManager {
    */
   public async hydrateFromServer(checkIns: CheckIn[], unlockedIds: string[]): Promise<void> {
     this.checkIns = checkIns;
-    unlockedIds.forEach((id) => this.unlockedLocationIds.add(id));
+    // Authoritative at sign-in: the server's unlock set REPLACES the local one
+    // (was additive), so a spot an admin revoked/un-discovered doesn't linger.
+    this.unlockedLocationIds = new Set(unlockedIds);
     this.writeKey('locatour_checkins', JSON.stringify(this.checkIns));
     this.writeKey('locatour_unlocked_locations', JSON.stringify([...this.unlockedLocationIds]));
     // Reconcile cached stats so home / tab badge / map-gating (which read
@@ -1120,6 +1122,27 @@ class StorageManager {
     }
     this.evaluateAchievements();
     this.newAchievements = new Set();
+  }
+
+  /**
+   * Authoritative live resync of check-ins + unlocks from the server, used by the
+   * forced refresh on app open / foreground / after a check-in. Unlike
+   * hydrateFromServer this does NOT touch stats or achievements (so it can't clear
+   * the just-unlocked "new" flags the camera reveal is about to read).
+   *
+   * Server is the source of truth — so a revoked check-in / un-discovered spot is
+   * PRUNED — but any local check-in not yet uploaded (no serverId) and its unlock
+   * are preserved, so an offline/queued check-in is never dropped by the pull.
+   */
+  public async applyServerState(serverCheckIns: CheckIn[], unlockedIds: string[]): Promise<void> {
+    const pendingLocal = this.checkIns.filter((c) => !c.serverId);
+    this.checkIns = [...serverCheckIns, ...pendingLocal];
+    this.unlockedLocationIds = new Set(unlockedIds);
+    // Keep unlocks backing a still-pending local check-in (the server doesn't
+    // know about them yet).
+    pendingLocal.forEach((c) => this.unlockedLocationIds.add(c.locationId));
+    this.writeKey('locatour_checkins', JSON.stringify(this.checkIns));
+    this.writeKey('locatour_unlocked_locations', JSON.stringify([...this.unlockedLocationIds]));
   }
 
   public async updateProfile(displayName: string, username: string, bio: string, avatarUrl: string, interests?: string[], homeCoordinates?: Coordinates): Promise<User | null> {

@@ -78,7 +78,7 @@ Complete the questionnaire honestly: no violence/sexual/profanity/drugs/gambling
 - **Full description:** see `docs/locatour/12-play-store-listing.md` (paste-ready, ≤4000).
 - **App icon (512×512):** `./app-icon-512.png`
 - **Feature graphic (1024×500):** `./feature-graphic-1024x500.png`
-- **Phone screenshots (1080×1920, 9:16):** `./screenshots/01-home.png … 04-profile.png`. The same 4 satisfy **7-inch and 10-inch tablet** specs too (1080–7680px) — reuse them there.
+- **Phone screenshots (1080×1920, 9:16):** `./screenshots/01-discover.png … 05-history.png` (5 shots, framed from **real device screenshots**). The same files satisfy **7-inch and 10-inch tablet** specs too (1080–7680px) — reuse them there.
 - (All graphics + a designer brief live in this folder — see `./README.md`.)
 - **Video:** optional YouTube URL (public/unlisted, ads off, not age-restricted).
 

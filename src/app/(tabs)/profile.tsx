@@ -35,6 +35,7 @@ import { BrandText } from '@/components/brand';
 import { ConfirmModal } from '@/components/confirm-modal';
 import { Brand, BrandFonts, BrandRadius, stampBorder, Spacing } from '@/constants/theme';
 import { storage } from '@/utils/storage';
+import { useLocationContext } from '@/context/location-context';
 import { changeBaseLocation, checkUsernameAvailable, deleteAccount, deleteCheckInNow, shareCheckIn, signOut, UsernameStatus } from '@/utils/account';
 import { fetchSuburbs, SuburbSuggestion } from '@/utils/places';
 import {
@@ -264,6 +265,7 @@ const ALERTS_STATUS_META: Record<NearbyAlertsStatus, { color: string; label: str
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { refreshUser } = useLocationContext();
 
   const [user, setUser] = useState<User | null>(null);
   // Background "Nearby alerts" opt-in (off by default). Initialised synchronously
@@ -501,6 +503,10 @@ export default function ProfileScreen() {
       );
       if (updated) {
         setUser(updated);
+        // Propagate the avatar/profile change to the shared context so the nav
+        // tab avatar + the map's own-location marker update live (they read
+        // context.user) instead of only after a cold restart.
+        void refreshUser();
         setJustSaved(true);
         if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
         savedTimerRef.current = setTimeout(() => setJustSaved(false), 1500);

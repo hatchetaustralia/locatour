@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AppCheckIn;
+use App\Models\AppUnlockedLocation;
 use App\Models\AppUser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -74,5 +75,46 @@ class DeleteCheckInTest extends TestCase
 
         $this->deleteJson("/api/checkins/{$checkIn->id}")
             ->assertStatus(401);
+    }
+
+    public function test_deleting_check_in_removes_the_unlock_when_no_other_remains(): void
+    {
+        [$user, $token] = $this->makeUserWithToken();
+        $checkIn = $this->makeCheckIn($user);
+        AppUnlockedLocation::create([
+            'app_user_id' => $user->id,
+            'location_id' => $checkIn->location_id,
+        ]);
+
+        $this->withToken($token)
+            ->deleteJson("/api/checkins/{$checkIn->id}")
+            ->assertStatus(204);
+
+        // The spot is fully un-discovered.
+        $this->assertDatabaseMissing('app_unlocked_locations', [
+            'app_user_id' => $user->id,
+            'location_id' => $checkIn->location_id,
+        ]);
+    }
+
+    public function test_deleting_one_of_two_check_ins_keeps_the_unlock(): void
+    {
+        [$user, $token] = $this->makeUserWithToken();
+        $first = $this->makeCheckIn($user);
+        $second = $this->makeCheckIn($user); // same location_id
+        AppUnlockedLocation::create([
+            'app_user_id' => $user->id,
+            'location_id' => $first->location_id,
+        ]);
+
+        $this->withToken($token)
+            ->deleteJson("/api/checkins/{$first->id}")
+            ->assertStatus(204);
+
+        // A second check-in still vouches for the spot → unlock survives.
+        $this->assertDatabaseHas('app_unlocked_locations', [
+            'app_user_id' => $user->id,
+            'location_id' => $first->location_id,
+        ]);
     }
 }

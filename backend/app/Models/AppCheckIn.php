@@ -44,13 +44,27 @@ class AppCheckIn extends Model
     /** Surface the resolved photo URL on every serialised check-in. */
     protected $appends = ['photo_url'];
 
-    /** Clean the uploaded photo off the public disk whenever a check-in is
-     *  deleted (admin "Revoke", the API destroy, or a cascade). No-op if none. */
+    /** Side effects whenever a check-in is deleted (admin "Revoke", the API
+     *  destroy, or a cascade): clean its photo off the public disk, and fully
+     *  undo the discovery by dropping the matching unlock — UNLESS another
+     *  check-in still vouches for that location. Mirrored on the client by the
+     *  authoritative resync on app open, so a revoke un-reveals the spot there too. */
     protected static function booted(): void
     {
         static::deleting(function (AppCheckIn $checkIn): void {
             if ($checkIn->photo_path) {
                 Storage::disk('public')->delete($checkIn->photo_path);
+            }
+
+            $stillVouched = static::where('app_user_id', $checkIn->app_user_id)
+                ->where('location_id', $checkIn->location_id)
+                ->whereKeyNot($checkIn->getKey())
+                ->exists();
+
+            if (! $stillVouched) {
+                AppUnlockedLocation::where('app_user_id', $checkIn->app_user_id)
+                    ->where('location_id', $checkIn->location_id)
+                    ->delete();
             }
         });
     }

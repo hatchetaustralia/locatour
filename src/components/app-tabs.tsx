@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandText } from '@/components/brand';
 import { Brand } from '@/constants/theme';
-import { storage } from '@/utils/storage';
+import { useLocationContext } from '@/context/location-context';
 import { avatarUri } from '@/utils/avatar';
 
 type IconName = keyof typeof Ionicons.glyphMap;
@@ -26,24 +26,17 @@ const PILL_INSET = 8; // horizontal gap between the sliding pill and the tab cel
 // in cream, inactive icons are ink outlines. The Profile tab shows the user's
 // avatar with a level badge.
 export default function AppTabs() {
-  const [avatar, setAvatar] = useState<string | null>(null);
-  const [level, setLevel] = useState<number | null>(null);
+  // Avatar + level read from the shared LocationContext user, so an in-app
+  // profile/avatar change (which calls refreshUser) updates the nav live — no
+  // cold restart. (Previously a one-shot storage.getUser() on mount that never
+  // saw later edits.)
+  const { user } = useLocationContext();
+  const avatar = user ? avatarUri(user.avatarUrl, user.displayName) : null;
+  const level = user?.stats?.currentLevel ?? null;
   // The MAP (the `index` route `/`, tab index 0) is the landing screen (see
   // (tabs)/_layout.tsx's initialRouteName) and the FIRST tab, so start the
   // sliding pill on it — no flash of home before the focused trigger reports in.
   const [activeIndex, setActiveIndex] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    storage.getUser().then((user) => {
-      if (!active || !user) return;
-      setAvatar(avatarUri(user.avatarUrl, user.displayName));
-      setLevel(user.stats?.currentLevel ?? null);
-    });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   return (
     <Tabs>

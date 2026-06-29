@@ -26,6 +26,7 @@ import React, {
   useState,
   useCallback,
 } from 'react';
+import { AppState } from 'react-native';
 import * as Location from 'expo-location';
 
 import { storage } from '@/utils/storage';
@@ -60,6 +61,7 @@ interface LocationContextValue {
   hiddenInRange: boolean;
 
   refresh: (opts?: { force?: boolean }) => Promise<void>;
+  refreshUser: () => Promise<void>;
   forceFreshFix: () => Promise<{ latitude: number; longitude: number } | null>;
 }
 
@@ -145,25 +147,18 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   // refresh() keeps the freshness-guarded behaviour unchanged.
   const refresh = useCallback(async (opts?: { force?: boolean }) => {
     if (opts?.force) {
-      // Pull the server's authoritative state (/account/me unlocked_location_ids
-      // + check-ins). Merge the unlocked ids into local storage (union — only
-      // adds new) so the forced doFetch below reads server ∪ local.
+      // Authoritative pull of the server's check-ins + unlocks (/account/me).
+      // applyServerState REPLACES local state (keeping only un-synced offline
+      // check-ins), so an admin revoke / un-discovered spot DISAPPEARS here
+      // instead of lingering until a cold restart — and a brand-new unlock still
+      // lands immediately. doFetch below re-derives the visited/unlocked context
+      // sets from the now-authoritative storage.
       const state = await fetchAccountState();
-      state?.unlockedIds.forEach((id) => storage.unlockLocation(id));
+      if (state) await storage.applyServerState(state.checkIns, state.unlockedIds);
       // Force getLocations() to re-hit the server rather than return the stale
-      // in-memory slice cached from before the unlock.
+      // in-memory slice.
       storage.invalidateLocations();
       await doFetch(lastFixCoords.current);
-      // Fold any server-only visited spots on top of the local check-ins doFetch
-      // already applied (the camera writes the new check-in locally before this),
-      // so nothing the server knows about is dropped.
-      if (state) {
-        setVisitedIds((prev) => {
-          const next = new Set(prev);
-          state.checkIns.forEach((c) => next.add(c.locationId));
-          return next;
-        });
-      }
       return;
     }
     const fresh = Date.now() - lastFetchAt.current < 2_000;
@@ -175,6 +170,14 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       setUnlockedIds(new Set(storage.getUnlockedLocationIds()));
     }
   }, [doFetch]);
+
+  // Re-read the current user from storage into context state — call after an
+  // in-app profile/avatar change so the nav + map (which both read context.user)
+  // reflect it immediately instead of only after a cold restart.
+  const refreshUser = useCallback(async () => {
+    const u = await storage.getUser();
+    if (u) setUser(u);
+  }, []);
 
   // One-shot authoritative fix for the camera's check-in proof — a FRESH
   // high-accuracy reading, never the ambient cached value.
@@ -191,6 +194,25 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     lastFixCoords.current = coords;
     return coords;
   }, []);
+
+  // — Authoritative resync on app OPEN + every return to FOREGROUND. Pulls the
+  //   server's check-ins + unlocks so admin-side changes (a revoked check-in /
+  //   un-discovered spot) and other out-of-app edits reflect on next open without
+  //   a cold restart. Throttled so rapid background↔foreground flips don't hammer
+  //   the API. fetchAccountState fail-soft (offline / signed-out → no-op). —
+  useEffect(() => {
+    let lastSyncAt = 0;
+    const sync = () => {
+      if (Date.now() - lastSyncAt < 10_000) return;
+      lastSyncAt = Date.now();
+      void refresh({ force: true });
+    };
+    sync(); // on mount — covers a returning user who didn't re-sign-in
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') sync();
+    });
+    return () => sub.remove();
+  }, [refresh]);
 
   // — Server-controlled gameplay settings: hydrate the last cached values, then
   //   refresh from GET /api/config. Fire-and-forget; never blocks render. Until
@@ -296,6 +318,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       hiddenWarm: nearestHidden?.warm === true,
       hiddenInRange: nearestHidden?.inRange === true,
       refresh,
+      refreshUser,
       forceFreshFix,
     }),
     [
@@ -312,6 +335,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       locationsLoading,
       nearestHidden,
       refresh,
+      refreshUser,
       forceFreshFix,
     ],
   );
