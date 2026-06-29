@@ -87,7 +87,7 @@ head:
 ---
 
 Common questions about playing Locatour. Can't find what you need? Reach us at
-**support@hatchet.com.au**.
+**hello@hatchet.com.au**.
 
 ## What is Locatour?
 

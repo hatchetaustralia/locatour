@@ -109,7 +109,7 @@ can:
 - **Access your history** in the app at any time.
 - **Manage permissions** (location, camera) in your device settings.
 - **Delete your account and data** by using the in-app option where available,
-  or by contacting us at **support@hatchet.com.au**.
+  or by contacting us at **hello@hatchet.com.au**.
 
 We will respond to requests as required by applicable law.
 
@@ -118,7 +118,7 @@ We will respond to requests as required by applicable law.
 Locatour is not directed to children under the age required by your local law
 (for example, under 13 in the United States), and we do not knowingly collect
 personal data from them. If you believe a child has provided us personal data,
-contact us at **support@hatchet.com.au** and we will take appropriate steps.
+contact us at **hello@hatchet.com.au** and we will take appropriate steps.
 
 ## 9. Security
 
@@ -144,4 +144,4 @@ through the Service where appropriate.
 Questions or privacy requests:
 
 **Hatchet Pty Ltd**
-Email: **support@hatchet.com.au**
+Email: **hello@hatchet.com.au**

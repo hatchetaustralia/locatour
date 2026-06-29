@@ -65,7 +65,7 @@ const storeBadges = `
         "url": "https://locatour.com.au",
         "logo": "https://locatour.com.au/app-icon.png",
         "description": "A real-world exploration game for public outdoor places.",
-        "email": "support@hatchet.com.au"
+        "email": "hello@hatchet.com.au"
       },
       {
         "@type": "MobileApplication",
@@ -281,7 +281,7 @@ const storeBadges = `
   <!-- ── Final CTA ── -->
   <section class="cta" aria-labelledby="cta-title">
     <div class="container cta-inner">
-      <img class="cta-icon" src="/app-icon.png" alt="" width="76" height="76" />
+      <img class="cta-icon" src="/logo-mark.svg" alt="" width="76" height="76" />
       <h2 class="cta-title" id="cta-title">Ready to go outside?</h2>
       <p class="cta-sub">Locatour is launching soon. Get it the day it lands.</p>
       <div set:html={storeBadges}></div>
@@ -294,7 +294,7 @@ const storeBadges = `
     <div class="container footer-inner">
       <div class="footer-top">
         <a href="/" class="footer-logo" aria-label="Locatour home">
-          <img src="/app-icon.png" alt="" width="28" height="28" aria-hidden="true" />
+          <img src="/logo-mark.svg" alt="" width="28" height="28" aria-hidden="true" />
           <span>Locatour</span>
         </a>
         <nav aria-label="Footer navigation">
@@ -302,7 +302,7 @@ const storeBadges = `
             <li><a href="https://docs.locatour.com.au/legal/privacy/"  target="_blank" rel="noopener noreferrer">Privacy</a></li>
             <li><a href="https://docs.locatour.com.au/legal/terms/"    target="_blank" rel="noopener noreferrer">Terms</a></li>
             <li><a href="https://docs.locatour.com.au"                 target="_blank" rel="noopener noreferrer">Docs</a></li>
-            <li><a href="mailto:support@hatchet.com.au">support@hatchet.com.au</a></li>
+            <li><a href="mailto:hello@hatchet.com.au">hello@hatchet.com.au</a></li>
           </ul>
         </nav>
       </div>
@@ -559,7 +559,7 @@ h1, h2, h3 { font-family: var(--font-display); }
   border-radius: var(--radius-xl);
   padding: clamp(2.5rem, 6vw, 4rem) 1.5rem;
 }
-.cta-icon { width: 76px; height: 76px; border-radius: 20px; box-shadow: var(--shadow-soft); }
+.cta-icon { width: 72px; height: 72px; filter: drop-shadow(0 10px 16px rgba(42, 26, 20, 0.18)); }
 .cta-title { font-weight: 700; font-size: clamp(1.9rem, 5vw, 2.8rem); letter-spacing: -0.02em; color: var(--color-ink); }
 .cta-sub { color: var(--color-ink-muted); font-size: 1.1rem; max-width: 40ch; }
 .cta .store-badges { justify-content: center; margin-top: 0.75rem; }
@@ -569,7 +569,7 @@ h1, h2, h3 { font-family: var(--font-display); }
 .footer-inner { display: flex; flex-direction: column; gap: 1.25rem; }
 .footer-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }
 .footer-logo { display: flex; align-items: center; gap: 0.55rem; font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; color: rgba(253,243,218,0.92); }
-.footer-logo img { border-radius: 8px; }
+.footer-logo img { width: 26px; height: 26px; }
 .footer-logo:hover { opacity: 0.85; }
 .footer-links { display: flex; flex-wrap: wrap; gap: 0.125rem 0.25rem; }
 .footer-links a { padding: 0.3rem 0.6rem; border-radius: var(--radius-sm); font-size: 0.9rem; font-weight: 600; color: rgba(253,243,218,0.65); transition: color 0.15s ease; }

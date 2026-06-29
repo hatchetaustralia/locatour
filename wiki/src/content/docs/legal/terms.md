@@ -127,4 +127,4 @@ updated Terms.
 Questions about these Terms:
 
 **Hatchet Pty Ltd**
-Email: **support@hatchet.com.au**
+Email: **hello@hatchet.com.au**

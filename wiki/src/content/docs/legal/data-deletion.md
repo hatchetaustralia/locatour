@@ -21,7 +21,7 @@ You don't need to contact us. This removes everything below straight away.
 ## Request deletion without the app
 
 If you can no longer access the app (for example, you've uninstalled it), email
-**support@hatchet.com.au** from the address associated with your account and ask
+**hello@hatchet.com.au** from the address associated with your account and ask
 us to delete it. We'll verify your identity and process the deletion within
 **30 days**, and confirm by email when it's done.
 
@@ -55,4 +55,4 @@ Data held only on your device is also wiped when you delete from within the app.
 ## Questions
 
 See our [Privacy Policy](/legal/privacy/) for the full picture of what we
-collect and why, or contact **support@hatchet.com.au**.
+collect and why, or contact **hello@hatchet.com.au**.
