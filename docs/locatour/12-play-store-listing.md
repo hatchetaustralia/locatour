@@ -67,11 +67,12 @@ Get out there and start exploring.
 ```
 
 ## Listing assets needed
-- **App icon** 512×512 PNG — ready at `assets/store/play-icon-512.png`
-- **Feature graphic** 1024×500 PNG — generated and ready at
-  `assets/store/feature-graphic.png` (brand-matched; swap for a designed version later)
-- **Phone screenshots** — generated and ready in `assets/store/screenshots/`
-  (1080×2160, branded background + captions):
+> All graphics live in **`docs/locatour/google-play-console/`** (hand that folder to a designer).
+- **App icon** 512×512 PNG — `docs/locatour/google-play-console/app-icon-512.png`
+- **Feature graphic** 1024×500 PNG —
+  `docs/locatour/google-play-console/feature-graphic-1024x500.png` (brand-matched; swap for a designed version later)
+- **Phone screenshots** — `docs/locatour/google-play-console/screenshots/`
+  (1080×1920 / 9:16, branded background + captions; valid for phone + both tablets):
   - `01-home.png` — "Real places near you"
   - `02-explore.png` — "Explore the map"
   - `03-checkin.png` — "Check in & earn XP"

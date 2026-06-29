@@ -76,9 +76,10 @@ Complete the questionnaire honestly: no violence/sexual/profanity/drugs/gambling
 - **App name:** `Locatour`
 - **Short description (≤80):** `A game you play by going outside. Explore real places, check in, level up.`
 - **Full description:** see `docs/locatour/12-play-store-listing.md` (paste-ready, ≤4000).
-- **App icon (512×512):** `assets/store/play-icon-512.png`
-- **Feature graphic (1024×500):** `assets/store/feature-graphic.png`
-- **Phone screenshots (1080×1920, 9:16):** `assets/store/screenshots/01-home.png … 04-profile.png`. The same 4 satisfy **7-inch and 10-inch tablet** specs too (1080–7680px) — reuse them there.
+- **App icon (512×512):** `./app-icon-512.png`
+- **Feature graphic (1024×500):** `./feature-graphic-1024x500.png`
+- **Phone screenshots (1080×1920, 9:16):** `./screenshots/01-home.png … 04-profile.png`. The same 4 satisfy **7-inch and 10-inch tablet** specs too (1080–7680px) — reuse them there.
+- (All graphics + a designer brief live in this folder — see `./README.md`.)
 - **Video:** optional YouTube URL (public/unlisted, ads off, not age-restricted).
 
 ## 9. Remaining before PUBLIC (Production) release
