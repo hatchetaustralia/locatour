@@ -24,28 +24,19 @@ export function AnimatedSplashOverlay() {
 
   if (!visible) return null;
 
+  // Cream splash that CONTINUES the native expo-splash-screen (same #FCF0E8 bg +
+  // logo) so the OS→JS hand-off is seamless, and carries the build marker so a
+  // field tester can confirm which bundle is live. Holds long enough to read the
+  // marker, then fades out.
   const splashKeyframe = new Keyframe({
-    0: {
-      transform: [{ scale: INITIAL_SCALE_FACTOR }],
-      opacity: 1,
-    },
-    20: {
-      opacity: 1,
-    },
-    70: {
-      opacity: 0,
-      easing: Easing.elastic(0.7),
-    },
-    100: {
-      opacity: 0,
-      transform: [{ scale: 1 }],
-      easing: Easing.elastic(0.7),
-    },
+    0: { opacity: 1 },
+    65: { opacity: 1 },
+    100: { opacity: 0, easing: Easing.in(Easing.ease) },
   });
 
   return (
     <Animated.View
-      entering={splashKeyframe.duration(DURATION).withCallback((finished) => {
+      entering={splashKeyframe.duration(1500).withCallback((finished) => {
         'worklet';
         if (finished) {
           scheduleOnRN(setVisible, false);
@@ -53,6 +44,11 @@ export function AnimatedSplashOverlay() {
       })}
       style={styles.backgroundSolidColor}
     >
+      <Image
+        source={require('@/assets/images/splash-icon.png')}
+        style={styles.splashIcon}
+        contentFit="contain"
+      />
       <Text style={styles.buildLabel}>{BUILD_LABEL}</Text>
     </Animated.View>
   );
@@ -140,8 +136,14 @@ const styles = StyleSheet.create({
   },
   backgroundSolidColor: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#208AEF',
+    backgroundColor: '#FCF0E8',
+    alignItems: 'center',
+    justifyContent: 'center',
     zIndex: 1000,
+  },
+  splashIcon: {
+    width: 200,
+    height: 200,
   },
   buildLabel: {
     position: 'absolute',
@@ -149,7 +151,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     textAlign: 'center',
-    color: 'rgba(255,255,255,0.7)',
+    color: 'rgba(60,40,70,0.45)',
     fontSize: 12,
     letterSpacing: 0.4,
   },
