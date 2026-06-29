@@ -73,13 +73,14 @@ Get out there and start exploring.
   `docs/locatour/google-play-console/feature-graphic-1024x500.png` (brand-matched; swap for a designed version later)
 - **Phone screenshots** — `docs/locatour/google-play-console/screenshots/`
   (1080×1920 / 9:16, **framed from real device screenshots**; valid for phone + both tablets):
-  - `01-discover.png` — "Discover places near you"
-  - `02-checkin.png` — "Check in with a photo"
-  - `03-levelup.png` — "Level up as you explore"
-  - `04-achievements.png` — "Unlock 90+ achievements"
-  - `05-history.png` — "Keep your check-in history"
-  Upload all five (Play needs min 2). To refresh: drop new device screenshots into
-  the framing script and re-run (crops the status bar + frames on the brand gradient).
+  - `01-map.png` — "Explore the live map" (the hero — real spots, point values, player avatar)
+  - `02-discover.png` — "Discover what's nearby"
+  - `03-checkin.png` — "Check in with a photo"
+  - `04-levelup.png` — "Level up as you explore"
+  - `05-achievements.png` — "Unlock 90+ achievements"
+  - `06-history.png` — "Keep your check-in history"
+  Upload all six (Play needs min 2; max 8). To refresh: drop new device screenshots
+  into the framing script and re-run (crops the status bar + frames on the brand gradient).
 
 ## Category & contact
 - **Category:** Games → Adventure (or Travel & Local if you prefer the utility
