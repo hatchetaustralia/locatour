@@ -68,8 +68,8 @@ Get out there and start exploring.
 
 ## Listing assets needed
 - **App icon** 512×512 PNG (from `assets/images/icon.png` — export at size)
-- **Feature graphic** 1024×500 PNG (brand it; the landing OG image at
-  `web/public/og-image.png` is a starting point but is 1200×630 — needs a 1024×500 crop/redo)
+- **Feature graphic** 1024×500 PNG — generated and ready at
+  `assets/store/feature-graphic.png` (brand-matched; swap for a designed version later)
 - **Phone screenshots** — min 2, ideally 4–8. Start from the `emu-*` / `v4-*`
   captures in the repo root; frame them and add short captions.
 
