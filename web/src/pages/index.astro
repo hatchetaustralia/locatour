@@ -78,7 +78,7 @@ const storeBadges = `
     ]
   })} />
 
-  <link rel="icon"    type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon"    type="image/png" href="/favicon.png" />
   <link rel="sitemap" href="/sitemap-index.xml" />
 </head>
 <body>
@@ -87,7 +87,7 @@ const storeBadges = `
   <header class="site-header">
     <div class="container header-inner">
       <a href="/" class="logo-link" aria-label="Locatour home">
-        <img class="logo-mark" src="/app-icon.png" alt="" width="40" height="40" aria-hidden="true" />
+        <img class="logo-mark" src="/logo-mark.svg" alt="" width="40" height="40" aria-hidden="true" />
         <span class="logo-name">Locatour</span>
       </a>
       <nav aria-label="Main navigation">
@@ -138,8 +138,8 @@ const storeBadges = `
         <!-- floating game chips -->
         <span class="float-chip chip-a">🏆 +100</span>
         <span class="float-chip chip-b">🏆 +1300</span>
-        <img class="float-sticker sticker-coin" src="/stickers/coin-teal.png" alt="" width="120" height="130" />
-        <img class="float-sticker sticker-hiking" src="/stickers/hiking.png" alt="" width="120" height="122" />
+        <img class="float-sticker sticker-coin" src="/stickers/coin-teal.svg" alt="" width="120" height="130" />
+        <img class="float-sticker sticker-hiking" src="/stickers/hiking.svg" alt="" width="120" height="122" />
       </div>
     </div>
   </section>
@@ -155,25 +155,25 @@ const storeBadges = `
       <ol class="steps" role="list">
         <li class="step-card">
           <div class="step-num">1</div>
-          <img class="step-sticker" src="/stickers/boot.png" alt="" width="120" height="130" loading="eager" />
+          <img class="step-sticker" src="/stickers/boot.svg" alt="" width="120" height="130" loading="eager" />
           <h3 class="step-title">Open the map</h3>
           <p class="step-desc">Real parks, beaches, lookouts and hidden spots appear around you — every one a place you can actually go.</p>
         </li>
         <li class="step-card">
           <div class="step-num">2</div>
-          <img class="step-sticker" src="/stickers/camera.png" alt="" width="146" height="107" loading="eager" />
+          <img class="step-sticker" src="/stickers/camera.svg" alt="" width="146" height="107" loading="eager" />
           <h3 class="step-title">Check in with a photo</h3>
           <p class="step-desc">Get there for real, then snap a photo to claim the spot. No faking it — you have to be standing in it.</p>
         </li>
         <li class="step-card">
           <div class="step-num">3</div>
-          <img class="step-sticker" src="/stickers/coin-teal.png" alt="" width="120" height="130" loading="eager" />
+          <img class="step-sticker" src="/stickers/coin-teal.svg" alt="" width="120" height="130" loading="eager" />
           <h3 class="step-title">Earn points</h3>
           <p class="step-desc">Every genuine visit banks points. Rarer, harder-to-reach places are worth a whole lot more.</p>
         </li>
         <li class="step-card">
           <div class="step-num">4</div>
-          <img class="step-sticker" src="/stickers/hat.png" alt="" width="125" height="120" loading="eager" />
+          <img class="step-sticker" src="/stickers/hat.svg" alt="" width="125" height="120" loading="eager" />
           <h3 class="step-title">Level up</h3>
           <p class="step-desc">Climb the ranks and unlock remote spots saved for the most dedicated explorers. The best views are earned.</p>
         </li>
@@ -336,8 +336,7 @@ h1, h2, h3 { font-family: var(--font-display); }
 }
 .logo-link { display: flex; align-items: center; gap: 0.55rem; }
 .logo-mark {
-  width: 40px; height: 40px; border-radius: 11px;
-  box-shadow: 0 2px 8px rgba(42,26,20,0.14);
+  width: 38px; height: 38px;   /* raw mark, no badge/tile */
 }
 .logo-name {
   font-family: var(--font-display);
@@ -358,6 +357,8 @@ h1, h2, h3 { font-family: var(--font-display); }
 .nav-link:hover { color: var(--color-ink); background: rgba(42,26,20,0.06); }
 .nav-cta {
   background: var(--color-accent); color: #fff;
+  padding: 0.6rem 1.3rem;
+  line-height: 1;
   box-shadow: 0 4px 0 var(--color-accent-dark);
 }
 .nav-cta:hover { background: var(--color-accent); color: #fff; transform: translateY(1px); box-shadow: 0 3px 0 var(--color-accent-dark); }
@@ -481,7 +482,7 @@ h1, h2, h3 { font-family: var(--font-display); }
   font-family: var(--font-display); font-weight: 600; font-size: 1.15rem;
   box-shadow: 0 4px 0 var(--color-accent-dark);
 }
-.step-sticker { height: 84px; width: auto; margin: 0.4rem 0 0.3rem; }
+.step-sticker { height: 92px; width: auto; object-fit: contain; margin: 0.4rem 0 0.3rem; overflow: visible; }
 .step-title { font-size: 1.2rem; font-weight: 600; color: var(--color-ink); }
 .step-desc { font-size: 0.95rem; color: var(--color-ink-muted); line-height: 1.55; }
 
@@ -519,6 +520,8 @@ h1, h2, h3 { font-family: var(--font-display); }
   scroll-snap-type: x mandatory;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  /* centre on wide screens, but stay scroll-from-start when the phones overflow */
+  justify-content: safe center;
 }
 .gallery::-webkit-scrollbar { display: none; }
 .gallery-item {
@@ -576,8 +579,24 @@ h1, h2, h3 { font-family: var(--font-display); }
 @media (max-width: 600px) {
   .nav-list { gap: 0; }
   .nav-link { padding: 0.4rem 0.5rem; font-size: 0.85rem; }
-  .nav-list li:not(:last-child):not(:first-child) { display: none; } /* keep logo nav lean on phones */
+  .nav-list li:not(:last-child) { display: none; }   /* phones: just the "Get the app" button */
+  .nav-cta { padding: 0.55rem 1.2rem; }
   .steps { grid-template-columns: 1fr; }
-  .float-sticker { width: 76px; }
+  .float-sticker { width: 70px; }
+
+  /* Smaller hero + spotlight phones on mobile */
+  .phone-hero { max-width: 232px; }
+  .spotlight-art .phone { max-width: 224px; }
+
+  /* Tighter, centred step cards */
+  .step-card { align-items: center; text-align: center; padding: 1.5rem 1.25rem 1.25rem; gap: 0.3rem; }
+  .step-num { left: 50%; transform: translateX(-50%); }
+  .step-sticker { height: 72px; margin: 0.25rem 0 0.2rem; }
+  .step-desc { max-width: 34ch; }
+
+  /* Final CTA: full-bleed, square, flush to the bottom */
+  .cta { padding-block: clamp(2.25rem, 8vw, 3.25rem) 0; }
+  .cta > .container { max-width: none; padding-inline: 0; }
+  .cta-inner { border-radius: 0; border-left: 0; border-right: 0; }
 }
 </style>

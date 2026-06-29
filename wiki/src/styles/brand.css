@@ -128,11 +128,12 @@ header .site-title img {
 
 /* --- Imagery helpers ------------------------------------------------------ */
 
-/* Phone screenshots: a rounded, softly-shadowed device-ish frame. */
+/* Phone screenshots: the same dark device frame the website uses. */
 .app-screenshot {
-  border-radius: 18px;
-  box-shadow: 0 8px 28px rgba(42, 26, 20, 0.16);
-  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 26px;
+  border: 5px solid #1e1218;
+  background: #1e1218;
+  box-shadow: 0 12px 32px rgba(42, 26, 20, 0.18);
   display: block;
   height: auto;
 }

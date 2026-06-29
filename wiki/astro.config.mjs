@@ -11,13 +11,14 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'Locatour',
+      favicon: '/favicon.png',
       tagline: 'Creating memorable experiences.',
       description:
         'Locatour is a real-world exploration game: visit public parks, lookouts, ' +
         'beaches and hidden places, check in with a photo, and level up. This is the ' +
         'official guide to how it works, plus our privacy and trust commitments.',
       logo: {
-        src: './src/assets/app-icon.png',
+        src: './src/assets/logo-mark.svg',
         alt: 'Locatour',
         replacesTitle: false,
       },
