@@ -2,10 +2,29 @@
 // src/pages/index.astro
 import '../styles/global.css';
 
-const title       = 'Locatour — Creating Memorable Experiences';
-const description = 'A real-world exploration game for public outdoor places. Discover parks, lookouts, and hidden spots near you. Check in with a photo, earn points, and explore further.';
+const title       = 'Locatour — Turn the outdoors into a game';
+const description = 'A real-world exploration game for public places. Open the map, walk to real parks, lookouts and hidden spots, check in with a photo, earn points and level up.';
 const canonicalURL = 'https://locatour.com.au/';
 const ogImage      = 'https://locatour.com.au/og-image.png';
+
+// Greyed "coming soon" store badges — custom placeholder art, not the official
+// store badge artwork, so they clearly read as "not live yet".
+const storeBadges = `
+  <div class="store-badges" role="group" aria-label="App stores — coming soon">
+    <span class="store-badge" aria-disabled="true" aria-label="Coming soon to Google Play">
+      <svg class="store-glyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M3.61 1.814C3.2 2.054 3 2.5 3 3.054v17.892c0 .554.2 1 .61 1.24l.066.038 10.02-10.02v-.236L3.676 1.776l-.066.038zM17.44 15.17l-3.34-3.34v-.236l3.34-3.34.076.044 3.956 2.248c1.13.642 1.13 1.69 0 2.332L17.516 15.13l-.076.04zM3.676 22.186L14.354 11.51 11.01 8.166 3.676 22.186zM14.354 12.49L3.676 1.814l7.334 14.02 3.344-3.344z"/>
+      </svg>
+      <span class="store-badge-copy"><small>Coming soon to</small><strong>Google Play</strong></span>
+    </span>
+    <span class="store-badge" aria-disabled="true" aria-label="Coming soon to the App Store">
+      <svg class="store-glyph" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <path d="M17.05 12.04c-.03-2.6 2.12-3.85 2.22-3.91-1.21-1.77-3.1-2.01-3.77-2.04-1.6-.16-3.13.94-3.94.94-.81 0-2.07-.92-3.4-.89-1.75.03-3.36 1.02-4.26 2.58-1.82 3.16-.47 7.83 1.31 10.39.87 1.25 1.9 2.66 3.26 2.61 1.31-.05 1.8-.85 3.39-.85 1.58 0 2.03.85 3.41.82 1.41-.02 2.3-1.28 3.16-2.54.99-1.45 1.4-2.86 1.42-2.93-.03-.01-2.73-1.05-2.76-4.16zM14.46 4.5c.72-.87 1.2-2.08 1.07-3.29-1.03.04-2.28.69-3.02 1.56-.66.77-1.24 2-1.08 3.18 1.15.09 2.32-.58 3.03-1.45z"/>
+      </svg>
+      <span class="store-badge-copy"><small>Coming soon to</small><strong>App Store</strong></span>
+    </span>
+  </div>
+`;
 ---
 
 <!doctype html>
@@ -31,6 +50,11 @@ const ogImage      = 'https://locatour.com.au/og-image.png';
   <meta name="twitter:description" content={description} />
   <meta name="twitter:image"       content={ogImage} />
 
+  <!-- Fonts: rounded + friendly -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap" />
+
   <!-- JSON-LD -->
   <script type="application/ld+json" set:html={JSON.stringify({
     "@context": "https://schema.org",
@@ -39,7 +63,7 @@ const ogImage      = 'https://locatour.com.au/og-image.png';
         "@type": "Organization",
         "name": "Locatour",
         "url": "https://locatour.com.au",
-        "logo": "https://locatour.com.au/logo.svg",
+        "logo": "https://locatour.com.au/app-icon.png",
         "description": "A real-world exploration game for public outdoor places.",
         "email": "support@hatchet.com.au"
       },
@@ -49,11 +73,7 @@ const ogImage      = 'https://locatour.com.au/og-image.png';
         "applicationCategory": "GameApplication",
         "operatingSystem": "Android",
         "description": "Visit public outdoor places, check in with a photo, earn points, and explore further.",
-        "offers": {
-          "@type": "Offer",
-          "price": "0",
-          "priceCurrency": "AUD"
-        }
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "AUD" }
       }
     ]
   })} />
@@ -67,19 +87,15 @@ const ogImage      = 'https://locatour.com.au/og-image.png';
   <header class="site-header">
     <div class="container header-inner">
       <a href="/" class="logo-link" aria-label="Locatour home">
-        <img src="/logo.svg" alt="" width="26" height="26" aria-hidden="true" />
+        <img class="logo-mark" src="/app-icon.png" alt="" width="40" height="40" aria-hidden="true" />
         <span class="logo-name">Locatour</span>
       </a>
       <nav aria-label="Main navigation">
         <ul class="nav-list">
-          <li><a href="#how-it-works" class="nav-link">How it works</a></li>
+          <li><a href="#how" class="nav-link">How it works</a></li>
+          <li><a href="#peek" class="nav-link">Screenshots</a></li>
           <li>
-            <a href="https://docs.locatour.com.au" class="nav-link" target="_blank" rel="noopener noreferrer">
-              Docs
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M2 8L8 2M8 2H3M8 2v5"/>
-              </svg>
-            </a>
+            <a href="https://docs.locatour.com.au" class="nav-link" target="_blank" rel="noopener noreferrer">Docs</a>
           </li>
           <li><a href="#get" class="nav-link nav-cta">Get the app</a></li>
         </ul>
@@ -89,119 +105,153 @@ const ogImage      = 'https://locatour.com.au/og-image.png';
 
   <!-- ── Hero ── -->
   <section class="hero" aria-labelledby="hero-title">
-    <div class="container hero-inner">
-
-      <div class="hero-badge" aria-hidden="true">Real-world exploration</div>
-
-      <h1 class="hero-title" id="hero-title">Locatour</h1>
-
-      <p class="hero-tagline">Creating memorable experiences.</p>
-
-      <p class="hero-subhead">
-        A game you play by going outside. Discover public places near&nbsp;you,
-        check&nbsp;in with a photo, and earn your way across the&nbsp;map.
-      </p>
-
-      <div class="hero-actions" id="get">
-        <!-- Styled "coming soon" badge — not linked to a fake store URL -->
-        <span class="btn btn-primary" role="img" aria-label="Coming soon to Google Play">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M3.61 1.814C3.2 2.054 3 2.5 3 3.054v17.892c0 .554.2 1 .61 1.24l.066.038 10.02-10.02v-.236L3.676 1.776l-.066.038zM17.44 15.17l-3.34-3.34v-.236l3.34-3.34.076.044 3.956 2.248c1.13.642 1.13 1.69 0 2.332L17.516 15.13l-.076.04zM3.676 22.186L14.354 11.51 11.01 8.166 3.676 22.186zM14.354 12.49L3.676 1.814l7.334 14.02 3.344-3.344z"/>
-          </svg>
-          Coming soon to Google Play
-        </span>
-
-        <a href="https://docs.locatour.com.au" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">
-          Read the docs
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-            <path d="M2 10L10 2M10 2H4M10 2v6"/>
-          </svg>
-        </a>
-      </div>
-
-      <p class="hero-note">Android · Google Play · Coming soon</p>
-
+    <div class="hero-bg" aria-hidden="true">
+      <div class="blob blob-1"></div>
+      <div class="blob blob-2"></div>
+      <div class="blob blob-3"></div>
     </div>
 
-    <!-- Decorative background shapes -->
-    <div class="hero-bg" aria-hidden="true">
-      <div class="hero-blob hero-blob-1"></div>
-      <div class="hero-blob hero-blob-2"></div>
+    <div class="container hero-inner">
+      <div class="hero-copy">
+        <span class="eyebrow">🧭 Real-world adventure game</span>
+        <h1 class="hero-title" id="hero-title">
+          Go outside.<br /><span class="hl">Level up.</span>
+        </h1>
+        <p class="hero-subhead">
+          Locatour turns the map around you into a game. Walk to real parks, lookouts
+          and hidden spots, check in with a photo, and earn your way across the world —
+          one place at a time.
+        </p>
+
+        <div id="get" set:html={storeBadges}></div>
+
+        <div class="hero-actions">
+          <a href="#how" class="btn btn-ghost">See how it works ↓</a>
+        </div>
+        <p class="hero-note">Free to play · Android first · iOS soon</p>
+      </div>
+
+      <div class="hero-art" aria-hidden="true">
+        <div class="phone phone-hero">
+          <img src="/phone/01-map.png" alt="" width="484" height="1050" loading="eager" />
+        </div>
+        <!-- floating game chips -->
+        <span class="float-chip chip-a">🏆 +100</span>
+        <span class="float-chip chip-b">🏆 +1300</span>
+        <img class="float-sticker sticker-coin" src="/stickers/coin-teal.png" alt="" width="120" height="130" />
+        <img class="float-sticker sticker-hiking" src="/stickers/hiking.png" alt="" width="120" height="122" />
+      </div>
     </div>
   </section>
 
   <!-- ── How it works ── -->
-  <section class="how-it-works" id="how-it-works" aria-labelledby="how-title">
+  <section class="how" id="how" aria-labelledby="how-title">
     <div class="container">
       <header class="section-header">
-        <h2 class="section-title" id="how-title">How it works</h2>
-        <p class="section-intro">Four steps. An endless world to find.</p>
+        <span class="eyebrow eyebrow-center">How it works</span>
+        <h2 class="section-title" id="how-title">Four steps. A whole world to find.</h2>
       </header>
 
-      <ol class="feature-grid" role="list">
-
-        <li class="feature-card">
-          <div class="feature-icon" aria-hidden="true">
-            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="18" cy="18" r="18" fill="var(--color-accent-pale)"/>
-              <path d="M18 6C12.477 6 8 10.477 8 16c0 8.5 10 18 10 18s10-9.5 10-18c0-5.523-4.477-10-10-10z" fill="var(--color-accent)" opacity="0.2"/>
-              <path d="M18 6C12.477 6 8 10.477 8 16c0 8.5 10 18 10 18s10-9.5 10-18c0-5.523-4.477-10-10-10z" stroke="var(--color-accent)" stroke-width="1.5" fill="none"/>
-              <circle cx="18" cy="16" r="3.5" fill="var(--color-accent)"/>
-            </svg>
-          </div>
-          <div class="feature-body">
-            <h3 class="feature-title">Discover real places</h3>
-            <p class="feature-desc">Open the map and browse parks, lookouts, beaches, and hidden spots near you. Every location is public land — owned by everyone, free to visit.</p>
-          </div>
+      <ol class="steps" role="list">
+        <li class="step-card">
+          <div class="step-num">1</div>
+          <img class="step-sticker" src="/stickers/boot.png" alt="" width="120" height="130" loading="eager" />
+          <h3 class="step-title">Open the map</h3>
+          <p class="step-desc">Real parks, beaches, lookouts and hidden spots appear around you — every one a place you can actually go.</p>
         </li>
-
-        <li class="feature-card">
-          <div class="feature-icon" aria-hidden="true">
-            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="18" cy="18" r="18" fill="var(--color-accent-pale)"/>
-              <rect x="8" y="13" width="20" height="14" rx="2.5" fill="var(--color-accent)" opacity="0.15" stroke="var(--color-accent)" stroke-width="1.5"/>
-              <path d="M13 13v-2a1.5 1.5 0 011.5-1.5h7A1.5 1.5 0 0123 11v2" stroke="var(--color-accent)" stroke-width="1.5" stroke-linecap="round"/>
-              <circle cx="18" cy="20" r="3.5" fill="var(--color-accent)"/>
-              <circle cx="18" cy="20" r="1.5" fill="white"/>
-            </svg>
-          </div>
-          <div class="feature-body">
-            <h3 class="feature-title">Check in with a photo</h3>
-            <p class="feature-desc">When you arrive, Locatour confirms you're there. Snap a photo to mark the moment. No faking it — you have to actually be at the place.</p>
-          </div>
+        <li class="step-card">
+          <div class="step-num">2</div>
+          <img class="step-sticker" src="/stickers/camera.png" alt="" width="146" height="107" loading="eager" />
+          <h3 class="step-title">Check in with a photo</h3>
+          <p class="step-desc">Get there for real, then snap a photo to claim the spot. No faking it — you have to be standing in it.</p>
         </li>
-
-        <li class="feature-card">
-          <div class="feature-icon" aria-hidden="true">
-            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="18" cy="18" r="18" fill="var(--color-accent-pale)"/>
-              <path d="M18 8l2.47 7.09H28l-6.18 4.33 2.47 7.09L18 22.18l-6.29 4.33 2.47-7.09L8 15.09h7.53z" fill="var(--color-accent)" opacity="0.2" stroke="var(--color-accent)" stroke-width="1.5" stroke-linejoin="round"/>
-            </svg>
-          </div>
-          <div class="feature-body">
-            <h3 class="feature-title">Level up &amp; earn</h3>
-            <p class="feature-desc">Each check-in earns you experience. As you level up, new and more remote places unlock. The best spots are saved for the most dedicated explorers.</p>
-          </div>
+        <li class="step-card">
+          <div class="step-num">3</div>
+          <img class="step-sticker" src="/stickers/coin-teal.png" alt="" width="120" height="130" loading="eager" />
+          <h3 class="step-title">Earn points</h3>
+          <p class="step-desc">Every genuine visit banks points. Rarer, harder-to-reach places are worth a whole lot more.</p>
         </li>
-
-        <li class="feature-card">
-          <div class="feature-icon" aria-hidden="true">
-            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="18" cy="18" r="18" fill="var(--color-accent-pale)"/>
-              <path d="M18 8a7 7 0 00-7 7v5.5l-1.5 2.5h17L25 20.5V15a7 7 0 00-7-7z" fill="var(--color-accent)" opacity="0.15" stroke="var(--color-accent)" stroke-width="1.5"/>
-              <path d="M15.5 25.5a2.5 2.5 0 005 0" stroke="var(--color-accent)" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
-          </div>
-          <div class="feature-body">
-            <h3 class="feature-title">
-              Nearby alerts
-              <span class="chip">opt-in</span>
-            </h3>
-            <p class="feature-desc">Let Locatour nudge you when you're close to a spot you haven't visited. A gentle tap on the shoulder from the world outside — entirely on your terms.</p>
-          </div>
+        <li class="step-card">
+          <div class="step-num">4</div>
+          <img class="step-sticker" src="/stickers/hat.png" alt="" width="125" height="120" loading="eager" />
+          <h3 class="step-title">Level up</h3>
+          <p class="step-desc">Climb the ranks and unlock remote spots saved for the most dedicated explorers. The best views are earned.</p>
         </li>
-
       </ol>
+    </div>
+  </section>
+
+  <!-- ── Spotlight: Discover ── -->
+  <section class="spotlight spotlight-mint" aria-labelledby="sp1-title">
+    <div class="container spotlight-inner">
+      <div class="spotlight-art">
+        <div class="phone"><img src="/phone/02-discover.png" alt="A list of nearby spots to discover in the Locatour app" width="484" height="1050" loading="eager" /></div>
+      </div>
+      <div class="spotlight-copy">
+        <span class="eyebrow">Discover</span>
+        <h2 class="section-title" id="sp1-title">Spots you'd never have found</h2>
+        <p>Locatour surfaces the places hiding in plain sight near you — the little lookout, the reserve at the end of the road, the beach nobody posts about. Pull up the list, pick one, and go.</p>
+        <ul class="ticks">
+          <li>Real public places, free to visit</li>
+          <li>Sorted by what's close and worth the most</li>
+          <li>Nearby alerts when you're near somewhere new (opt-in)</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Spotlight: Achievements ── -->
+  <section class="spotlight spotlight-amber" aria-labelledby="sp2-title">
+    <div class="container spotlight-inner spotlight-reverse">
+      <div class="spotlight-art">
+        <div class="phone"><img src="/phone/05-achievements.png" alt="The achievements screen in the Locatour app" width="484" height="1050" loading="eager" /></div>
+      </div>
+      <div class="spotlight-copy">
+        <span class="eyebrow">Collect &amp; climb</span>
+        <h2 class="section-title" id="sp2-title">92 achievements to chase</h2>
+        <p>First check-in, off the beaten path, dawn patrol, a clean sweep of a whole region — there's always one more badge just out of reach. Build a streak, fill out your map, and watch your level tick up.</p>
+        <ul class="ticks">
+          <li>Badges for milestones, streaks and rare finds</li>
+          <li>A profile that tells the story of where you've been</li>
+          <li>Every check-in counts toward the next level</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Peek inside (gallery) ── -->
+  <section class="peek" id="peek" aria-labelledby="peek-title">
+    <div class="container">
+      <header class="section-header">
+        <span class="eyebrow eyebrow-center">Peek inside</span>
+        <h2 class="section-title" id="peek-title">A real game, played outside</h2>
+      </header>
+    </div>
+    <div class="gallery" role="list">
+      <figure class="gallery-item" role="listitem">
+        <div class="phone"><img src="/phone/01-map.png" alt="The live map" width="484" height="1050" loading="eager" /></div>
+        <figcaption>The live map</figcaption>
+      </figure>
+      <figure class="gallery-item" role="listitem">
+        <div class="phone"><img src="/phone/02-discover.png" alt="Discover nearby spots" width="484" height="1050" loading="eager" /></div>
+        <figcaption>Discover nearby</figcaption>
+      </figure>
+      <figure class="gallery-item" role="listitem">
+        <div class="phone"><img src="/phone/03-checkin.png" alt="Photo check-in" width="484" height="1050" loading="eager" /></div>
+        <figcaption>Photo check-in</figcaption>
+      </figure>
+      <figure class="gallery-item" role="listitem">
+        <div class="phone"><img src="/phone/04-levelup.png" alt="Level up" width="484" height="1050" loading="eager" /></div>
+        <figcaption>Level up</figcaption>
+      </figure>
+      <figure class="gallery-item" role="listitem">
+        <div class="phone"><img src="/phone/05-achievements.png" alt="Achievements" width="484" height="1050" loading="eager" /></div>
+        <figcaption>Achievements</figcaption>
+      </figure>
+      <figure class="gallery-item" role="listitem">
+        <div class="phone"><img src="/phone/06-history.png" alt="Your journey" width="484" height="1050" loading="eager" /></div>
+        <figcaption>Your journey</figcaption>
+      </figure>
     </div>
   </section>
 
@@ -209,47 +259,33 @@ const ogImage      = 'https://locatour.com.au/og-image.png';
   <section class="mission" aria-labelledby="mission-title">
     <div class="container mission-inner">
       <div class="mission-text">
+        <span class="eyebrow">Why we built it</span>
         <h2 class="section-title" id="mission-title">Public places,<br />owned by everyone</h2>
         <p>
-          Australia's parks, reserves, beaches, and wild places belong to all of us.
-          Locatour is built around a simple idea: the best way to care for a place
-          is to help people fall in love with it.
+          Australia's parks, reserves, beaches and wild places belong to all of us.
+          Locatour is built on a simple idea: the best way to care for a place is to
+          help people fall in love with it.
         </p>
         <p>
-          Every location in the game is genuine public land — non-commercial,
-          free to visit, and already yours. The points are just the scoreboard.
-          The real reward is the experience of being somewhere you'd never have
-          gone otherwise.
+          Every location in the game is genuine public land — non-commercial, free to
+          visit, and already yours. The points are just the scoreboard. The real reward
+          is being somewhere you'd never have gone otherwise.
         </p>
-        <blockquote class="mission-pull">
-          A reason to go. A nudge toward the door. A scoreboard for a life
-          spent a little more outside.
-        </blockquote>
       </div>
+      <blockquote class="mission-pull">
+        A reason to go. A nudge toward the door. A scoreboard for a life spent a little more outside.
+      </blockquote>
+    </div>
+  </section>
 
-      <div class="mission-graphic" aria-hidden="true">
-        <div class="mission-pin-cluster">
-          <div class="mission-pin pin-lg">
-            <svg width="48" height="56" viewBox="0 0 48 56" fill="none">
-              <path d="M24 2C13.507 2 5 10.507 5 21c0 14.333 19 35 19 35S43 35.333 43 21c0-10.493-8.507-19-19-19z" fill="#d1453b"/>
-              <circle cx="24" cy="21" r="8" fill="#FDF3DA"/>
-              <circle cx="24" cy="21" r="4" fill="#b46c00"/>
-            </svg>
-          </div>
-          <div class="mission-pin pin-sm pin-offset-1">
-            <svg width="32" height="38" viewBox="0 0 32 32" fill="none">
-              <path d="M16 2C10.477 2 6 6.477 6 12c0 7.5 10 18 10 18s10-10.5 10-18c0-5.523-4.477-10-10-10z" fill="#7C5CFF"/>
-              <circle cx="16" cy="12" r="4.2" fill="white" opacity="0.8"/>
-            </svg>
-          </div>
-          <div class="mission-pin pin-sm pin-offset-2">
-            <svg width="28" height="34" viewBox="0 0 32 32" fill="none">
-              <path d="M16 2C10.477 2 6 6.477 6 12c0 7.5 10 18 10 18s10-10.5 10-18c0-5.523-4.477-10-10-10z" fill="#b46c00" opacity="0.8"/>
-              <circle cx="16" cy="12" r="4.2" fill="#FDF3DA"/>
-            </svg>
-          </div>
-        </div>
-      </div>
+  <!-- ── Final CTA ── -->
+  <section class="cta" aria-labelledby="cta-title">
+    <div class="container cta-inner">
+      <img class="cta-icon" src="/app-icon.png" alt="" width="76" height="76" />
+      <h2 class="cta-title" id="cta-title">Ready to go outside?</h2>
+      <p class="cta-sub">Locatour is launching soon. Get it the day it lands.</p>
+      <div set:html={storeBadges}></div>
+      <p class="hero-note">Free to play · Android first · iOS soon</p>
     </div>
   </section>
 
@@ -258,7 +294,7 @@ const ogImage      = 'https://locatour.com.au/og-image.png';
     <div class="container footer-inner">
       <div class="footer-top">
         <a href="/" class="footer-logo" aria-label="Locatour home">
-          <img src="/logo.svg" alt="" width="20" height="20" aria-hidden="true" />
+          <img src="/app-icon.png" alt="" width="28" height="28" aria-hidden="true" />
           <span>Locatour</span>
         </a>
         <nav aria-label="Footer navigation">
@@ -278,435 +314,270 @@ const ogImage      = 'https://locatour.com.au/og-image.png';
 </html>
 
 <style>
-/* ── Site header ── */
+/* ── Base type ── */
+h1, h2, h3 { font-family: var(--font-display); }
+
+/* ── Header ── */
 .site-header {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(252, 240, 232, 0.92);
+  background: rgba(252, 240, 232, 0.88);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--color-border);
 }
-
 .header-inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 1.5rem;
-  padding-block: 0.875rem;
+  padding-block: 0.7rem;
 }
-
-.logo-link {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+.logo-link { display: flex; align-items: center; gap: 0.55rem; }
+.logo-mark {
+  width: 40px; height: 40px; border-radius: 11px;
+  box-shadow: 0 2px 8px rgba(42,26,20,0.14);
+}
+.logo-name {
+  font-family: var(--font-display);
   font-weight: 700;
-  font-size: 1.0625rem;
+  font-size: 1.3rem;
   letter-spacing: -0.01em;
   color: var(--color-ink);
 }
-.logo-link:hover .logo-name {
-  color: var(--color-accent);
-}
-.logo-name {
-  transition: color 0.15s ease;
-}
-
-.nav-list {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
+.nav-list { display: flex; align-items: center; gap: 0.25rem; }
 .nav-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.2em;
-  padding: 0.4rem 0.75rem;
+  display: inline-flex; align-items: center;
+  padding: 0.45rem 0.8rem;
   border-radius: var(--radius-full);
-  font-size: 0.9rem;
-  font-weight: 500;
+  font-size: 0.95rem; font-weight: 700;
   color: var(--color-ink-muted);
   transition: color 0.15s ease, background 0.15s ease;
 }
-.nav-link:hover {
-  color: var(--color-ink);
-  background: var(--color-border);
-}
-
+.nav-link:hover { color: var(--color-ink); background: rgba(42,26,20,0.06); }
 .nav-cta {
-  background: var(--color-accent);
-  color: #fff;
-  font-weight: 600;
+  background: var(--color-accent); color: #fff;
+  box-shadow: 0 4px 0 var(--color-accent-dark);
 }
-.nav-cta:hover {
-  background: var(--color-accent-dark);
-  color: #fff;
-}
+.nav-cta:hover { background: var(--color-accent); color: #fff; transform: translateY(1px); box-shadow: 0 3px 0 var(--color-accent-dark); }
 
-/* ── Hero ── */
-.hero {
-  position: relative;
-  overflow: hidden;
-  padding-block: clamp(4rem, 12vw, 7rem) clamp(4rem, 10vw, 6rem);
-  text-align: center;
-}
-
-.hero-inner {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-}
-
-.hero-badge {
+/* ── Shared bits ── */
+.eyebrow {
   display: inline-block;
-  padding: 0.3rem 0.9rem;
+  padding: 0.35rem 0.9rem;
   border-radius: var(--radius-full);
   background: var(--color-accent-pale);
   color: var(--color-accent-dark);
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.hero-title {
-  font-size: clamp(3rem, 10vw, 6.5rem);
   font-weight: 800;
-  letter-spacing: -0.03em;
-  line-height: 1;
-  background: linear-gradient(110deg, #d1453b 10%, #7C5CFF 55%, #b46c00 90%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  margin-block: 0.25rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.01em;
 }
-
-.hero-tagline {
-  font-size: clamp(1.1rem, 2.5vw, 1.4rem);
-  font-weight: 600;
-  color: var(--color-gold);
-  letter-spacing: -0.01em;
-}
-
-.hero-subhead {
-  max-width: 50ch;
-  font-size: clamp(1rem, 2vw, 1.125rem);
-  color: var(--color-ink-muted);
-  line-height: 1.6;
-  margin-top: 0.25rem;
-}
-
-.hero-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  margin-top: 0.75rem;
-}
-
-.hero-note {
-  font-size: 0.78rem;
-  color: var(--color-ink-faint);
-  margin-top: -0.25rem;
+.eyebrow-center { margin-inline: auto; }
+.section-header { text-align: center; margin-bottom: clamp(2rem, 5vw, 3.25rem); display: flex; flex-direction: column; gap: 0.85rem; align-items: center; }
+.section-title {
+  font-weight: 700;
+  font-size: clamp(1.9rem, 4.5vw, 3rem);
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  color: var(--color-ink);
 }
 
 /* ── Buttons ── */
 .btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45em;
-  padding: 0.75rem 1.375rem;
+  display: inline-flex; align-items: center; gap: 0.45em;
+  padding: 0.8rem 1.4rem;
   border-radius: var(--radius-full);
-  font-size: 0.9375rem;
-  font-weight: 600;
-  line-height: 1;
-  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  font-family: var(--font-display);
+  font-size: 1rem; font-weight: 600; line-height: 1;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
+.btn-ghost { color: var(--color-accent-dark); font-weight: 700; font-family: var(--font-sans); }
+.btn-ghost:hover { transform: translateY(-1px); }
 
-.btn-primary {
-  background: var(--color-ink);
-  color: #fff;
-  cursor: default;
-  opacity: 0.92;
-}
+/* ── Hero ── */
+.hero { position: relative; overflow: hidden; padding-block: clamp(2.5rem, 6vw, 4.5rem) clamp(3rem, 8vw, 5.5rem); }
+.hero-bg { position: absolute; inset: 0; pointer-events: none; }
+.blob { position: absolute; border-radius: 50%; filter: blur(70px); opacity: 0.5; }
+.blob-1 { width: 460px; height: 460px; background: var(--color-accent-pale); top: -12%; right: -6%; }
+.blob-2 { width: 380px; height: 380px; background: var(--color-mint-pale); bottom: -16%; left: -8%; }
+.blob-3 { width: 320px; height: 320px; background: var(--color-amber-pale); top: 30%; left: 30%; opacity: 0.4; }
 
-.btn-secondary {
-  background: transparent;
-  color: var(--color-accent);
-  border: 1.5px solid var(--color-accent);
+.hero-inner {
+  position: relative; z-index: 1;
+  display: grid; grid-template-columns: 1fr; gap: 2.5rem; align-items: center;
 }
-.btn-secondary:hover {
-  background: var(--color-accent-pale);
-  transform: translateY(-1px);
+@media (min-width: 880px) {
+  .hero-inner { grid-template-columns: 1.05fr 0.95fr; gap: 1rem; }
 }
+.hero-copy { display: flex; flex-direction: column; gap: 1.1rem; align-items: flex-start; }
+.hero-title {
+  font-weight: 700;
+  font-size: clamp(2.8rem, 8vw, 5rem);
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  color: var(--color-ink);
+  margin-block: 0.2rem;
+}
+.hero-title .hl {
+  background: linear-gradient(100deg, var(--color-brand-red) 5%, var(--color-accent) 55%, var(--color-mint) 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.hero-subhead { max-width: 46ch; font-size: clamp(1.05rem, 2vw, 1.2rem); color: var(--color-ink-muted); line-height: 1.55; }
+.hero-actions { margin-top: 0.2rem; }
+.hero-note { font-size: 0.85rem; font-weight: 700; color: var(--color-ink-faint); }
 
-/* ── Hero blobs ── */
-.hero-bg {
+/* Hero art / phone */
+.hero-art { position: relative; display: flex; justify-content: center; }
+.phone {
+  position: relative;
+  width: 100%; max-width: 300px;
+  border-radius: 38px;
+  border: 7px solid #1e1218;
+  background: #1e1218;
+  overflow: hidden;
+  box-shadow: var(--shadow-pop);
+}
+.phone img { display: block; width: 100%; height: auto; border-radius: 30px; }
+.phone-hero { max-width: 320px; transform: rotate(-3deg); }
+
+.float-chip {
   position: absolute;
-  inset: 0;
-  pointer-events: none;
+  font-family: var(--font-display); font-weight: 600;
+  background: var(--color-amber); color: #2a1a14;
+  padding: 0.4rem 0.8rem; border-radius: var(--radius-full);
+  font-size: 0.95rem;
+  box-shadow: var(--shadow-soft);
 }
-.hero-blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.18;
-}
-.hero-blob-1 {
-  width: 500px;
-  height: 500px;
-  background: var(--color-accent);
-  top: -10%;
-  right: -10%;
-}
-.hero-blob-2 {
-  width: 400px;
-  height: 400px;
-  background: #d1453b;
-  bottom: -15%;
-  left: -8%;
-}
+.chip-a { top: 12%; left: -2%; transform: rotate(-8deg); }
+.chip-b { top: 38%; right: -4%; background: var(--color-accent); color: #fff; transform: rotate(6deg); }
+.float-sticker { position: absolute; width: 96px; height: auto; filter: drop-shadow(0 10px 16px rgba(42,26,20,0.22)); }
+.sticker-coin { bottom: -6%; left: -4%; transform: rotate(-12deg); width: 104px; }
+.sticker-hiking { top: -7%; right: 4%; width: 88px; transform: rotate(10deg); }
 
 /* ── How it works ── */
-.how-it-works {
-  background: var(--color-bg-card);
-  padding-block: clamp(3.5rem, 8vw, 5.5rem);
-  border-top: 1px solid var(--color-border);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.section-header {
-  text-align: center;
-  margin-bottom: clamp(2rem, 5vw, 3.5rem);
-}
-
-.section-title {
-  font-size: clamp(1.75rem, 4vw, 2.5rem);
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
-  color: var(--color-ink);
-}
-
-.section-intro {
-  margin-top: 0.5rem;
-  font-size: 1.0625rem;
-  color: var(--color-ink-muted);
-}
-
-.feature-grid {
-  display: grid;
+.how { padding-block: clamp(3.5rem, 8vw, 6rem); }
+.steps {
+  display: grid; gap: 1.25rem;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 1.25rem;
 }
-
-.feature-card {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1.5rem;
-  background: var(--color-bg);
+.step-card {
+  position: relative;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.5rem;
+  padding: 2.25rem 1.5rem 1.6rem;
+  background: var(--color-bg-card);
   border: 1px solid var(--color-border-card);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   box-shadow: var(--shadow-card);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
-.feature-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 24px rgba(42, 26, 20, 0.10);
+.step-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-soft); }
+.step-num {
+  position: absolute; top: -16px; left: 1.5rem;
+  width: 38px; height: 38px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: var(--color-accent); color: #fff;
+  font-family: var(--font-display); font-weight: 600; font-size: 1.15rem;
+  box-shadow: 0 4px 0 var(--color-accent-dark);
+}
+.step-sticker { height: 84px; width: auto; margin: 0.4rem 0 0.3rem; }
+.step-title { font-size: 1.2rem; font-weight: 600; color: var(--color-ink); }
+.step-desc { font-size: 0.95rem; color: var(--color-ink-muted); line-height: 1.55; }
+
+/* ── Spotlights ── */
+.spotlight { padding-block: clamp(3.5rem, 8vw, 6rem); }
+.spotlight-mint { background: var(--color-mint-pale); }
+.spotlight-amber { background: var(--color-amber-pale); }
+.spotlight-inner {
+  display: grid; grid-template-columns: 1fr; gap: 2.5rem; align-items: center;
+}
+@media (min-width: 820px) {
+  .spotlight-inner { grid-template-columns: 0.9fr 1.1fr; gap: 3.5rem; }
+  .spotlight-reverse .spotlight-art { order: 2; }
+}
+.spotlight-art { display: flex; justify-content: center; }
+.spotlight-art .phone { max-width: 280px; transform: rotate(-2deg); }
+.spotlight-reverse .spotlight-art .phone { transform: rotate(2deg); }
+.spotlight-copy { display: flex; flex-direction: column; gap: 1rem; align-items: flex-start; }
+.spotlight-copy p { font-size: 1.05rem; color: var(--color-ink-muted); line-height: 1.6; max-width: 46ch; }
+.ticks { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.25rem; }
+.ticks li { position: relative; padding-left: 2rem; font-weight: 700; color: var(--color-ink); }
+.ticks li::before {
+  content: "✓"; position: absolute; left: 0; top: -2px;
+  width: 1.45rem; height: 1.45rem; display: grid; place-items: center;
+  background: var(--color-mint); color: #15402c; border-radius: 50%;
+  font-size: 0.85rem; font-weight: 900;
 }
 
-.feature-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
+/* ── Peek (gallery) ── */
+.peek { padding-block: clamp(3.5rem, 8vw, 6rem); background: var(--color-accent-pale); overflow: hidden; }
+.gallery {
+  display: flex; gap: 1.25rem;
+  padding-inline: var(--gutter);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
-
-.feature-title {
-  font-size: 1.0625rem;
-  font-weight: 700;
-  color: var(--color-ink);
-  letter-spacing: -0.01em;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+.gallery::-webkit-scrollbar { display: none; }
+.gallery-item {
+  flex: 0 0 auto; margin: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 0.85rem;
+  scroll-snap-align: center;
 }
-
-.feature-desc {
-  font-size: 0.9rem;
-  color: var(--color-ink-muted);
-  line-height: 1.6;
-}
-
-.chip {
-  display: inline-block;
-  padding: 0.15em 0.55em;
-  border-radius: var(--radius-full);
-  background: var(--color-accent-pale);
-  color: var(--color-accent-dark);
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
+.gallery-item .phone { width: 220px; }
+.gallery-item:nth-child(odd) .phone { transform: rotate(-2deg); }
+.gallery-item:nth-child(even) .phone { transform: rotate(2deg); }
+.gallery-item figcaption { font-family: var(--font-display); font-weight: 600; color: var(--color-accent-dark); }
 
 /* ── Mission ── */
-.mission {
-  padding-block: clamp(3.5rem, 8vw, 5.5rem);
-  background: var(--color-bg-alt);
-}
-
-.mission-inner {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 3rem;
-  align-items: center;
-}
-
-@media (min-width: 720px) {
-  .mission-inner {
-    grid-template-columns: 1fr auto;
-    gap: 4rem;
-  }
-}
-
-.mission-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  max-width: 58ch;
-}
-
-.mission-text .section-title {
-  margin-bottom: 0.25rem;
-}
-
-.mission-text p {
-  color: var(--color-ink-muted);
-  font-size: 1rem;
-  line-height: 1.7;
-}
-
+.mission { padding-block: clamp(3.5rem, 8vw, 6rem); }
+.mission-inner { display: grid; grid-template-columns: 1fr; gap: 2.5rem; align-items: center; }
+@media (min-width: 820px) { .mission-inner { grid-template-columns: 1.2fr 0.8fr; gap: 4rem; } }
+.mission-text { display: flex; flex-direction: column; gap: 1rem; align-items: flex-start; max-width: 56ch; }
+.mission-text p { color: var(--color-ink-muted); font-size: 1.05rem; line-height: 1.7; }
 .mission-pull {
-  border-left: 3px solid var(--color-accent);
-  padding-left: 1.25rem;
-  margin-top: 0.5rem;
-  font-size: 1.0625rem;
-  font-weight: 600;
-  color: var(--color-ink);
-  font-style: normal;
-  line-height: 1.5;
+  background: var(--color-bg-alt);
+  border-left: 5px solid var(--color-amber);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem 1.6rem;
+  font-family: var(--font-display); font-weight: 500;
+  font-size: 1.2rem; line-height: 1.4; color: var(--color-ink);
 }
 
-/* Mission decorative pin cluster */
-.mission-graphic {
-  display: none;
+/* ── Final CTA ── */
+.cta { padding-block: clamp(3.5rem, 8vw, 5.5rem); }
+.cta-inner {
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1rem;
+  background: linear-gradient(160deg, #efe9ff 0%, var(--color-mint-pale) 100%);
+  border: 1px solid var(--color-border-card);
+  border-radius: var(--radius-xl);
+  padding: clamp(2.5rem, 6vw, 4rem) 1.5rem;
 }
-@media (min-width: 720px) {
-  .mission-graphic {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-}
-
-.mission-pin-cluster {
-  position: relative;
-  width: 120px;
-  height: 140px;
-}
-
-.mission-pin {
-  position: absolute;
-  filter: drop-shadow(0 4px 10px rgba(42,26,20,0.15));
-}
-.pin-lg  { bottom: 0; left: 50%; transform: translateX(-50%); }
-.pin-sm  { }
-.pin-offset-1 { top: 5px; left: 0; transform: rotate(-10deg); }
-.pin-offset-2 { top: 20px; right: 0; transform: rotate(8deg); }
+.cta-icon { width: 76px; height: 76px; border-radius: 20px; box-shadow: var(--shadow-soft); }
+.cta-title { font-weight: 700; font-size: clamp(1.9rem, 5vw, 2.8rem); letter-spacing: -0.02em; color: var(--color-ink); }
+.cta-sub { color: var(--color-ink-muted); font-size: 1.1rem; max-width: 40ch; }
+.cta .store-badges { justify-content: center; margin-top: 0.75rem; }
 
 /* ── Footer ── */
-.site-footer {
-  background: var(--color-bg-dark);
-  color: rgba(253, 243, 218, 0.7);
-  padding-block: 2.5rem 2rem;
-  border-top: 1px solid rgba(255,255,255,0.05);
-}
+.site-footer { background: var(--color-bg-dark); color: rgba(253,243,218,0.7); padding-block: 2.5rem 2rem; }
+.footer-inner { display: flex; flex-direction: column; gap: 1.25rem; }
+.footer-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; }
+.footer-logo { display: flex; align-items: center; gap: 0.55rem; font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; color: rgba(253,243,218,0.92); }
+.footer-logo img { border-radius: 8px; }
+.footer-logo:hover { opacity: 0.85; }
+.footer-links { display: flex; flex-wrap: wrap; gap: 0.125rem 0.25rem; }
+.footer-links a { padding: 0.3rem 0.6rem; border-radius: var(--radius-sm); font-size: 0.9rem; font-weight: 600; color: rgba(253,243,218,0.65); transition: color 0.15s ease; }
+.footer-links a:hover { color: rgba(253,243,218,0.95); }
+.footer-copy { font-size: 0.82rem; color: rgba(253,243,218,0.4); border-top: 1px solid rgba(255,255,255,0.06); padding-top: 1.25rem; }
 
-.footer-inner {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
-
-.footer-top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.footer-logo {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 700;
-  font-size: 0.9375rem;
-  color: rgba(253, 243, 218, 0.9);
-  transition: opacity 0.15s ease;
-}
-.footer-logo:hover {
-  opacity: 0.8;
-}
-
-.footer-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.125rem 0.25rem;
-}
-
-.footer-links a {
-  padding: 0.3rem 0.6rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.875rem;
-  color: rgba(253, 243, 218, 0.65);
-  transition: color 0.15s ease;
-}
-.footer-links a:hover {
-  color: rgba(253, 243, 218, 0.95);
-}
-
-.footer-copy {
-  font-size: 0.8rem;
-  color: rgba(253, 243, 218, 0.35);
-  border-top: 1px solid rgba(255,255,255,0.06);
-  padding-top: 1.25rem;
-}
-
-/* ── Responsive adjustments ── */
+/* ── Responsive ── */
 @media (max-width: 600px) {
-  .nav-list {
-    gap: 0;
-  }
-  .nav-link {
-    padding: 0.4rem 0.55rem;
-    font-size: 0.83rem;
-  }
-  .feature-grid {
-    grid-template-columns: 1fr;
-  }
-  .footer-top {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+  .nav-list { gap: 0; }
+  .nav-link { padding: 0.4rem 0.5rem; font-size: 0.85rem; }
+  .nav-list li:not(:last-child):not(:first-child) { display: none; } /* keep logo nav lean on phones */
+  .steps { grid-template-columns: 1fr; }
+  .float-sticker { width: 76px; }
 }
 </style>

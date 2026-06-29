@@ -21,6 +21,16 @@
   --color-gold:         #b46c00;
   --color-brand-red:    #d1453b;
 
+  /* Playful game palette (pulled from the app: pins, coins, avatars) */
+  --color-mint:         #7BC9A0;
+  --color-mint-pale:    #e3f5ec;
+  --color-teal:         #7FCFCF;
+  --color-teal-pale:    #e2f4f4;
+  --color-amber:        #F5B838;
+  --color-amber-pale:   #fdeecb;
+  --color-pink:         #EA739C;
+  --color-pink-pale:    #fbe4ec;
+
   --color-ink:          #2a1a14;
   --color-ink-muted:    #6b4a3a;
   --color-ink-faint:    #c4a98e;
@@ -28,18 +38,24 @@
   --color-border:       rgba(42, 26, 20, 0.10);
   --color-border-card:  rgba(124, 92, 255, 0.12);
 
-  --radius-sm:    6px;
-  --radius-md:    12px;
-  --radius-lg:    20px;
+  --radius-sm:    8px;
+  --radius-md:    16px;
+  --radius-lg:    24px;
+  --radius-xl:    32px;
   --radius-full:  9999px;
 
   --shadow-card:  0 2px 12px rgba(42, 26, 20, 0.08), 0 1px 3px rgba(42, 26, 20, 0.05);
+  --shadow-soft:  0 12px 36px rgba(42, 26, 20, 0.12);
+  --shadow-pop:   0 18px 50px rgba(42, 26, 20, 0.18);
   --shadow-btn:   0 4px 14px rgba(124, 92, 255, 0.30);
+  /* Soft "sticker" lift — the friendly version of the app's hard offset shadow */
+  --shadow-sticker: 0 8px 0 rgba(42, 26, 20, 0.10);
 
-  --max-w: 1080px;
+  --max-w: 1120px;
   --gutter: clamp(1.25rem, 5vw, 2.5rem);
 
-  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --font-display: 'Fredoka', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sans: 'Nunito', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
 }
 
 /* ── Reset ── */
@@ -91,6 +107,27 @@ ul {
   outline-offset: 3px;
   border-radius: var(--radius-sm);
 }
+
+/* ── Store badges (greyed "coming soon") ──
+ * Global (not scoped) because the markup is injected via Astro `set:html`,
+ * which doesn't receive the component's scoped style attributes. */
+.store-badges { display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem; }
+.store-badge {
+  display: inline-flex; align-items: center; gap: 0.6rem;
+  padding: 0.6rem 1.1rem;
+  border-radius: 14px;
+  background: #b7ada4;            /* warm grey = clearly "not live yet" */
+  color: #f3ece4;
+  cursor: not-allowed;
+  filter: grayscale(0.25);
+  box-shadow: 0 4px 0 rgba(42, 26, 20, 0.14);
+  user-select: none;
+}
+.store-glyph { width: 24px; height: 24px; flex-shrink: 0; }
+.store-badge-copy { display: flex; flex-direction: column; line-height: 1.1; text-align: left; }
+.store-badge-copy small { font-size: 0.66rem; font-weight: 700; opacity: 0.85; letter-spacing: 0.02em; }
+.store-badge-copy strong { font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; }
+.cta .store-badges { justify-content: center; }
 
 /* ── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
