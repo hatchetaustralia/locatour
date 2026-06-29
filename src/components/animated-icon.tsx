@@ -1,11 +1,23 @@
 import { Image } from 'expo-image';
 import { useState } from 'react';
-import { Dimensions, StyleSheet, View } from 'react-native';
+import { Dimensions, StyleSheet, View, Text } from 'react-native';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
+import * as Updates from 'expo-updates';
+import Constants from 'expo-constants';
 
 const INITIAL_SCALE_FACTOR = Dimensions.get('screen').height / 90;
 const DURATION = 600;
+
+// Tiny build marker on the boot splash so a field tester can see at a glance that
+// a new bundle actually landed. The app version alone never changes across OTA
+// updates, so we append the short OTA update id — that part changes with every
+// `eas update` ("embedded" until one applies). Computed once at module load;
+// Updates.* are synchronous constants (null in dev → reads "v… · embedded").
+const APP_VERSION = Constants.expoConfig?.version ?? '?';
+const OTA_ID =
+  Updates.isEmbeddedLaunch || !Updates.updateId ? 'embedded' : Updates.updateId.slice(0, 8);
+const BUILD_LABEL = `v${APP_VERSION} · ${OTA_ID}`;
 
 export function AnimatedSplashOverlay() {
   const [visible, setVisible] = useState(true);
@@ -40,7 +52,9 @@ export function AnimatedSplashOverlay() {
         }
       })}
       style={styles.backgroundSolidColor}
-    />
+    >
+      <Text style={styles.buildLabel}>{BUILD_LABEL}</Text>
+    </Animated.View>
   );
 }
 
@@ -128,5 +142,15 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#208AEF',
     zIndex: 1000,
+  },
+  buildLabel: {
+    position: 'absolute',
+    bottom: 48,
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    letterSpacing: 0.4,
   },
 });
