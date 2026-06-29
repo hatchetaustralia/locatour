@@ -10,10 +10,12 @@
  * round-trips, lower battery, and a single source of truth for "something hidden
  * nearby" (so the distance is consistent + live everywhere).
  *
- * Read-only on permission (getForegroundPermissionsAsync — NEVER prompts here;
- * permission is requested in onboarding / the opt-in Nearby Alerts flow). The
- * camera keeps its OWN high-accuracy watch for check-in proximity gating; it only
- * reads the shared locations/level/visited/unlocked + hidden readout from here.
+ * Requests foreground ("while using") location on mount — so simply opening the
+ * tab group (map/home) prompts for GPS if it isn't granted yet. (Existing accounts
+ * skip onboarding on a fresh install, so this is the only place that asks; the
+ * opt-in Nearby Alerts flow separately requests BACKGROUND location.) The camera
+ * keeps its OWN high-accuracy watch for check-in proximity gating; it only reads
+ * the shared locations/level/visited/unlocked + hidden readout from here.
  */
 import React, {
   createContext,
@@ -148,7 +150,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   // One-shot authoritative fix for the camera's check-in proof — a FRESH
   // high-accuracy reading, never the ambient cached value.
   const forceFreshFix = useCallback(async () => {
-    const { status } = await Location.getForegroundPermissionsAsync();
+    const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') return null;
     const pos = await Location.getCurrentPositionAsync({
       accuracy: Location.Accuracy.BestForNavigation,
@@ -177,8 +179,8 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     void doFetch(null);
   }, [doFetch]);
 
-  // — ONE GPS watch: last-known seed + watchPositionAsync. Read-only permission
-  //   (never prompts). 10m/5s cadence; the camera keeps its own faster watch. —
+  // — ONE GPS watch: last-known seed + watchPositionAsync. Requests foreground
+  //   permission on mount (prompts once if undetermined). Camera keeps its own. —
   useEffect(() => {
     let watchSub: Location.LocationSubscription | null = null;
     let cancelled = false;
@@ -200,7 +202,7 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
 
     (async () => {
       try {
-        const { status } = await Location.getForegroundPermissionsAsync();
+        const { status } = await Location.requestForegroundPermissionsAsync();
         if (cancelled) return;
         if (status !== 'granted') {
           setPermissionGranted(false);
