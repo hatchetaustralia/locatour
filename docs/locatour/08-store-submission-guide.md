@@ -20,8 +20,8 @@ against the live Play Console and App Store Connect at submission time.
 
 | Item | Google Play | Apple | Where it is |
 |---|---|---|---|
-| **Privacy Policy URL** | Required | Required | `docs.locatour.com/legal/privacy/` (draft — fill placeholders) |
-| **Terms URL** | Optional | Optional | `docs.locatour.com/legal/terms/` |
+| **Privacy Policy URL** | Required | Required | `docs.locatour.com.au/legal/privacy/` (draft — fill placeholders) |
+| **Terms URL** | Optional | Optional | `docs.locatour.com.au/legal/terms/` |
 | **Support URL / email** | Required | Required | `[SUPPORT_EMAIL]` / a support page |
 | **Data Safety / App Privacy** | Data Safety form | App Privacy labels | §2 / §3 below |
 | **Permission justifications** | Background-location declaration + demo video | App Review notes | §4 |
@@ -40,15 +40,15 @@ deletion**, and prepare the **background-location demo video**.
 Both stores require a **publicly reachable** privacy policy URL. Apple and Google
 both fetch it during review.
 
-- **Privacy Policy:** `https://docs.locatour.com/legal/privacy/`
-- **Terms:** `https://docs.locatour.com/legal/terms/`
+- **Privacy Policy:** `https://docs.locatour.com.au/legal/privacy/`
+- **Terms:** `https://docs.locatour.com.au/legal/terms/`
 - **Support:** a reachable email (`[SUPPORT_EMAIL]`) and ideally a support/contact
   page.
 
 These live in the wiki (`wiki/`). They are **drafts with placeholders**
 (`[LEGAL_ENTITY_NAME]`, `[SUPPORT_EMAIL]`, `[GOVERNING_LAW_JURISDICTION]`,
 `[EFFECTIVE_DATE]`) and need fill-in + legal review **and** the site deployed to
-`docs.locatour.com` before submission.
+`docs.locatour.com.au` before submission.
 
 ---
 
@@ -218,13 +218,16 @@ Reuse the wiki's brand voice. Drafts to refine:
    `[SUPPORT_EMAIL]`, `[GOVERNING_LAW_JURISDICTION]`, `[EFFECTIVE_DATE]` in
    `legal/privacy.md` and `legal/terms.md`, plus `[SUPPORT_EMAIL]` in
    `data-and-security.md` and `faq.md`.
-2. **Deploy the wiki to `docs.locatour.com`** so the policy URLs resolve
+2. **Deploy the wiki to `docs.locatour.com.au`** so the policy URLs resolve
    publicly (Cloudflare Pages — deferred until now).
-3. **In-app account deletion — MISSING, must build.** Verified 2026-06: there is
-   **no** account-deletion path in `src/` or `backend/`. Both stores **require**
-   that an app with account sign-up lets users delete their account **from within
-   the app** (Play also wants a web deletion URL). The Privacy Policy already
-   promises this, so it must be built before submission.
+3. **In-app account deletion — DONE (verified 2026-06-29).** Implemented end to
+   end: Profile tab → **Delete account** (`src/app/(tabs)/profile.tsx`) →
+   `deleteAccount()` (`src/utils/account.ts`) calls `DELETE /api/account` →
+   `AccountController::destroy` deletes tokens + check-ins (photo-removal hook
+   fires per row, clearing R2) + the user, with DB `cascadeOnDelete` removing
+   unlocked-locations and account-flags; the app then signs out of Google and
+   wipes local data. Public web deletion URL added at
+   `docs.locatour.com.au/legal/data-deletion/` for the Play Data Safety form.
 4. **Background-location demo video** for the Play declaration (§4).
 5. **Sign in with Apple — watch this.** Verified 2026-06: `src/app/auth/login.tsx`
    ships **mock** social login with **Google + Apple** buttons (no real OAuth).

@@ -84,5 +84,5 @@ seriously.
 ## Questions
 
 If anything here is unclear, or you want to make a privacy request, reach us at
-**[SUPPORT_EMAIL]**. The full legal detail is in the [Privacy
+**support@hatchet.com.au**. The full legal detail is in the [Privacy
 Policy](/legal/privacy/).

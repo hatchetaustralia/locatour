@@ -4,10 +4,10 @@ import starlight from '@astrojs/starlight';
 import sitemap from '@astrojs/sitemap';
 
 // Public home of the Locatour wiki. Deployed as a static site to
-// docs.locatour.com (separate from the Laravel API and the Expo app).
+// docs.locatour.com.au (separate from the Laravel API and the Expo app).
 // Content lives as Markdown in src/content/docs/**.
 export default defineConfig({
-  site: 'https://docs.locatour.com',
+  site: 'https://docs.locatour.com.au',
   integrations: [
     starlight({
       title: 'Locatour',
@@ -31,7 +31,7 @@ export default defineConfig({
             '@context': 'https://schema.org',
             '@type': 'Organization',
             name: 'Locatour',
-            url: 'https://docs.locatour.com',
+            url: 'https://docs.locatour.com.au',
             slogan: 'Creating memorable experiences.',
             description:
               'A real-world exploration game that rewards visiting public outdoor places.',
@@ -80,6 +80,7 @@ export default defineConfig({
           items: [
             { label: 'Privacy Policy', slug: 'legal/privacy' },
             { label: 'Terms & Conditions', slug: 'legal/terms' },
+            { label: 'Delete Your Account & Data', slug: 'legal/data-deletion' },
           ],
         },
       ],

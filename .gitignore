@@ -56,6 +56,9 @@ backend/.env.bak.pretunnel
 # dev/debug screenshots (kept on disk, out of git)
 /*.png
 
+# Astro build cache (wiki/ docs site + web/ landing site)
+.astro/
+
 # tooling state
 .omc/
 .playwright-mcp/

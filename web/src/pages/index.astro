@@ -1,0 +1,712 @@
+---
+// src/pages/index.astro
+import '../styles/global.css';
+
+const title       = 'Locatour — Creating Memorable Experiences';
+const description = 'A real-world exploration game for public outdoor places. Discover parks, lookouts, and hidden spots near you. Check in with a photo, earn points, and explore further.';
+const canonicalURL = 'https://locatour.com.au/';
+const ogImage      = 'https://locatour.com.au/og-image.png';
+---
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{title}</title>
+  <meta name="description" content={description} />
+  <link rel="canonical" href={canonicalURL} />
+
+  <!-- Open Graph -->
+  <meta property="og:type"        content="website" />
+  <meta property="og:url"         content={canonicalURL} />
+  <meta property="og:title"       content={title} />
+  <meta property="og:description" content={description} />
+  <meta property="og:image"       content={ogImage} />
+  <meta property="og:locale"      content="en_AU" />
+
+  <!-- Twitter -->
+  <meta name="twitter:card"        content="summary_large_image" />
+  <meta name="twitter:title"       content={title} />
+  <meta name="twitter:description" content={description} />
+  <meta name="twitter:image"       content={ogImage} />
+
+  <!-- JSON-LD -->
+  <script type="application/ld+json" set:html={JSON.stringify({
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "name": "Locatour",
+        "url": "https://locatour.com.au",
+        "logo": "https://locatour.com.au/logo.svg",
+        "description": "A real-world exploration game for public outdoor places.",
+        "email": "support@hatchet.com.au"
+      },
+      {
+        "@type": "MobileApplication",
+        "name": "Locatour",
+        "applicationCategory": "GameApplication",
+        "operatingSystem": "Android",
+        "description": "Visit public outdoor places, check in with a photo, earn points, and explore further.",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "AUD"
+        }
+      }
+    ]
+  })} />
+
+  <link rel="icon"    type="image/svg+xml" href="/favicon.svg" />
+  <link rel="sitemap" href="/sitemap-index.xml" />
+</head>
+<body>
+
+  <!-- ── Header ── -->
+  <header class="site-header">
+    <div class="container header-inner">
+      <a href="/" class="logo-link" aria-label="Locatour home">
+        <img src="/logo.svg" alt="" width="26" height="26" aria-hidden="true" />
+        <span class="logo-name">Locatour</span>
+      </a>
+      <nav aria-label="Main navigation">
+        <ul class="nav-list">
+          <li><a href="#how-it-works" class="nav-link">How it works</a></li>
+          <li>
+            <a href="https://docs.locatour.com.au" class="nav-link" target="_blank" rel="noopener noreferrer">
+              Docs
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M2 8L8 2M8 2H3M8 2v5"/>
+              </svg>
+            </a>
+          </li>
+          <li><a href="#get" class="nav-link nav-cta">Get the app</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <!-- ── Hero ── -->
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="container hero-inner">
+
+      <div class="hero-badge" aria-hidden="true">Real-world exploration</div>
+
+      <h1 class="hero-title" id="hero-title">Locatour</h1>
+
+      <p class="hero-tagline">Creating memorable experiences.</p>
+
+      <p class="hero-subhead">
+        A game you play by going outside. Discover public places near&nbsp;you,
+        check&nbsp;in with a photo, and earn your way across the&nbsp;map.
+      </p>
+
+      <div class="hero-actions" id="get">
+        <!-- Styled "coming soon" badge — not linked to a fake store URL -->
+        <span class="btn btn-primary" role="img" aria-label="Coming soon to Google Play">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M3.61 1.814C3.2 2.054 3 2.5 3 3.054v17.892c0 .554.2 1 .61 1.24l.066.038 10.02-10.02v-.236L3.676 1.776l-.066.038zM17.44 15.17l-3.34-3.34v-.236l3.34-3.34.076.044 3.956 2.248c1.13.642 1.13 1.69 0 2.332L17.516 15.13l-.076.04zM3.676 22.186L14.354 11.51 11.01 8.166 3.676 22.186zM14.354 12.49L3.676 1.814l7.334 14.02 3.344-3.344z"/>
+          </svg>
+          Coming soon to Google Play
+        </span>
+
+        <a href="https://docs.locatour.com.au" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">
+          Read the docs
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M2 10L10 2M10 2H4M10 2v6"/>
+          </svg>
+        </a>
+      </div>
+
+      <p class="hero-note">Android · Google Play · Coming soon</p>
+
+    </div>
+
+    <!-- Decorative background shapes -->
+    <div class="hero-bg" aria-hidden="true">
+      <div class="hero-blob hero-blob-1"></div>
+      <div class="hero-blob hero-blob-2"></div>
+    </div>
+  </section>
+
+  <!-- ── How it works ── -->
+  <section class="how-it-works" id="how-it-works" aria-labelledby="how-title">
+    <div class="container">
+      <header class="section-header">
+        <h2 class="section-title" id="how-title">How it works</h2>
+        <p class="section-intro">Four steps. An endless world to find.</p>
+      </header>
+
+      <ol class="feature-grid" role="list">
+
+        <li class="feature-card">
+          <div class="feature-icon" aria-hidden="true">
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="18" cy="18" r="18" fill="var(--color-accent-pale)"/>
+              <path d="M18 6C12.477 6 8 10.477 8 16c0 8.5 10 18 10 18s10-9.5 10-18c0-5.523-4.477-10-10-10z" fill="var(--color-accent)" opacity="0.2"/>
+              <path d="M18 6C12.477 6 8 10.477 8 16c0 8.5 10 18 10 18s10-9.5 10-18c0-5.523-4.477-10-10-10z" stroke="var(--color-accent)" stroke-width="1.5" fill="none"/>
+              <circle cx="18" cy="16" r="3.5" fill="var(--color-accent)"/>
+            </svg>
+          </div>
+          <div class="feature-body">
+            <h3 class="feature-title">Discover real places</h3>
+            <p class="feature-desc">Open the map and browse parks, lookouts, beaches, and hidden spots near you. Every location is public land — owned by everyone, free to visit.</p>
+          </div>
+        </li>
+
+        <li class="feature-card">
+          <div class="feature-icon" aria-hidden="true">
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="18" cy="18" r="18" fill="var(--color-accent-pale)"/>
+              <rect x="8" y="13" width="20" height="14" rx="2.5" fill="var(--color-accent)" opacity="0.15" stroke="var(--color-accent)" stroke-width="1.5"/>
+              <path d="M13 13v-2a1.5 1.5 0 011.5-1.5h7A1.5 1.5 0 0123 11v2" stroke="var(--color-accent)" stroke-width="1.5" stroke-linecap="round"/>
+              <circle cx="18" cy="20" r="3.5" fill="var(--color-accent)"/>
+              <circle cx="18" cy="20" r="1.5" fill="white"/>
+            </svg>
+          </div>
+          <div class="feature-body">
+            <h3 class="feature-title">Check in with a photo</h3>
+            <p class="feature-desc">When you arrive, Locatour confirms you're there. Snap a photo to mark the moment. No faking it — you have to actually be at the place.</p>
+          </div>
+        </li>
+
+        <li class="feature-card">
+          <div class="feature-icon" aria-hidden="true">
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="18" cy="18" r="18" fill="var(--color-accent-pale)"/>
+              <path d="M18 8l2.47 7.09H28l-6.18 4.33 2.47 7.09L18 22.18l-6.29 4.33 2.47-7.09L8 15.09h7.53z" fill="var(--color-accent)" opacity="0.2" stroke="var(--color-accent)" stroke-width="1.5" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="feature-body">
+            <h3 class="feature-title">Level up &amp; earn</h3>
+            <p class="feature-desc">Each check-in earns you experience. As you level up, new and more remote places unlock. The best spots are saved for the most dedicated explorers.</p>
+          </div>
+        </li>
+
+        <li class="feature-card">
+          <div class="feature-icon" aria-hidden="true">
+            <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="18" cy="18" r="18" fill="var(--color-accent-pale)"/>
+              <path d="M18 8a7 7 0 00-7 7v5.5l-1.5 2.5h17L25 20.5V15a7 7 0 00-7-7z" fill="var(--color-accent)" opacity="0.15" stroke="var(--color-accent)" stroke-width="1.5"/>
+              <path d="M15.5 25.5a2.5 2.5 0 005 0" stroke="var(--color-accent)" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="feature-body">
+            <h3 class="feature-title">
+              Nearby alerts
+              <span class="chip">opt-in</span>
+            </h3>
+            <p class="feature-desc">Let Locatour nudge you when you're close to a spot you haven't visited. A gentle tap on the shoulder from the world outside — entirely on your terms.</p>
+          </div>
+        </li>
+
+      </ol>
+    </div>
+  </section>
+
+  <!-- ── Mission ── -->
+  <section class="mission" aria-labelledby="mission-title">
+    <div class="container mission-inner">
+      <div class="mission-text">
+        <h2 class="section-title" id="mission-title">Public places,<br />owned by everyone</h2>
+        <p>
+          Australia's parks, reserves, beaches, and wild places belong to all of us.
+          Locatour is built around a simple idea: the best way to care for a place
+          is to help people fall in love with it.
+        </p>
+        <p>
+          Every location in the game is genuine public land — non-commercial,
+          free to visit, and already yours. The points are just the scoreboard.
+          The real reward is the experience of being somewhere you'd never have
+          gone otherwise.
+        </p>
+        <blockquote class="mission-pull">
+          A reason to go. A nudge toward the door. A scoreboard for a life
+          spent a little more outside.
+        </blockquote>
+      </div>
+
+      <div class="mission-graphic" aria-hidden="true">
+        <div class="mission-pin-cluster">
+          <div class="mission-pin pin-lg">
+            <svg width="48" height="56" viewBox="0 0 48 56" fill="none">
+              <path d="M24 2C13.507 2 5 10.507 5 21c0 14.333 19 35 19 35S43 35.333 43 21c0-10.493-8.507-19-19-19z" fill="#d1453b"/>
+              <circle cx="24" cy="21" r="8" fill="#FDF3DA"/>
+              <circle cx="24" cy="21" r="4" fill="#b46c00"/>
+            </svg>
+          </div>
+          <div class="mission-pin pin-sm pin-offset-1">
+            <svg width="32" height="38" viewBox="0 0 32 32" fill="none">
+              <path d="M16 2C10.477 2 6 6.477 6 12c0 7.5 10 18 10 18s10-10.5 10-18c0-5.523-4.477-10-10-10z" fill="#7C5CFF"/>
+              <circle cx="16" cy="12" r="4.2" fill="white" opacity="0.8"/>
+            </svg>
+          </div>
+          <div class="mission-pin pin-sm pin-offset-2">
+            <svg width="28" height="34" viewBox="0 0 32 32" fill="none">
+              <path d="M16 2C10.477 2 6 6.477 6 12c0 7.5 10 18 10 18s10-10.5 10-18c0-5.523-4.477-10-10-10z" fill="#b46c00" opacity="0.8"/>
+              <circle cx="16" cy="12" r="4.2" fill="#FDF3DA"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Footer ── -->
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="footer-top">
+        <a href="/" class="footer-logo" aria-label="Locatour home">
+          <img src="/logo.svg" alt="" width="20" height="20" aria-hidden="true" />
+          <span>Locatour</span>
+        </a>
+        <nav aria-label="Footer navigation">
+          <ul class="footer-links">
+            <li><a href="https://docs.locatour.com.au/legal/privacy/"  target="_blank" rel="noopener noreferrer">Privacy</a></li>
+            <li><a href="https://docs.locatour.com.au/legal/terms/"    target="_blank" rel="noopener noreferrer">Terms</a></li>
+            <li><a href="https://docs.locatour.com.au"                 target="_blank" rel="noopener noreferrer">Docs</a></li>
+            <li><a href="mailto:support@hatchet.com.au">support@hatchet.com.au</a></li>
+          </ul>
+        </nav>
+      </div>
+      <p class="footer-copy">&copy; 2026 Hatchet</p>
+    </div>
+  </footer>
+
+</body>
+</html>
+
+<style>
+/* ── Site header ── */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(252, 240, 232, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding-block: 0.875rem;
+}
+
+.logo-link {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 1.0625rem;
+  letter-spacing: -0.01em;
+  color: var(--color-ink);
+}
+.logo-link:hover .logo-name {
+  color: var(--color-accent);
+}
+.logo-name {
+  transition: color 0.15s ease;
+}
+
+.nav-list {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2em;
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius-full);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--color-ink-muted);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.nav-link:hover {
+  color: var(--color-ink);
+  background: var(--color-border);
+}
+
+.nav-cta {
+  background: var(--color-accent);
+  color: #fff;
+  font-weight: 600;
+}
+.nav-cta:hover {
+  background: var(--color-accent-dark);
+  color: #fff;
+}
+
+/* ── Hero ── */
+.hero {
+  position: relative;
+  overflow: hidden;
+  padding-block: clamp(4rem, 12vw, 7rem) clamp(4rem, 10vw, 6rem);
+  text-align: center;
+}
+
+.hero-inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.hero-badge {
+  display: inline-block;
+  padding: 0.3rem 0.9rem;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-pale);
+  color: var(--color-accent-dark);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.hero-title {
+  font-size: clamp(3rem, 10vw, 6.5rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  background: linear-gradient(110deg, #d1453b 10%, #7C5CFF 55%, #b46c00 90%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  margin-block: 0.25rem;
+}
+
+.hero-tagline {
+  font-size: clamp(1.1rem, 2.5vw, 1.4rem);
+  font-weight: 600;
+  color: var(--color-gold);
+  letter-spacing: -0.01em;
+}
+
+.hero-subhead {
+  max-width: 50ch;
+  font-size: clamp(1rem, 2vw, 1.125rem);
+  color: var(--color-ink-muted);
+  line-height: 1.6;
+  margin-top: 0.25rem;
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.hero-note {
+  font-size: 0.78rem;
+  color: var(--color-ink-faint);
+  margin-top: -0.25rem;
+}
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45em;
+  padding: 0.75rem 1.375rem;
+  border-radius: var(--radius-full);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  line-height: 1;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.btn-primary {
+  background: var(--color-ink);
+  color: #fff;
+  cursor: default;
+  opacity: 0.92;
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--color-accent);
+  border: 1.5px solid var(--color-accent);
+}
+.btn-secondary:hover {
+  background: var(--color-accent-pale);
+  transform: translateY(-1px);
+}
+
+/* ── Hero blobs ── */
+.hero-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.hero-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.18;
+}
+.hero-blob-1 {
+  width: 500px;
+  height: 500px;
+  background: var(--color-accent);
+  top: -10%;
+  right: -10%;
+}
+.hero-blob-2 {
+  width: 400px;
+  height: 400px;
+  background: #d1453b;
+  bottom: -15%;
+  left: -8%;
+}
+
+/* ── How it works ── */
+.how-it-works {
+  background: var(--color-bg-card);
+  padding-block: clamp(3.5rem, 8vw, 5.5rem);
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.section-header {
+  text-align: center;
+  margin-bottom: clamp(2rem, 5vw, 3.5rem);
+}
+
+.section-title {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: var(--color-ink);
+}
+
+.section-intro {
+  margin-top: 0.5rem;
+  font-size: 1.0625rem;
+  color: var(--color-ink-muted);
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.25rem;
+}
+
+.feature-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.feature-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(42, 26, 20, 0.10);
+}
+
+.feature-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.feature-title {
+  font-size: 1.0625rem;
+  font-weight: 700;
+  color: var(--color-ink);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.feature-desc {
+  font-size: 0.9rem;
+  color: var(--color-ink-muted);
+  line-height: 1.6;
+}
+
+.chip {
+  display: inline-block;
+  padding: 0.15em 0.55em;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-pale);
+  color: var(--color-accent-dark);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* ── Mission ── */
+.mission {
+  padding-block: clamp(3.5rem, 8vw, 5.5rem);
+  background: var(--color-bg-alt);
+}
+
+.mission-inner {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 3rem;
+  align-items: center;
+}
+
+@media (min-width: 720px) {
+  .mission-inner {
+    grid-template-columns: 1fr auto;
+    gap: 4rem;
+  }
+}
+
+.mission-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 58ch;
+}
+
+.mission-text .section-title {
+  margin-bottom: 0.25rem;
+}
+
+.mission-text p {
+  color: var(--color-ink-muted);
+  font-size: 1rem;
+  line-height: 1.7;
+}
+
+.mission-pull {
+  border-left: 3px solid var(--color-accent);
+  padding-left: 1.25rem;
+  margin-top: 0.5rem;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--color-ink);
+  font-style: normal;
+  line-height: 1.5;
+}
+
+/* Mission decorative pin cluster */
+.mission-graphic {
+  display: none;
+}
+@media (min-width: 720px) {
+  .mission-graphic {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+}
+
+.mission-pin-cluster {
+  position: relative;
+  width: 120px;
+  height: 140px;
+}
+
+.mission-pin {
+  position: absolute;
+  filter: drop-shadow(0 4px 10px rgba(42,26,20,0.15));
+}
+.pin-lg  { bottom: 0; left: 50%; transform: translateX(-50%); }
+.pin-sm  { }
+.pin-offset-1 { top: 5px; left: 0; transform: rotate(-10deg); }
+.pin-offset-2 { top: 20px; right: 0; transform: rotate(8deg); }
+
+/* ── Footer ── */
+.site-footer {
+  background: var(--color-bg-dark);
+  color: rgba(253, 243, 218, 0.7);
+  padding-block: 2.5rem 2rem;
+  border-top: 1px solid rgba(255,255,255,0.05);
+}
+
+.footer-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.footer-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.footer-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 0.9375rem;
+  color: rgba(253, 243, 218, 0.9);
+  transition: opacity 0.15s ease;
+}
+.footer-logo:hover {
+  opacity: 0.8;
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.125rem 0.25rem;
+}
+
+.footer-links a {
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  color: rgba(253, 243, 218, 0.65);
+  transition: color 0.15s ease;
+}
+.footer-links a:hover {
+  color: rgba(253, 243, 218, 0.95);
+}
+
+.footer-copy {
+  font-size: 0.8rem;
+  color: rgba(253, 243, 218, 0.35);
+  border-top: 1px solid rgba(255,255,255,0.06);
+  padding-top: 1.25rem;
+}
+
+/* ── Responsive adjustments ── */
+@media (max-width: 600px) {
+  .nav-list {
+    gap: 0;
+  }
+  .nav-link {
+    padding: 0.4rem 0.55rem;
+    font-size: 0.83rem;
+  }
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+  .footer-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+</style>

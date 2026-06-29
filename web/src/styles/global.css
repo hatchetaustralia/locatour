@@ -1,0 +1,104 @@
+/* Locatour web — global styles
+ * Brand palette (from wiki brand.css + task brief):
+ *   cream bg      #FCF0E8 / #FDF3DA / #FFFDFB
+ *   purple accent #7C5CFF
+ *   gold tagline  #b46c00
+ *   brand red     #d1453b  (logo only)
+ *   dark ink      #2a1a14
+ */
+
+/* ── Custom properties ── */
+:root {
+  --color-bg:           #FCF0E8;
+  --color-bg-alt:       #FDF3DA;
+  --color-bg-card:      #FFFDFB;
+  --color-bg-dark:      #1e1218;
+
+  --color-accent:       #7C5CFF;
+  --color-accent-dark:  #5B3FCC;
+  --color-accent-pale:  #ede8ff;
+
+  --color-gold:         #b46c00;
+  --color-brand-red:    #d1453b;
+
+  --color-ink:          #2a1a14;
+  --color-ink-muted:    #6b4a3a;
+  --color-ink-faint:    #c4a98e;
+
+  --color-border:       rgba(42, 26, 20, 0.10);
+  --color-border-card:  rgba(124, 92, 255, 0.12);
+
+  --radius-sm:    6px;
+  --radius-md:    12px;
+  --radius-lg:    20px;
+  --radius-full:  9999px;
+
+  --shadow-card:  0 2px 12px rgba(42, 26, 20, 0.08), 0 1px 3px rgba(42, 26, 20, 0.05);
+  --shadow-btn:   0 4px 14px rgba(124, 92, 255, 0.30);
+
+  --max-w: 1080px;
+  --gutter: clamp(1.25rem, 5vw, 2.5rem);
+
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+}
+
+/* ── Reset ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  line-height: 1.65;
+  font-size: 1rem;
+  -webkit-font-smoothing: antialiased;
+}
+
+img, svg {
+  display: block;
+  max-width: 100%;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+ul {
+  list-style: none;
+}
+
+/* ── Layout helpers ── */
+.container {
+  width: 100%;
+  max-width: var(--max-w);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+/* ── Focus visible ── */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}

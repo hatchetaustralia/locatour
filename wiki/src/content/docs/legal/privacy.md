@@ -6,14 +6,14 @@ description: How Locatour collects, uses, and protects your information — your
 :::caution[Draft for review]
 This is a working draft prepared to meet App Store and Google Play
 requirements. It is **not legal advice** and must be reviewed and finalised
-(and the placeholders filled in) before publication. Placeholders:
-`[LEGAL_ENTITY_NAME]`, `[SUPPORT_EMAIL]`, `[GOVERNING_LAW_JURISDICTION]`,
-`[EFFECTIVE_DATE]`.
+before publication. Two values are assumed defaults to confirm with the
+business: the operating entity **Hatchet** and the governing-law jurisdiction
+**New South Wales, Australia**.
 :::
 
-**Effective date:** [EFFECTIVE_DATE]
+**Effective date:** 29 June 2026
 
-This Privacy Policy explains how **[LEGAL_ENTITY_NAME]** ("Locatour", "we",
+This Privacy Policy explains how **Hatchet** ("Locatour", "we",
 "us") collects, uses, and protects your information when you use the Locatour
 mobile app and related services (the "Service").
 
@@ -117,7 +117,7 @@ can:
 - **Access your history** in the app at any time.
 - **Manage permissions** (location, camera) in your device settings.
 - **Delete your account and data** by using the in-app option where available,
-  or by contacting us at **[SUPPORT_EMAIL]**.
+  or by contacting us at **support@hatchet.com.au**.
 
 We will respond to requests as required by applicable law.
 
@@ -126,7 +126,7 @@ We will respond to requests as required by applicable law.
 Locatour is not directed to children under the age required by your local law
 (for example, under 13 in the United States), and we do not knowingly collect
 personal data from them. If you believe a child has provided us personal data,
-contact us at **[SUPPORT_EMAIL]** and we will take appropriate steps.
+contact us at **support@hatchet.com.au** and we will take appropriate steps.
 
 ## 9. Security
 
@@ -151,5 +151,5 @@ through the Service where appropriate.
 
 Questions or privacy requests:
 
-**[LEGAL_ENTITY_NAME]**
-Email: **[SUPPORT_EMAIL]**
+**Hatchet**
+Email: **support@hatchet.com.au**
