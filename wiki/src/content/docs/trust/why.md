@@ -1,5 +1,5 @@
 ---
-title: Why we built it this way
+title: "Why we built it this way"
 description: "The reasoning behind Locatour's core design choices: public places only, real-world check-ins, photo verification, gated progression, and conservation by design."
 ---
 

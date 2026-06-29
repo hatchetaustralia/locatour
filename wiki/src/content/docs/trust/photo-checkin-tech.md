@@ -1,5 +1,5 @@
 ---
-title: How photo check-in works
+title: "How photo check-in works"
 description: "A plain-language look at how Locatour verifies a check-in: your phone's GPS confirms you're at the place, and a live in-app photo is taken on the spot. What we check, and the honest limits."
 ---
 

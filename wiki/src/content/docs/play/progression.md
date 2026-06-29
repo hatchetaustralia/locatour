@@ -1,6 +1,6 @@
 ---
-title: Levels, tiers & progression
-description: How progression works in Locatour. Earn experience to climb levels and unlock higher location tiers that reveal more remote and hidden places. A long, rewarding journey inspired by classic RPGs.
+title: "Levels, tiers & progression"
+description: "How progression works in Locatour. Earn experience to climb levels and unlock higher location tiers that reveal more remote and hidden places. A long, rewarding journey inspired by classic RPGs."
 ---
 
 Locatour's progression is inspired by the slow, satisfying grind of classic

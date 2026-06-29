@@ -1,5 +1,5 @@
 ---
-title: Terms & Conditions
+title: "Terms & Conditions"
 description: "The terms for using Locatour: eligibility, acceptable use, your photos and content, safety and assumption of risk, intellectual property, and the legal basics."
 ---
 

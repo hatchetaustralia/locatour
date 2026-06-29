@@ -1,9 +1,9 @@
 ---
-title: Locatour
-description: Locatour is a real-world exploration game. Visit public parks, lookouts, beaches and hidden places, check in with a photo, and level up. The official guide to how it works.
+title: "Locatour"
+description: "Locatour is a real-world exploration game. Visit public parks, lookouts, beaches and hidden places, check in with a photo, and level up. The official guide to how it works."
 template: splash
 hero:
-  tagline: Creating memorable experiences.
+  tagline: "Creating memorable experiences."
   image:
     file: ../../assets/screens/map.png
   actions:
@@ -17,28 +17,34 @@ hero:
       variant: minimal
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
-
 Locatour turns getting outdoors into a game. Visit real public places, check in
 with a photo, earn experience, and unlock harder-to-reach hidden gems. This is
 the official guide: how to play, why we built it the way we did, and how we
 look after your privacy.
 
-<CardGrid stagger>
-  <Card title="How to play" icon="open-book">
-    Learn the core loop: find a place, go there, check in, level up.
-    [Getting started →](/play/getting-started/)
-  </Card>
-  <Card title="Hidden locations" icon="star">
-    The fragile, unpublicised places that only invested explorers reach.
-    [Read more →](/play/hidden-locations/)
-  </Card>
-  <Card title="Your data & security" icon="approve-check">
-    What we collect, why, and how we protect it. Plain language, no jargon.
-    [Trust & privacy →](/trust/data-and-security/)
-  </Card>
-  <Card title="Questions?" icon="information">
-    Common questions about playing Locatour, answered.
-    [Read the FAQ →](/help/faq/)
-  </Card>
-</CardGrid>
+<div class="loca-cards not-content">
+  <a class="loca-card" href="/play/getting-started/">
+    <img class="loca-card-sticker" src="/stickers/boot.svg" alt="" />
+    <span class="loca-card-title">How to play</span>
+    <span class="loca-card-text">The core loop: find a place, go there, check in with a photo, and level up.</span>
+    <span class="loca-card-link">Getting started →</span>
+  </a>
+  <a class="loca-card" href="/play/hidden-locations/">
+    <img class="loca-card-sticker" src="/stickers/coin-teal.svg" alt="" />
+    <span class="loca-card-title">Hidden locations</span>
+    <span class="loca-card-text">The fragile, unpublicised places that only the most invested explorers reach.</span>
+    <span class="loca-card-link">Read more →</span>
+  </a>
+  <a class="loca-card" href="/trust/data-and-security/">
+    <img class="loca-card-sticker" src="/stickers/camera.svg" alt="" />
+    <span class="loca-card-title">Your data &amp; security</span>
+    <span class="loca-card-text">What we collect, why, and how we protect it. Plain language, no jargon.</span>
+    <span class="loca-card-link">Trust &amp; privacy →</span>
+  </a>
+  <a class="loca-card" href="/help/faq/">
+    <img class="loca-card-sticker" src="/stickers/hat.svg" alt="" />
+    <span class="loca-card-title">Questions?</span>
+    <span class="loca-card-text">Common questions about playing Locatour, answered in plain English.</span>
+    <span class="loca-card-link">Read the FAQ →</span>
+  </a>
+</div>

@@ -1,5 +1,5 @@
 ---
-title: Locatour FAQ
+title: "Locatour FAQ"
 description: "Common questions about Locatour answered: what it is, how check-ins work, whether it's free, how to unlock hidden places, what data it uses, and how to get help."
 head:
   - tag: script

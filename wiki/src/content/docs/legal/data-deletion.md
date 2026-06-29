@@ -1,6 +1,6 @@
 ---
-title: Delete Your Account & Data
-description: How to permanently delete your Locatour account and all associated data, directly in the app or by request, and exactly what gets removed.
+title: "Delete Your Account & Data"
+description: "How to permanently delete your Locatour account and all associated data, directly in the app or by request, and exactly what gets removed."
 ---
 
 **Effective date:** 29 June 2026

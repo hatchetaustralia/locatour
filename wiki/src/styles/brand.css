@@ -59,17 +59,26 @@ h1, h2, h3, h4,
   font-weight: 600;
   letter-spacing: -0.01em;
 }
-.site-title { font-weight: 700; font-size: 1.3rem; }
-
-/* Soften the app-icon logo into a rounded tile, like the site header. */
+/* Wordmark: dark ink like the website (not the accent colour) */
+.site-title {
+  font-weight: 700;
+  font-size: 1.25rem;
+  color: var(--sl-color-white);
+}
+/* Mark sized ~1.6x the wordmark cap-height — fractionally taller, never dominant */
 .site-title img,
 header .site-title img {
-  border-radius: 9px;
+  height: 26px !important;
+  width: 26px !important;
 }
 
 /* ── Splash hero — match the website ───────────────────────────────────── */
 .hero {
   --sl-color-bg: transparent;
+  /* soft brand blobs behind the hero, like the website */
+  background:
+    radial-gradient(45% 55% at 85% 12%, rgba(124, 92, 255, 0.13), transparent 62%),
+    radial-gradient(40% 45% at 10% 95%, rgba(123, 201, 160, 0.16), transparent 62%);
 }
 .hero h1 {
   font-family: var(--loca-display);
@@ -83,11 +92,18 @@ header .site-title img {
   color: var(--loca-gold);
   font-weight: 700;
 }
-/* The big app-icon on the splash hero gets a soft rounded card. */
+/* Splash hero phone — the same dark device frame as the website hero. */
 .hero img {
-  border-radius: 28px;
-  box-shadow: 0 18px 50px rgba(42, 26, 20, 0.18);
+  max-height: 540px;
+  width: auto;
+  margin-inline: auto;
+  border-radius: 34px;
+  border: 7px solid #1e1218;
+  background: #1e1218;
+  box-shadow: 0 18px 50px rgba(42, 26, 20, 0.2);
 }
+/* Keep the splash hero compact so there isn't a big empty gap below it. */
+.hero { padding-block: clamp(1.5rem, 5vw, 3rem) clamp(1.5rem, 5vw, 3rem); }
 
 /* ── Buttons — soft pill with the website's "offset shadow" lift ───────── */
 .sl-link-button {
@@ -116,9 +132,71 @@ header .site-title img {
   border-radius: var(--loca-radius);
 }
 .card {
-  box-shadow: 0 2px 12px rgba(42, 26, 20, 0.07);
+  border-radius: var(--radius-lg, 24px);
+  box-shadow: 0 4px 16px rgba(42, 26, 20, 0.08);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
-.card .icon { color: var(--loca-purple); }
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 30px rgba(42, 26, 20, 0.12);
+}
+/* Consistent purple icon chip on every card (overrides Starlight's rotating border) */
+.card .icon {
+  color: var(--loca-purple);
+  background: var(--sl-color-accent-low);
+  border: 0 !important;
+  border-radius: 12px;
+  padding: 0.45rem;
+  box-sizing: content-box;
+}
+
+/* ── Splash brand cards (mirror the website "how it works" cards) ───────── */
+.loca-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1.25rem;
+  margin-top: 2.25rem;
+}
+.loca-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.45rem;
+  padding: 1.75rem 1.5rem 1.6rem;
+  background: var(--sl-color-bg-card, #fffdfb);
+  border: 1px solid var(--sl-color-gray-6);
+  border-radius: 24px;
+  box-shadow: 0 4px 16px rgba(42, 26, 20, 0.08);
+  text-decoration: none;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.loca-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 34px rgba(42, 26, 20, 0.14);
+}
+.loca-card-sticker {
+  height: 76px;
+  width: auto;
+  margin-bottom: 0.35rem;
+  filter: drop-shadow(0 8px 12px rgba(42, 26, 20, 0.18));
+}
+.loca-card-title {
+  font-family: var(--loca-display);
+  font-weight: 600;
+  font-size: 1.3rem;
+  color: var(--sl-color-white);
+}
+.loca-card-text {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--sl-color-gray-2);
+}
+.loca-card-link {
+  margin-top: 0.35rem;
+  font-weight: 700;
+  color: var(--loca-purple-dark);
+}
+.loca-card:hover .loca-card-link { text-decoration: underline; }
 
 /* Inline links in body copy pick up the warm interactive purple. */
 .sl-markdown-content a:not(.sl-link-button):not(:where(.not-content *)) {

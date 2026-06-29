@@ -1,6 +1,6 @@
 ---
-title: Becoming a contributor
-description: How trusted, high-level Locatour players help curate the map, suggesting and reviewing public locations through a community moderation system, RuneScape- and Wikipedia-style.
+title: "Becoming a contributor"
+description: "How trusted, high-level Locatour players help curate the map, suggesting and reviewing public locations through a community moderation system, RuneScape- and Wikipedia-style."
 ---
 
 Locatour's map is curated with the help of its most dedicated players. As you

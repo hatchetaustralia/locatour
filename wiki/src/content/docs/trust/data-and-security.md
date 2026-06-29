@@ -1,6 +1,6 @@
 ---
-title: Your data & security
-description: A plain-language summary of what Locatour collects and why (your account, location at check-in, and check-in photos), how we protect it, and the controls you have. The full detail is in the Privacy Policy.
+title: "Your data & security"
+description: "A plain-language summary of what Locatour collects and why (your account, location at check-in, and check-in photos), how we protect it, and the controls you have. The full detail is in the Privacy Policy."
 ---
 
 Here's the honest, plain-language version of what Locatour collects, why, and

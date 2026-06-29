@@ -1,5 +1,5 @@
 ---
-title: Creating Memorable Experiences
+title: "Creating Memorable Experiences"
 description: "The mission behind Locatour: why we built a game that rewards real-world exploration, conservation, and connection to the public places we all share."
 ---
 

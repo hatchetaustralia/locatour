@@ -1,6 +1,6 @@
 ---
-title: Privacy Policy
-description: How Locatour collects, uses, and protects your information (your account, location at check-in, photos, and gameplay data), and the privacy controls you have, including data deletion.
+title: "Privacy Policy"
+description: "How Locatour collects, uses, and protects your information (your account, location at check-in, photos, and gameplay data), and the privacy controls you have, including data deletion."
 ---
 
 **Effective date:** 29 June 2026

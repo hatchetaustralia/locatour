@@ -1,6 +1,6 @@
 ---
-title: Hidden locations
-description: Hidden locations are Locatour's fragile, unpublicised places (quiet waterfalls, facility-free reserves, secret lookouts) reserved for invested explorers and protected by the game's progression.
+title: "Hidden locations"
+description: "Hidden locations are Locatour's fragile, unpublicised places (quiet waterfalls, facility-free reserves, secret lookouts) reserved for invested explorers and protected by the game's progression."
 ---
 
 Some places are too special, and too fragile, to hand to everyone at once.
