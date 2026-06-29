@@ -846,6 +846,13 @@ export async function uploadPendingCheckIns(): Promise<void> {
     for (const q of queued) {
       const r = await uploadCheckIn(q.payload, token);
       if (r.ok) {
+        // Record the server id on the matching local history record (linked by
+        // location — see attachServerIdByLocation) so a flushed-offline check-in
+        // is fully synced: deletable in-app, and reconciled (not stuck) on the
+        // next /account/me pull.
+        if (r.serverId != null) {
+          await storage.attachServerIdByLocation(q.payload.locationId, r.serverId);
+        }
         await storage.removeQueuedUpload(q.id);
       } else {
         // Stop on the first failure that isn't a permanent block — likely

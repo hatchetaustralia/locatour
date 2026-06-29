@@ -1135,7 +1135,21 @@ class StorageManager {
    * are preserved, so an offline/queued check-in is never dropped by the pull.
    */
   public async applyServerState(serverCheckIns: CheckIn[], unlockedIds: string[]): Promise<void> {
-    const pendingLocal = this.checkIns.filter((c) => !c.serverId);
+    // A local check-in counts as "still pending upload" ONLY if a matching row
+    // remains in the offline upload queue. A no-serverId history record that is
+    // NOT queued was already uploaded — either online (where the serverId is
+    // recorded) or via uploadPendingCheckIns(), which flushes the queue WITHOUT
+    // writing the serverId back. Keying the pending check purely on `!serverId`
+    // therefore made every flushed-offline check-in immune to this pull, so an
+    // admin revoke could never remove it — it lingered as "checked in" forever.
+    // Reconcile those against the server like any synced check-in; preserve only
+    // the genuinely-unsynced ones (still in the queue). Matched on locationId:
+    // the history record and its queue row get independent timestamps, so the
+    // location is the only stable shared key.
+    const queuedLocationIds = new Set((await this.getQueuedCheckIns()).map((q) => q.locationId));
+    const pendingLocal = this.checkIns.filter(
+      (c) => !c.serverId && queuedLocationIds.has(c.locationId),
+    );
     this.checkIns = [...serverCheckIns, ...pendingLocal];
     this.unlockedLocationIds = new Set(unlockedIds);
     // Keep unlocks backing a still-pending local check-in (the server doesn't
@@ -1450,6 +1464,26 @@ class StorageManager {
    */
   public async setCheckInServerId(localId: string, serverId: string | number): Promise<void> {
     const ci = this.checkIns.find((c) => c.id === localId);
+    if (!ci) return;
+    ci.serverId = serverId;
+    ci.syncedAt = new Date().toISOString();
+    this.saveState();
+  }
+
+  /**
+   * Attach a server check-in id to the most recent LOCAL history check-in for a
+   * location that doesn't yet have one. Used by the offline-queue flush
+   * (uploadPendingCheckIns), where the uploaded item and its history record are
+   * linked only by location — their timestamps are minted separately, so there's
+   * no shared id to match on. Without this a flushed-offline check-in keeps
+   * serverId == null: it couldn't be deleted in-app, and (before the queue-aware
+   * reconcile in applyServerState) it was immune to admin revokes. No-op if no
+   * unsynced match exists for the location.
+   */
+  public async attachServerIdByLocation(locationId: string, serverId: string | number): Promise<void> {
+    const ci = this.checkIns
+      .filter((c) => c.locationId === locationId && !c.serverId)
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
     if (!ci) return;
     ci.serverId = serverId;
     ci.syncedAt = new Date().toISOString();
