@@ -3,17 +3,9 @@ title: Privacy Policy
 description: How Locatour collects, uses, and protects your information — your account, location at check-in, photos, and gameplay data — and the privacy controls you have, including data deletion.
 ---
 
-:::caution[Draft for review]
-This is a working draft prepared to meet App Store and Google Play
-requirements. It is **not legal advice** and must be reviewed and finalised
-before publication. Two values are assumed defaults to confirm with the
-business: the operating entity **Hatchet** and the governing-law jurisdiction
-**New South Wales, Australia**.
-:::
-
 **Effective date:** 29 June 2026
 
-This Privacy Policy explains how **Hatchet** ("Locatour", "we",
+This Privacy Policy explains how **Hatchet Pty Ltd** ("Locatour", "we",
 "us") collects, uses, and protects your information when you use the Locatour
 mobile app and related services (the "Service").
 
@@ -151,5 +143,5 @@ through the Service where appropriate.
 
 Questions or privacy requests:
 
-**Hatchet**
+**Hatchet Pty Ltd**
 Email: **support@hatchet.com.au**

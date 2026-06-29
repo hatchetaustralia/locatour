@@ -3,12 +3,6 @@ title: Delete Your Account & Data
 description: How to permanently delete your Locatour account and all associated data — directly in the app, or by request — and exactly what gets removed.
 ---
 
-:::caution[Draft for review]
-Prepared to meet Google Play and App Store requirements. **Not legal advice** —
-review and confirm the operating entity (**Hatchet**) and contact details before
-publication.
-:::
-
 **Effective date:** 29 June 2026
 
 Locatour gives you a way to **permanently delete your account and all of your

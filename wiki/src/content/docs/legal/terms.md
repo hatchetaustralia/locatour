@@ -3,18 +3,10 @@ title: Terms & Conditions
 description: The terms for using Locatour — eligibility, acceptable use, your photos and content, safety and assumption of risk, intellectual property, and the legal basics.
 ---
 
-:::caution[Draft for review]
-This is a working draft prepared to meet App Store and Google Play
-requirements. It is **not legal advice** and must be reviewed and finalised
-before publication. Two values are assumed defaults to confirm with the
-business: the operating entity **Hatchet** and the governing-law jurisdiction
-**New South Wales, Australia**.
-:::
-
 **Effective date:** 29 June 2026
 
 These Terms & Conditions ("Terms") govern your use of the Locatour mobile app
-and related services (the "Service"), provided by **Hatchet**
+and related services (the "Service"), provided by **Hatchet Pty Ltd**
 ("Locatour", "we", "us"). By using the Service, you agree to these Terms. If you
 don't agree, don't use the Service.
 
@@ -62,7 +54,7 @@ conditions at any location. **You participate at your own risk.**
 ## 5. Your content
 
 You keep ownership of the photos and content you create ("User Content"). By
-submitting User Content, you grant **Hatchet** a non-exclusive,
+submitting User Content, you grant **Hatchet Pty Ltd** a non-exclusive,
 worldwide, royalty-free licence to host, store, reproduce, and display it as
 needed to operate and provide the Service.
 
@@ -73,7 +65,7 @@ that violates these Terms.
 ## 6. Our intellectual property
 
 The Service — including the Locatour name, logo, software, design, game systems,
-and content we provide — is owned by **Hatchet** or its licensors and
+and content we provide — is owned by **Hatchet Pty Ltd** or its licensors and
 is protected by intellectual property laws. We grant you a limited, personal,
 non-transferable, revocable licence to use the Service for its intended purpose.
 You may not copy, modify, distribute, or create derivative works from it except
@@ -101,7 +93,7 @@ non-infringement.
 
 ## 10. Limitation of liability
 
-To the fullest extent permitted by law, **Hatchet** will not be
+To the fullest extent permitted by law, **Hatchet Pty Ltd** will not be
 liable for any indirect, incidental, special, consequential, or punitive
 damages, or for any loss or injury arising from your use of the Service or your
 visit to any location. Nothing in these Terms limits liability that cannot be
@@ -109,7 +101,7 @@ limited by law.
 
 ## 11. Indemnity
 
-You agree to indemnify and hold harmless **Hatchet** from claims,
+You agree to indemnify and hold harmless **Hatchet Pty Ltd** from claims,
 losses, and expenses arising out of your use of the Service, your User Content,
 or your breach of these Terms or any law.
 
@@ -120,7 +112,7 @@ access if you breach these Terms or to protect the Service and its users.
 
 ## 13. Governing law
 
-These Terms are governed by the laws of **New South Wales, Australia**,
+These Terms are governed by the laws of **Western Australia, Australia**,
 without regard to its conflict-of-laws rules. Disputes will be subject to the
 courts of that jurisdiction, except where applicable law gives you other rights.
 
@@ -134,5 +126,5 @@ updated Terms.
 
 Questions about these Terms:
 
-**Hatchet**
+**Hatchet Pty Ltd**
 Email: **support@hatchet.com.au**

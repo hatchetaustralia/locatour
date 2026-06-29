@@ -99,10 +99,10 @@ a `submit` scaffold targets the **internal** track as **draft**).
   `https://docs.locatour.com.au/legal/data-deletion/` (use in the Data Safety form).
 - 🔴 **Background-location demo video** — required for the `ACCESS_BACKGROUND_LOCATION`
   declaration; #1 rejection cause. See `09-background-location-demo-video.md`.
-- 🟡 **Confirm legal entity + jurisdiction** in the privacy/terms pages. Filled this
-  session with assumed defaults (**Hatchet** / **New South Wales, Australia**) —
-  verify the registered entity name (+ ABN) and governing-law state before public
-  launch.
+- ✅ **Legal entity + jurisdiction confirmed:** **Hatchet Pty Ltd** /
+  **Western Australia**. Filled across the privacy, terms and data-deletion pages;
+  draft banners removed. (A formal legal review of the clause wording is still
+  advisable but not a store blocker.)
 - 🟡 **UGC moderation/report path** for user check-in photos.
 
 ---
