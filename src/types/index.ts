@@ -75,6 +75,10 @@ export interface CheckIn {
   pointsEarned: number;
   timestamp: string;
   coordinatesChecked: Coordinates;
+  // Horizontal accuracy (metres) of the GPS fix used for the check-in, when known.
+  gpsAccuracy?: number | null;
+  // Raw EXIF tags from the captured photo (device/OS dependent), when available.
+  photoExif?: Record<string, any> | null;
   verifiedOffline: boolean;
   syncedAt?: string;
   // Server check-in PK, set once the upload succeeds. Lets the app delete the row

@@ -602,6 +602,8 @@ export interface PendingUpload {
   pointsEarned: number;
   latitude?: number | null;
   longitude?: number | null;
+  gpsAccuracy?: number | null;
+  photoExif?: Record<string, any> | null;
   verifiedOffline: boolean;
   checkedInAt: string;
 }
@@ -624,6 +626,15 @@ async function uploadCheckIn(item: PendingUpload, token: string): Promise<Upload
     form.append('points_earned', String(item.pointsEarned ?? 0));
     if (item.latitude != null) form.append('latitude', String(item.latitude));
     if (item.longitude != null) form.append('longitude', String(item.longitude));
+    if (item.gpsAccuracy != null) form.append('gps_accuracy', String(item.gpsAccuracy));
+    // EXIF is an object, so it rides as a JSON string (multipart can't nest).
+    if (item.photoExif) {
+      try {
+        form.append('photo_exif', JSON.stringify(item.photoExif));
+      } catch {
+        // Non-serialisable EXIF (circular refs etc.) — skip rather than fail the upload.
+      }
+    }
     form.append('verified_offline', item.verifiedOffline ? '1' : '0');
     form.append('checked_in_at', item.checkedInAt);
 

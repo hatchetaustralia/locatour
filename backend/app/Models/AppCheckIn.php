@@ -25,12 +25,18 @@ class AppCheckIn extends Model
         'share_token',
         'latitude',
         'longitude',
+        'gps_accuracy',
+        'photo_exif',
         'verified_offline',
         'checked_in_at',
     ];
 
     protected $casts = [
         'points_earned' => 'integer',
+        'latitude' => 'float',
+        'longitude' => 'float',
+        'gps_accuracy' => 'float',
+        'photo_exif' => 'array',
         'verified_offline' => 'boolean',
         'checked_in_at' => 'datetime',
     ];
@@ -53,6 +59,42 @@ class AppCheckIn extends Model
     public function appUser(): BelongsTo
     {
         return $this->belongsTo(AppUser::class);
+    }
+
+    /**
+     * The location this check-in targeted, matched on the app slug
+     * (location_id ↔ locations.slug — see the create migration's note). May be
+     * null if the location has since been removed.
+     */
+    public function location(): BelongsTo
+    {
+        return $this->belongsTo(Location::class, 'location_id', 'slug');
+    }
+
+    /**
+     * Straight-line distance, in METRES, between the device coordinates recorded
+     * at check-in and the location's pinned coordinates — the key signal for
+     * vetting a check-in. Null when either side has no coordinates. Haversine.
+     */
+    public function getDistanceMetersAttribute(): ?int
+    {
+        $loc = $this->location;
+
+        if ($this->latitude === null || $this->longitude === null
+            || ! $loc || $loc->latitude === null || $loc->longitude === null) {
+            return null;
+        }
+
+        $earthRadius = 6_371_000; // metres
+        $latFrom = deg2rad((float) $this->latitude);
+        $latTo = deg2rad((float) $loc->latitude);
+        $latDelta = deg2rad((float) $loc->latitude - (float) $this->latitude);
+        $lngDelta = deg2rad((float) $loc->longitude - (float) $this->longitude);
+
+        $a = sin($latDelta / 2) ** 2
+            + cos($latFrom) * cos($latTo) * sin($lngDelta / 2) ** 2;
+
+        return (int) round($earthRadius * 2 * atan2(sqrt($a), sqrt(1 - $a)));
     }
 
     /** Public URL for the uploaded photo, or null when none was uploaded. */

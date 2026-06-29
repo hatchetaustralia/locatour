@@ -35,10 +35,21 @@ class CheckInController extends Controller
             'points_earned' => ['nullable', 'integer'],
             'latitude' => ['nullable', 'numeric'],
             'longitude' => ['nullable', 'numeric'],
+            // Horizontal accuracy of the GPS fix in metres (lower = better).
+            'gps_accuracy' => ['nullable', 'numeric'],
+            // Raw camera EXIF, sent as a JSON string over multipart (objects can't
+            // ride in a form field). Decoded below; ignored if it isn't valid JSON.
+            'photo_exif' => ['nullable', 'string'],
             'verified_offline' => ['nullable', 'boolean'],
             'checked_in_at' => ['nullable', 'date'],
             'photo' => ['nullable', 'image', 'max:10240'],
         ]);
+
+        $photoExif = null;
+        if (! empty($data['photo_exif'])) {
+            $decoded = json_decode($data['photo_exif'], true);
+            $photoExif = is_array($decoded) ? $decoded : null;
+        }
 
         $photoPath = null;
         if ($request->hasFile('photo')) {
@@ -53,6 +64,8 @@ class CheckInController extends Controller
             'photo_path' => $photoPath,
             'latitude' => $data['latitude'] ?? null,
             'longitude' => $data['longitude'] ?? null,
+            'gps_accuracy' => $data['gps_accuracy'] ?? null,
+            'photo_exif' => $photoExif,
             'verified_offline' => $request->boolean('verified_offline'),
             'checked_in_at' => $data['checked_in_at'] ?? now(),
         ]);
