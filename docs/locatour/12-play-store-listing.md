@@ -67,7 +67,7 @@ Get out there and start exploring.
 ```
 
 ## Listing assets needed
-- **App icon** 512×512 PNG (from `assets/images/icon.png` — export at size)
+- **App icon** 512×512 PNG — ready at `assets/store/play-icon-512.png`
 - **Feature graphic** 1024×500 PNG — generated and ready at
   `assets/store/feature-graphic.png` (brand-matched; swap for a designed version later)
 - **Phone screenshots** — generated and ready in `assets/store/screenshots/`
