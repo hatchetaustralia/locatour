@@ -49,6 +49,10 @@ export default function ProfileScreen() {
   const [displayNameError, setDisplayNameError] = useState('');
   const [usernameError, setUsernameError] = useState('');
   const [usernameStatus, setUsernameStatus] = useState<UsernameStatus | 'checking' | null>(null);
+  // The signed-in account (if any), captured on mount. Used to (a) exclude the
+  // user's OWN handle from the "is this username taken?" check, and (b) PRESERVE
+  // their real server identity/stats instead of minting a throwaway local mock.
+  const currentUserRef = useRef<Awaited<ReturnType<typeof storage.getUser>>>(null);
 
   // When reached from the walkthrough there are no route params, but the signed-in
   // Google user already has a name + picture on their account. Seed the empty
@@ -59,8 +63,14 @@ export default function ProfileScreen() {
     (async () => {
       const user = await storage.getUser();
       if (cancelled || !user) return;
+      currentUserRef.current = user;
       if (!params.displayName && user.displayName) {
         setDisplayName((prev) => prev || user.displayName);
+      }
+      // Seed the handle from the signed-in account so a returning user sees their
+      // OWN username (and the availability check excludes it) rather than a blank.
+      if (!suggestedUsername && user.username) {
+        setUsername((prev) => prev || user.username.replace(/^@/, ''));
       }
       // Prefer the separately-stored Google photo as the provider option; fall
       // back to the current avatarUrl for accounts saved before that field.
@@ -96,7 +106,7 @@ export default function ProfileScreen() {
     setUsernameStatus('checking');
     const reqId = ++usernameReqId.current;
     const handle = setTimeout(async () => {
-      const status = await checkUsernameAvailable(u);
+      const status = await checkUsernameAvailable(u, currentUserRef.current?.uid);
       if (reqId !== usernameReqId.current) return; // a newer keystroke won
       setUsernameStatus(status);
     }, 400);
@@ -130,28 +140,42 @@ export default function ProfileScreen() {
 
     const fullUsername = username.startsWith('@') ? username : `@${username}`;
 
-    const mockUser = {
-      uid: 'user_' + Math.random().toString(36).slice(2, 11),
-      displayName: displayName.trim(),
-      username: fullUsername,
-      bio: bio.trim(),
-      avatarUrl: avatar || providerAvatar || AVATAR_CATALOG[0].url,
-      gender: '',
-      homeSuburb: '',
-      interests: [],
-      stats: {
-        dayStreak: 0,
-        totalXP: 0,
-        uniqueLocations: 0,
-        totalCheckIns: 0,
-        currentLevel: 1,
-        currentXPInLevel: 0,
-        xpNeededForNextLevel: 100,
-      },
-      createdAt: new Date().toISOString(),
-    };
-
-    await storage.setUser(mockUser);
+    // Preserve the signed-in account's real identity (uid/device_id, stats, home
+    // base, etc.) and only update the editable profile fields. A returning SSO
+    // user must NOT be replaced by a throwaway local mock — that severs the server
+    // link and resets their progress. Fall back to a fresh local profile only when
+    // there's genuinely no signed-in account (legacy/mock OTP path).
+    const existing = currentUserRef.current ?? (await storage.getUser());
+    if (existing) {
+      await storage.setUser({
+        ...existing,
+        displayName: displayName.trim(),
+        username: fullUsername,
+        bio: bio.trim(),
+        avatarUrl: avatar || providerAvatar || existing.avatarUrl || AVATAR_CATALOG[0].url,
+      });
+    } else {
+      await storage.setUser({
+        uid: 'user_' + Math.random().toString(36).slice(2, 11),
+        displayName: displayName.trim(),
+        username: fullUsername,
+        bio: bio.trim(),
+        avatarUrl: avatar || providerAvatar || AVATAR_CATALOG[0].url,
+        gender: '',
+        homeSuburb: '',
+        interests: [],
+        stats: {
+          dayStreak: 0,
+          totalXP: 0,
+          uniqueLocations: 0,
+          totalCheckIns: 0,
+          currentLevel: 1,
+          currentXPInLevel: 0,
+          xpNeededForNextLevel: 100,
+        },
+        createdAt: new Date().toISOString(),
+      });
+    }
 
     // Route to Customization.
     router.push('/auth/customize');

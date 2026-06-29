@@ -2,9 +2,11 @@
 
 namespace App\Filament\Resources\AppUsers;
 
+use App\Filament\Resources\AppUsers\Pages\EditAppUser;
 use App\Filament\Resources\AppUsers\Pages\ListAppUsers;
 use App\Filament\Resources\AppUsers\Pages\ViewAppUser;
 use App\Filament\Resources\AppUsers\RelationManagers\CheckInsRelationManager;
+use App\Filament\Resources\AppUsers\Schemas\AppUserForm;
 use App\Filament\Resources\AppUsers\Schemas\AppUserInfolist;
 use App\Filament\Resources\AppUsers\Tables\AppUsersTable;
 use App\Models\AppUser;
@@ -62,6 +64,11 @@ class AppUserResource extends Resource
         return static::canAccess();
     }
 
+    public static function form(Schema $schema): Schema
+    {
+        return AppUserForm::configure($schema);
+    }
+
     public static function infolist(Schema $schema): Schema
     {
         return AppUserInfolist::configure($schema);
@@ -84,6 +91,7 @@ class AppUserResource extends Resource
         return [
             'index' => ListAppUsers::route('/'),
             'view' => ViewAppUser::route('/{record}'),
+            'edit' => EditAppUser::route('/{record}/edit'),
         ];
     }
 }

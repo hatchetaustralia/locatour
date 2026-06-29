@@ -6,6 +6,7 @@ use App\Filament\Resources\AppUsers\AppUserResource;
 use App\Models\AppUser;
 use App\Support\Leveling;
 use Filament\Actions\Action;
+use Filament\Actions\EditAction;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
@@ -53,6 +54,10 @@ class ViewAppUser extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            // Edit this user's profile + home base (super-admin only — the whole
+            // resource is gated by AppUserResource::canAccess()).
+            EditAction::make(),
+
             // Resolve all unresolved flags on this account and unblock it.
             // Use this when an account was falsely flagged by the automated monitor
             // or when the issue has been reviewed and the account reinstated.
