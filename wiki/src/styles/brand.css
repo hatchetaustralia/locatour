@@ -78,13 +78,6 @@ header .site-title img {
 .hero {
   --sl-color-bg: transparent;
 }
-/* soft brand blobs behind the hero — light mode only (in dark mode they read
-   as a hard-edged box against the dark page) */
-:root[data-theme='light'] .hero {
-  background:
-    radial-gradient(45% 55% at 85% 12%, rgba(124, 92, 255, 0.13), transparent 62%),
-    radial-gradient(40% 45% at 10% 95%, rgba(123, 201, 160, 0.16), transparent 62%);
-}
 .hero h1 {
   font-family: var(--loca-display);
   font-weight: 700;
