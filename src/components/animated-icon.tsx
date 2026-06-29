@@ -1,8 +1,7 @@
 import { Image } from 'expo-image';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Dimensions, StyleSheet, View, Text } from 'react-native';
-import Animated, { Easing, Keyframe } from 'react-native-reanimated';
-import { scheduleOnRN } from 'react-native-worklets';
+import Animated, { Easing, FadeOut, Keyframe } from 'react-native-reanimated';
 import * as Updates from 'expo-updates';
 import Constants from 'expo-constants';
 
@@ -22,32 +21,25 @@ const BUILD_LABEL = `v${APP_VERSION} · ${OTA_ID}`;
 export function AnimatedSplashOverlay() {
   const [visible, setVisible] = useState(true);
 
-  if (!visible) return null;
-
   // Cream splash that CONTINUES the native expo-splash-screen (same #FCF0E8 bg +
   // logo) so the OS→JS hand-off is seamless, and carries the build marker so a
-  // field tester can confirm which bundle is live. Holds long enough to read the
-  // marker, then fades out.
-  const splashKeyframe = new Keyframe({
-    0: { opacity: 1 },
-    65: { opacity: 1 },
-    100: { opacity: 0, easing: Easing.in(Easing.ease) },
-  });
+  // field tester can confirm which bundle is live. It is rendered INSTANTLY at
+  // full opacity — no entering animation, no image crossfade — so the marker
+  // snaps in (never fades in). It just holds for a readable beat, then fades out.
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(false), 1100);
+    return () => clearTimeout(t);
+  }, []);
+
+  if (!visible) return null;
 
   return (
-    <Animated.View
-      entering={splashKeyframe.duration(1500).withCallback((finished) => {
-        'worklet';
-        if (finished) {
-          scheduleOnRN(setVisible, false);
-        }
-      })}
-      style={styles.backgroundSolidColor}
-    >
+    <Animated.View exiting={FadeOut.duration(400)} style={styles.backgroundSolidColor}>
       <Image
         source={require('@/assets/images/splash-icon.png')}
         style={styles.splashIcon}
         contentFit="contain"
+        transition={0}
       />
       <Text style={styles.buildLabel}>{BUILD_LABEL}</Text>
     </Animated.View>
