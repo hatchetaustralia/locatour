@@ -16,7 +16,7 @@ etc.) lives in **[configuration-overview.md](./configuration-overview.md)**.
 | File | What it is | Exact spec (Play requirement) |
 |------|-----------|-------------------------------|
 | `app-icon-512.png` | App icon | **512 × 512** PNG/JPEG, ≤ 1 MB, no alpha/rounding (Play masks it) |
-| `feature-graphic-1024x500.png` | Feature graphic (top banner) | **1024 × 500** PNG/JPEG, ≤ 15 MB. Keep text away from edges |
+| `feature-graphic-1024x500.jpg` | Feature graphic (top banner) | **1024 × 500** PNG/JPEG, ≤ 15 MB. Keep text away from edges |
 | `screenshots/01-map.png` … `06-history.png` | Phone screenshots (6, framed from real device captures; map is the hero) | **1080 × 1920** (9:16) PNG/JPEG, ≤ 8 MB each, 2–8 shots. Same files satisfy 7" and 10" **tablet** too (1080–7680 px) |
 | *(not yet made)* Promo video | Optional | YouTube URL (public/unlisted, ads off, not age-restricted) |
 

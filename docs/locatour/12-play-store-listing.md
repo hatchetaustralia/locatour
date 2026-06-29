@@ -69,8 +69,8 @@ Get out there and start exploring.
 ## Listing assets needed
 > All graphics live in **`docs/locatour/google-play-console/`** (hand that folder to a designer).
 - **App icon** 512×512 PNG — `docs/locatour/google-play-console/app-icon-512.png`
-- **Feature graphic** 1024×500 PNG —
-  `docs/locatour/google-play-console/feature-graphic-1024x500.png` (brand-matched; swap for a designed version later)
+- **Feature graphic** 1024×500 JPG —
+  `docs/locatour/google-play-console/feature-graphic-1024x500.jpg` (designed by hand)
 - **Phone screenshots** — `docs/locatour/google-play-console/screenshots/`
   (1080×1920 / 9:16, **framed from real device screenshots**; valid for phone + both tablets):
   - `01-map.png` — "Explore the live map" (the hero — real spots, point values, player avatar)
