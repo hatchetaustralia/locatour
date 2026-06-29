@@ -28,7 +28,6 @@ import { HiddenNearbyBar } from '@/components/hidden-nearby-bar';
 import { RainbowGlowMarker } from '@/components/rainbow-glow-marker';
 import { useUserAvatarMarker } from '@/components/user-avatar-marker';
 import { SuggestLocationSheet } from '@/components/suggest-location-sheet';
-import { LocationLoadingBar } from '@/components/location-loading-bar';
 import { Brand, Spacing, stampBorder, BrandRadius } from '@/constants/theme';
 import { storage } from '@/utils/storage';
 import { submitSuggestion, fetchAnnouncement, recordUnlock } from '@/utils/account';
@@ -155,13 +154,30 @@ export default function ExploreScreen() {
     nearestHidden,
     hiddenDistanceM,
     hiddenInRange,
-    locating,
+    locationsLoading,
     refresh,
     forceFreshFix,
   } = useLocationContext();
   // True while the map is acquiring a FRESH fix on open (drives the loading bar
   // and stops the camera from settling on the stale last-known/base position).
   const [locatingMap, setLocatingMap] = useState(Platform.OS !== 'web');
+
+  // Single open-app loader: ONE centre card covering both "finding you" (a fresh
+  // GPS fix) and "loading nearby spots", shown once on open then auto-dismissed.
+  // Replaces the old split UI (top sweep bar + separate "Locating you…" pill) that
+  // flashed over each other. `initialLoadComplete` latches true the first time both
+  // finish, so later background refreshes never re-show it.
+  const gpsReady = !locatingMap && !!userLocation;
+  const spotsReady = !locationsLoading;
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  useEffect(() => {
+    if (initialLoadComplete || Platform.OS === 'web') return;
+    if (gpsReady && spotsReady) {
+      // Hold ~0.7s so both green ticks are visible before the card fades out.
+      const t = setTimeout(() => setInitialLoadComplete(true), 700);
+      return () => clearTimeout(t);
+    }
+  }, [gpsReady, spotsReady, initialLoadComplete]);
   const [selectedLoc, setSelectedLoc] = useState<ExploreLocation | null>(null);
   const [userAvatar, setUserAvatar] = useState<string | null>(null);
   // "You're at X — check in?" arrival prompt: the nearest checkable spot you've
@@ -787,9 +803,8 @@ export default function ExploreScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Transient top "pulling nearby spots" indicator (provider-driven). The
-          map's own "Locating you…" overlay below covers the fresh-fix wait. */}
-      <LocationLoadingBar topOffset={8} />
+      {/* No top sweep bar on the map — the single open-app loader card below
+          covers both "finding you" and "loading nearby spots" in one place. */}
 
       {/* Top overlay: while a hidden spot is nearby, the guide bar takes over so
           the user can hunt it from the (lower-battery) map; otherwise the gold
@@ -1029,15 +1044,33 @@ export default function ExploreScreen() {
           </View>
         )}
 
-        {/* "Locating you…" while we acquire a fresh fix + load nearby spots on
-            open, so a fresh map open never looks empty/broken or stuck on base. */}
-        {Platform.OS !== 'web' && (locatingMap || locating) && (
+        {/* Single open-app loader: one card with a two-step checklist (finding you
+            → loading nearby spots), each ticking green as it finishes, then the
+            whole card auto-dismisses. Replaces the old top bar + "Locating you…"
+            pill flashing separately. */}
+        {Platform.OS !== 'web' && !initialLoadComplete && (
           <View style={styles.locatingOverlay} pointerEvents="none">
-            <View style={[styles.locatingPill, stampBorder]}>
-              <ActivityIndicator size="small" color={Brand.ink} />
-              <BrandText weight="bold" color={Brand.ink} style={styles.locatingText}>
-                Locating you…
-              </BrandText>
+            <View style={[styles.loadCard, stampBorder]}>
+              <View style={styles.loadRow}>
+                {gpsReady ? (
+                  <Ionicons name="checkmark-circle" size={22} color={Brand.sticker.green} />
+                ) : (
+                  <ActivityIndicator size="small" color={Brand.ink} />
+                )}
+                <BrandText weight="semibold" color={Brand.ink} style={styles.loadRowText}>
+                  Finding you
+                </BrandText>
+              </View>
+              <View style={styles.loadRow}>
+                {spotsReady ? (
+                  <Ionicons name="checkmark-circle" size={22} color={Brand.sticker.green} />
+                ) : (
+                  <ActivityIndicator size="small" color={Brand.ink} />
+                )}
+                <BrandText weight="semibold" color={Brand.ink} style={styles.loadRowText}>
+                  Loading nearby spots
+                </BrandText>
+              </View>
             </View>
           </View>
         )}
@@ -1522,17 +1555,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 25,
   },
-  locatingPill: {
+  // Open-app loader card holding the finding-you / loading-spots checklist.
+  loadCard: {
+    gap: Spacing.three,
+    backgroundColor: Brand.surface,
+    paddingHorizontal: Spacing.five,
+    paddingVertical: Spacing.four,
+    borderRadius: BrandRadius.sticker,
+  },
+  loadRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
-    backgroundColor: Brand.surface,
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.three,
-    borderRadius: BrandRadius.pill,
   },
-  locatingText: {
-    fontSize: 14,
+  loadRowText: {
+    fontSize: 15,
   },
   // "You're at X — check in?" arrival banner, floating above the tab bar.
   arrivalBanner: {
