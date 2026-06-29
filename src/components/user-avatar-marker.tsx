@@ -64,6 +64,13 @@ const SURFACE = '#FFFFFF'; // Brand.surface (ring fill behind a transparent avat
 const DENSITY = PixelRatio.get();
 const PIX = Math.round(SIZE * DENSITY);
 
+// Avatar loading robustness tunables.
+const FETCH_TIMEOUT_MS = 7000; // max ms to wait for Skia.Data.fromURI before giving up
+const MAX_RETRIES = 2; // in-session retry cap so a permanently-broken URL doesn't loop
+const RETRY_DELAYS = [2000, 5000]; // ms before each successive retry attempt
+// Dicebear fallback — matches avatar.ts pattern exactly (adventurer/png, explorer seed, same bg).
+const DICEBEAR_FALLBACK = 'https://api.dicebear.com/7.x/adventurer/png?seed=explorer&backgroundColor=c0aede';
+
 export type AvatarMarkerImages = { cold: string; hot: string };
 
 // One bake per avatar URL per app session (keyed so a profile avatar change
@@ -118,17 +125,41 @@ async function bakeVariant(img: ReturnType<typeof Skia.Image.MakeImageFromEncode
   return file.uri;
 }
 
+/** Race a promise against a ms-capped timeout; rejects with a timeout error if exceeded. */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`useUserAvatarMarker: fetch timed out after ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
+/** Fetch + Skia-decode one URI, returning null on any failure (timeout, 404, corrupt bytes). */
+async function fetchSkiaImage(uri: string): Promise<ReturnType<typeof Skia.Image.MakeImageFromEncoded>> {
+  const data = await withTimeout(Skia.Data.fromURI(uri), FETCH_TIMEOUT_MS);
+  return Skia.Image.MakeImageFromEncoded(data);
+}
+
 async function bake(avatarUri: string): Promise<AvatarMarkerImages | null> {
   try {
-    // Download + decode the remote avatar into a Skia image (CPU; no GPU context).
-    const data = await Skia.Data.fromURI(avatarUri);
-    const img = Skia.Image.MakeImageFromEncoded(data);
+    // 1. Download + decode the remote avatar into a Skia image (CPU; no GPU context).
+    //    Raced against FETCH_TIMEOUT_MS so a slow/expired/404 Google photo URL can't hang forever.
+    let img = await fetchSkiaImage(avatarUri).catch(() => null);
+
+    // 2. If primary fetch failed AND it wasn't already a dicebear URL, fall back to a generic
+    //    dicebear avatar so the user still gets a visible puck instead of a blank marker.
+    if (!img && !avatarUri.includes('dicebear.com')) {
+      console.warn('useUserAvatarMarker: primary avatar failed, trying dicebear fallback');
+      img = await fetchSkiaImage(DICEBEAR_FALLBACK).catch(() => null);
+    }
+
     if (!img) return null;
     const [cold, hot] = await Promise.all([bakeVariant(img, false), bakeVariant(img, true)]);
     if (!cold || !hot) return null;
     return { cold, hot };
   } catch (e) {
-    // Any failure → null; the caller falls back to the RN overlay (never an empty ring).
+    // Any remaining failure → null; the caller falls back to the RN overlay (never an empty ring).
     console.warn('useUserAvatarMarker: failed to bake avatar PNG', e);
     return null;
   }
@@ -138,6 +169,13 @@ async function bake(avatarUri: string): Promise<AvatarMarkerImages | null> {
  * Bakes the cold + hot avatar marker PNGs for `avatarUri`. Returns the file:// URIs
  * once ready, or null while baking / on failure (caller should fall back to the RN
  * overlay so the avatar is never missing).
+ *
+ * Robustness additions vs the original:
+ *  - bake() now times out the remote fetch (FETCH_TIMEOUT_MS) instead of hanging forever.
+ *  - bake() falls back to a generic dicebear PNG if the primary URL fails.
+ *  - On failure the hook retries up to MAX_RETRIES times (with RETRY_DELAYS backoff)
+ *    within the same session so a transient network blip heals without a remount.
+ *    All retries are cancelled on unmount to prevent setState-after-unmount.
  */
 export function useUserAvatarMarker(avatarUri: string | null): AvatarMarkerImages | null {
   const [images, setImages] = useState<AvatarMarkerImages | null>(null);
@@ -148,19 +186,40 @@ export function useUserAvatarMarker(avatarUri: string | null): AvatarMarkerImage
       return;
     }
     let cancelled = false;
-    let promise = cache.get(avatarUri);
-    if (!promise) {
-      promise = bake(avatarUri);
-      cache.set(avatarUri, promise);
-    }
-    promise.then((res) => {
-      if (cancelled) return;
-      // Drop a failed bake from the cache so a later mount can retry it.
-      if (!res) cache.delete(avatarUri);
-      setImages(res);
-    });
+    let retryCount = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const attemptBake = () => {
+      let promise = cache.get(avatarUri);
+      if (!promise) {
+        promise = bake(avatarUri);
+        cache.set(avatarUri, promise);
+      }
+      promise.then((res) => {
+        if (cancelled) return;
+        if (!res) {
+          // Drop failed bake from cache so the next attempt starts fresh.
+          cache.delete(avatarUri);
+          if (retryCount < MAX_RETRIES) {
+            const delay = RETRY_DELAYS[retryCount] ?? 5000;
+            retryCount++;
+            retryTimer = setTimeout(() => {
+              if (!cancelled) attemptBake();
+            }, delay);
+          } else {
+            // Exhausted retries — surface null so the caller shows its fallback.
+            setImages(null);
+          }
+        } else {
+          setImages(res);
+        }
+      });
+    };
+
+    attemptBake();
     return () => {
       cancelled = true;
+      if (retryTimer !== null) clearTimeout(retryTimer);
     };
   }, [avatarUri]);
 

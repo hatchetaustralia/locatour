@@ -838,6 +838,10 @@ interface SQLiteQueueItem {
   longitude: number;
   timestamp: string;
   points: number;
+  // Verification metadata (added later — nullable on rows queued before this).
+  // EXIF is stored as a JSON string so it fits a single TEXT column.
+  gpsAccuracy?: number | null;
+  photoExif?: string | null;
 }
 
 // In-Memory Fallback State (e.g. for Web / Development)
@@ -886,6 +890,19 @@ class StorageManager {
           value TEXT NOT NULL
         );
       `);
+      // Lightweight, idempotent column migrations for the offline queue. Each
+      // ALTER throws "duplicate column name" once the column exists, so the
+      // per-statement try/catch makes re-runs a no-op.
+      for (const ddl of [
+        'ALTER TABLE offline_queue ADD COLUMN gpsAccuracy REAL;',
+        'ALTER TABLE offline_queue ADD COLUMN photoExif TEXT;',
+      ]) {
+        try {
+          this.db.execSync(ddl);
+        } catch {
+          // Column already present — expected on every launch after the first.
+        }
+      }
       console.log('SQLite database initialized successfully');
     } catch (e) {
       console.error('Failed to initialize SQLite, falling back to local memory queue', e);
@@ -1286,6 +1303,16 @@ class StorageManager {
     return this.locations;
   }
 
+  /**
+   * Drop the "fetched this session" flag so the NEXT getLocations() re-hits the
+   * server (or cache) instead of returning the stale in-memory slice. Used by the
+   * forced post-check-in refresh so a newly unlocked spot's slice is re-pulled
+   * even on the coordinate-less path (the coordinate path already bypasses cache).
+   */
+  public invalidateLocations(): void {
+    this.locationsFetched = false;
+  }
+
   // Read the last good API result from the kv cache, or null if absent/corrupt.
   private readCachedLocations(): ExploreLocation[] | null {
     try {
@@ -1663,7 +1690,21 @@ class StorageManager {
   }
 
   // --- SQLite Offline Queue Operations ---
-  public async queueOfflineCheckIn(locationId: string, photoUrl: string, coordinates: Coordinates, points: number): Promise<void> {
+  public async queueOfflineCheckIn(
+    locationId: string,
+    photoUrl: string,
+    coordinates: Coordinates,
+    points: number,
+    meta?: { gpsAccuracy?: number | null; photoExif?: Record<string, any> | null },
+  ): Promise<void> {
+    let photoExifJson: string | null = null;
+    if (meta?.photoExif) {
+      try {
+        photoExifJson = JSON.stringify(meta.photoExif);
+      } catch {
+        photoExifJson = null;
+      }
+    }
     const item: SQLiteQueueItem = {
       id: 'offline_' + Math.random().toString(36).substr(2, 9),
       locationId,
@@ -1671,7 +1712,9 @@ class StorageManager {
       latitude: coordinates.latitude,
       longitude: coordinates.longitude,
       timestamp: new Date().toISOString(),
-      points
+      points,
+      gpsAccuracy: meta?.gpsAccuracy ?? null,
+      photoExif: photoExifJson,
     };
 
     if (Platform.OS === 'web' || !this.db) {
@@ -1683,9 +1726,9 @@ class StorageManager {
 
     try {
       this.db.runSync(`
-        INSERT INTO offline_queue (id, locationId, photoUrl, latitude, longitude, timestamp, points)
-        VALUES (?, ?, ?, ?, ?, ?, ?);
-      `, [item.id, item.locationId, item.photoUrl, item.latitude, item.longitude, item.timestamp, item.points]);
+        INSERT INTO offline_queue (id, locationId, photoUrl, latitude, longitude, timestamp, points, gpsAccuracy, photoExif)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+      `, [item.id, item.locationId, item.photoUrl, item.latitude, item.longitude, item.timestamp, item.points, item.gpsAccuracy, item.photoExif]);
       console.log('SQLite: Queued offline checkin:', item);
     } catch (e) {
       console.error('Failed to run insert in SQLite, queueing in memory', e);
@@ -1777,6 +1820,14 @@ class StorageManager {
 
     return rows.map((item) => {
       const loc = this.locations.find((l) => l.id === item.locationId);
+      let photoExif: Record<string, any> | null = null;
+      if (item.photoExif) {
+        try {
+          photoExif = JSON.parse(item.photoExif);
+        } catch {
+          photoExif = null;
+        }
+      }
       return {
         id: item.id,
         payload: {
@@ -1786,6 +1837,8 @@ class StorageManager {
           pointsEarned: item.points,
           latitude: item.latitude,
           longitude: item.longitude,
+          gpsAccuracy: item.gpsAccuracy ?? null,
+          photoExif,
           verifiedOffline: true,
           checkedInAt: item.timestamp,
         },

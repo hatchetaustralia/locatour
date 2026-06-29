@@ -29,6 +29,7 @@ import React, {
 import * as Location from 'expo-location';
 
 import { storage } from '@/utils/storage';
+import { fetchAccountState } from '@/utils/account';
 import { hydrateFromCache, fetchAndApplyConfig } from '@/utils/runtime-config';
 import { findNearestHiddenSpot, HiddenNearby } from '@/utils/hidden-detection';
 import { User, ExploreLocation, Coordinates } from '@/types';
@@ -58,7 +59,7 @@ interface LocationContextValue {
   hiddenWarm: boolean;
   hiddenInRange: boolean;
 
-  refresh: () => Promise<void>;
+  refresh: (opts?: { force?: boolean }) => Promise<void>;
   forceFreshFix: () => Promise<{ latitude: number; longitude: number } | null>;
 }
 
@@ -136,7 +137,35 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
   // Public refresh: force-fresh past the staleness debounce, used after a
   // check-in/unlock. Re-reads unlocked/visited even if the slice is fresh, so a
   // newly unlocked hidden spot folds out of "hidden" immediately.
-  const refresh = useCallback(async () => {
+  //
+  // refresh({ force: true }) is the post-check-in path the camera awaits: it
+  // BYPASSES the 2s freshness guard and re-syncs the located slice AND the
+  // server's authoritative unlocked/visited state, so a brand-new unlock lands on
+  // the map/profile immediately instead of after a full restart. Zero-arg
+  // refresh() keeps the freshness-guarded behaviour unchanged.
+  const refresh = useCallback(async (opts?: { force?: boolean }) => {
+    if (opts?.force) {
+      // Pull the server's authoritative state (/account/me unlocked_location_ids
+      // + check-ins). Merge the unlocked ids into local storage (union — only
+      // adds new) so the forced doFetch below reads server ∪ local.
+      const state = await fetchAccountState();
+      state?.unlockedIds.forEach((id) => storage.unlockLocation(id));
+      // Force getLocations() to re-hit the server rather than return the stale
+      // in-memory slice cached from before the unlock.
+      storage.invalidateLocations();
+      await doFetch(lastFixCoords.current);
+      // Fold any server-only visited spots on top of the local check-ins doFetch
+      // already applied (the camera writes the new check-in locally before this),
+      // so nothing the server knows about is dropped.
+      if (state) {
+        setVisitedIds((prev) => {
+          const next = new Set(prev);
+          state.checkIns.forEach((c) => next.add(c.locationId));
+          return next;
+        });
+      }
+      return;
+    }
     const fresh = Date.now() - lastFetchAt.current < 2_000;
     if (!fresh) {
       await doFetch(lastFixCoords.current);

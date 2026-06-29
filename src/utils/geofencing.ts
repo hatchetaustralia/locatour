@@ -358,6 +358,36 @@ export async function syncGeofences(): Promise<void> {
   }
 }
 
+/**
+ * Fire a celebratory "you've arrived at a hidden gem" notification. Called by
+ * the camera screen the moment the user comes within check-in range of a hidden
+ * spot. De-duplication is the caller's responsibility (camera tracks the current
+ * hidden spot id), so no per-spot throttle is applied here.
+ *
+ * Guards applied:
+ *  • OS notification permission — silently no-ops if not granted.
+ *  • Quiet hours — intentionally BYPASSED. Arrival is a user-initiated, active-
+ *    proximity event (the user physically walked there and opened the camera), so
+ *    suppressing it during quiet hours would be surprising and unhelpful. The
+ *    NearbyAlerts throttle (quiet hours, daily cap, per-spot cooldown) is
+ *    designed for passive background pings; it does not apply here.
+ *  • The "Nearby Alerts enabled" storage toggle is also intentionally NOT checked:
+ *    that gate controls background geofencing opt-in, not active in-app events.
+ */
+export async function fireArrivalNotification(spotName: string): Promise<void> {
+  const permission = await Notifications.getPermissionsAsync();
+  if (!permission.granted) return;
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Hidden gem found! 🌈',
+      body: `You've reached ${spotName} — open the app to claim it.`,
+      data: { spotName },
+    },
+    trigger: null, // deliver immediately
+  });
+}
+
 /** First-run entry point: request permissions, then register geofences. */
 export async function setupGeofencing(): Promise<void> {
   await ensureGeofencePermissions();

@@ -30,6 +30,7 @@ import { PassportStamp } from '@/components/passport-stamp';
 import { Brand, BrandFonts, BrandRadius, stampBorder, Spacing } from '@/constants/theme';
 import { storage } from '@/utils/storage';
 import { uploadCheckInNow, uploadPendingCheckIns, recordUnlock } from '@/utils/account';
+import { fireArrivalNotification } from '@/utils/geofencing';
 import {
   unlockedTier,
   levelForTier,
@@ -184,6 +185,8 @@ export default function CameraScreen() {
   const [facing, setFacing] = useState<CameraType>('back');
   const [flash, setFlash] = useState<FlashMode>('off');
   const [photoUri, setPhotoUri] = useState<string | null>(null);
+  // Raw EXIF from the capture, attached to the check-in for admin verification.
+  const [photoExif, setPhotoExif] = useState<Record<string, any> | null>(null);
 
   // Verification results
   const [matchedLocation, setMatchedLocation] = useState<ExploreLocation | null>(null);
@@ -196,6 +199,8 @@ export default function CameraScreen() {
   // Reward reveal: any achievements unlocked by this check-in, plus the level the
   // user was on BEFORE it (used to detect a level-up on the verified screen).
   const [newAchievements, setNewAchievements] = useState<Achievement[]>([]);
+  // Collapse a big first-check-in haul: show 3, hide the rest behind "Show more".
+  const [showAllAchievements, setShowAllAchievements] = useState(false);
   const [prevLevel, setPrevLevel] = useState(1);
   // "You're not close enough" data: how far the user actually is + the radius.
   const [tooFar, setTooFar] = useState<{ name: string; distance: number; radius: number } | null>(null);
@@ -330,6 +335,9 @@ export default function CameraScreen() {
               storage.unlockLocation(nearestHidden.id);
               void recordUnlock(nearestHidden.id); // persist the unlock server-side
               void refresh(); // provider re-reads unlocked → map/home stop hiding it
+              // Celebratory arrival push: fires once per spot (the ref guards it),
+              // so reaching a hidden gem pings even if the user's screen is off.
+              void fireArrivalNotification(nearestHidden.name);
               setHiddenSpot({ id: nearestHidden.id, name: nearestHidden.name, image: nearestHidden.imageUrls?.[0] });
             }
           } else if (nearestHidden && nearestHiddenDist <= cfg.warmRadiusM * tierRadiusBoost(level)) {
@@ -427,6 +435,7 @@ export default function CameraScreen() {
   const resetToCapture = useCallback(() => {
     processingRef.current = false;
     setPhotoUri(null);
+    setPhotoExif(null);
     setMatchedLocation(null);
     setUpdatedUser(null);
     setPointsEarned(0);
@@ -510,6 +519,7 @@ export default function CameraScreen() {
     if (isWeb || !cameraRef.current) {
       // Fallback: no native capture, use a placeholder so the flow can continue.
       setPhotoUri(null);
+      setPhotoExif(null);
       setFlow('preview');
       return;
     }
@@ -518,16 +528,20 @@ export default function CameraScreen() {
       // is slow/unreliable to upload over the dev server (and can blow the
       // server's 10MB image limit). quality 0.5 keeps a clear verification photo
       // at a fraction of the size, so the multipart upload completes reliably.
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5 });
+      // exif: true returns the camera's EXIF tags (device, capture time, etc.) so
+      // the check-in carries metadata the admin can use to verify it.
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.5, exif: true });
       // Move the capture out of the clearable cache into permanent storage so the
       // local thumbnail + upload-retry survive app restarts (Android can purge
       // the camera cache uri at any time).
       const permanentUri = photo?.uri ? persistPhoto(photo.uri) : null;
       setPhotoUri(permanentUri);
+      setPhotoExif(photo?.exif ?? null);
       setFlow('preview');
     } catch (e) {
       console.warn('Failed to capture photo', e);
       setPhotoUri(null);
+      setPhotoExif(null);
       setFlow('preview');
     }
   };
@@ -550,12 +564,16 @@ export default function CameraScreen() {
     // GPS, so if we can't get a fix we cannot record the check-in. Race the
     // permission+fix against a timeout so a stuck GPS can't stall forever.
     let coords: Coordinates | null = null;
+    // Horizontal accuracy (m) of the fix above — recorded with the check-in for
+    // admin verification. Only meaningful when `coords` resolved (same promise).
+    let gpsAccuracy: number | null = null;
     try {
       coords = await Promise.race<Coordinates | null>([
         (async () => {
           const { status } = await Location.requestForegroundPermissionsAsync();
           if (status !== 'granted') return null;
           const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.BestForNavigation });
+          gpsAccuracy = pos.coords.accuracy ?? null;
           return { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
         })(),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
@@ -684,6 +702,8 @@ export default function CameraScreen() {
       pointsEarned: earned,
       timestamp: new Date().toISOString(),
       coordinatesChecked: coords,
+      gpsAccuracy,
+      photoExif,
       verifiedOffline: false,
     };
 
@@ -708,6 +728,8 @@ export default function CameraScreen() {
           pointsEarned: earned,
           latitude: coords.latitude,
           longitude: coords.longitude,
+          gpsAccuracy,
+          photoExif,
           verifiedOffline: false,
           checkedInAt: checkIn.timestamp,
         });
@@ -717,12 +739,12 @@ export default function CameraScreen() {
             await storage.setCheckInServerId(checkIn.id, uploaded.serverId);
           }
         } else {
-          await storage.queueOfflineCheckIn(target.id, checkIn.photoUrl, coords, earned);
+          await storage.queueOfflineCheckIn(target.id, checkIn.photoUrl, coords, earned, { gpsAccuracy, photoExif });
         }
       } else {
         checkIn.verifiedOffline = true;
         await storage.addCheckIn(checkIn);
-        await storage.queueOfflineCheckIn(target.id, checkIn.photoUrl, coords, earned);
+        await storage.queueOfflineCheckIn(target.id, checkIn.photoUrl, coords, earned, { gpsAccuracy, photoExif });
       }
     } catch (e) {
       // Backstop (e.g. the storage tier-gate) — surface instead of hanging.
@@ -740,8 +762,17 @@ export default function CameraScreen() {
     // them, then acknowledge so they don't re-appear on the next reveal.
     const fresh = await storage.getUser();
     // Let the shared provider pick up the new visited id + level/XP so home + map
-    // reflect the check-in (and any newly-unlocked spot) on the next tab switch.
-    void refresh();
+    // reflect the check-in (and any newly-unlocked spot) BEFORE the user can leave
+    // the reveal. Awaited (was fire-and-forget) so the map no longer momentarily
+    // blanks the just-checked-in spot; forced past the staleness guard to re-sync
+    // the server's authoritative unlocked/visited state. Online-only + guarded so a
+    // network hiccup can't break the reward reveal (the map filter also falls back
+    // to local visited/unlocked state).
+    try {
+      await refresh(isOnline ? { force: true } : undefined);
+    } catch {
+      // non-fatal — local state already reflects the check-in
+    }
     let unlockedNow: Achievement[] = [];
     try {
       const all = await storage.getAchievements();
@@ -757,6 +788,7 @@ export default function CameraScreen() {
     setIsDiscovery(discovered);
     setExplorerBonus(alertsBonus > 1);
     setNewAchievements(unlockedNow);
+    setShowAllAchievements(false); // fresh reveal starts collapsed
     setPrevLevel(levelBefore);
 
     try {
@@ -828,8 +860,8 @@ export default function CameraScreen() {
               </View>
             )}
             <View style={styles.unlockInfo}>
-              <BrandText weight="medium" color={Brand.inkSecondary} style={styles.unlockKicker}>
-                You&apos;ve unlocked
+              <BrandText weight="bold" color={Brand.purple} style={styles.unlockKicker}>
+                🌈 You found a hidden gem!
               </BrandText>
               <BrandText weight="bold" color={Brand.ink} style={styles.unlockName} numberOfLines={1}>
                 {hiddenSpot.name}
@@ -1209,7 +1241,7 @@ export default function CameraScreen() {
                       ? 'Achievement unlocked! 🏅'
                       : `${newAchievements.length} achievements unlocked! 🏅`}
                   </BrandText>
-                  {newAchievements.map((ach) => (
+                  {(showAllAchievements ? newAchievements : newAchievements.slice(0, 3)).map((ach) => (
                     <View key={ach.id} style={[styles.achCard, stampBorder]}>
                       <View style={styles.achIconWrap}>
                         <Ionicons
@@ -1238,6 +1270,24 @@ export default function CameraScreen() {
                       </View>
                     </View>
                   ))}
+                  {newAchievements.length > 3 && (
+                    <TouchableOpacity
+                      style={styles.achToggle}
+                      onPress={() => setShowAllAchievements((v) => !v)}
+                      activeOpacity={0.8}
+                    >
+                      <BrandText weight="bold" color={Brand.purple} style={styles.achToggleText}>
+                        {showAllAchievements
+                          ? 'Show less'
+                          : `Show ${newAchievements.length - 3} more`}
+                      </BrandText>
+                      <Ionicons
+                        name={showAllAchievements ? 'chevron-up' : 'chevron-down'}
+                        size={14}
+                        color={Brand.purple}
+                      />
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
 
@@ -1274,7 +1324,7 @@ export default function CameraScreen() {
 
               {/* BACK TO MAP — purple stamp button, right-aligned. Pinned below
                   the scrollable reveal so it's always reachable. */}
-              <View style={styles.sheetActionSection}>
+              <View style={[styles.sheetActionSection, { paddingBottom: bottomPad }]}>
                 <TouchableOpacity style={[styles.purpleButton, stampBorder]} onPress={() => router.push('/')} activeOpacity={0.85}>
                   <Ionicons name="map-outline" size={18} color={Brand.bg} />
                   <BrandText weight="bold" color={Brand.bg} style={styles.purpleButtonText}>BACK TO MAP</BrandText>
@@ -1794,6 +1844,17 @@ const styles = StyleSheet.create({
   },
   achDifficultyText: {
     fontSize: 10,
+  },
+  // "Show N more / Show less" toggle under the first 3 achievements.
+  achToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.one,
+    paddingVertical: Spacing.two,
+  },
+  achToggleText: {
+    fontSize: 13,
   },
   // Each stacked block in the cream sheet, divided by a faint hairline.
   sheetSection: {

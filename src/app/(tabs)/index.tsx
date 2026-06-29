@@ -151,6 +151,7 @@ export default function ExploreScreen() {
     reachable,
     level: userLevel,
     unlockedIds,
+    visitedIds,
     nearestHidden,
     hiddenDistanceM,
     hiddenInRange,
@@ -775,9 +776,16 @@ export default function ExploreScreen() {
     // (none today, but future-proof) is never hidden by a chip it has no toggle for.
     const isKnownCategory = CATEGORY_FILTERS.some((c) => c.key === loc.category);
     if (isKnownCategory && !activeCategories.has(loc.category)) return false;
-    // A hidden spot the user has physically UNLOCKED (reached within range) is
-    // always on their map from then on — it bypasses the tier + vicinity gates.
-    if (unlockedIds.has(loc.id)) return true;
+    // A spot the user has physically UNLOCKED or VISITED (checked into), a major
+    // destination, or the explicitly-selected spot are always on the map — they
+    // bypass the tier + vicinity gates so a just-checked-in spot can never vanish
+    // due to momentarily-stale in-memory state (belt-and-suspenders guard).
+    if (
+      unlockedIds.has(loc.id) ||
+      visitedIds.has(loc.id) ||
+      loc.id === searchParams.selectedId ||
+      loc.isMajorDestination
+    ) return true;
     // The map draws only your UNLOCKED pins (+ always-visible majors + a spot you
     // explicitly opened, e.g. a "Worth the trip" teaser tapped on Home). The
     // +1/+2 locked teasers and the +3 hidden band are never normal pins.
