@@ -70,8 +70,16 @@ Get out there and start exploring.
 - **App icon** 512×512 PNG (from `assets/images/icon.png` — export at size)
 - **Feature graphic** 1024×500 PNG — generated and ready at
   `assets/store/feature-graphic.png` (brand-matched; swap for a designed version later)
-- **Phone screenshots** — min 2, ideally 4–8. Start from the `emu-*` / `v4-*`
-  captures in the repo root; frame them and add short captions.
+- **Phone screenshots** — generated and ready in `assets/store/screenshots/`
+  (1080×2160, branded background + captions):
+  - `01-home.png` — "Real places near you"
+  - `02-explore.png` — "Explore the map"
+  - `03-checkin.png` — "Check in & earn XP"
+  - `04-profile.png` — "Level up as you explore"
+  Upload all four (Play needs min 2). Source screens live in
+  `wiki/src/assets/screens/`; regenerate via `scratchpad`/the PIL script if the
+  app UI changes. For truly fresh captures, screenshot a running build on a
+  device/emulator and re-run the framing.
 
 ## Category & contact
 - **Category:** Games → Adventure (or Travel & Local if you prefer the utility
