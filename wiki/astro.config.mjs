@@ -17,13 +17,29 @@ export default defineConfig({
         'beaches and hidden places, check in with a photo, and level up. This is the ' +
         'official guide to how it works, plus our privacy and trust commitments.',
       logo: {
-        src: './src/assets/logo.svg',
+        src: './src/assets/app-icon.png',
         alt: 'Locatour',
         replacesTitle: false,
       },
       customCss: ['./src/styles/brand.css'],
       // Site-wide structured data so search/answer engines understand the brand.
       head: [
+        // Rounded, friendly type to match locatour.com.au
+        {
+          tag: 'link',
+          attrs: { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
+        },
+        {
+          tag: 'link',
+          attrs: { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: true },
+        },
+        {
+          tag: 'link',
+          attrs: {
+            rel: 'stylesheet',
+            href: 'https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;500;600;700;800&display=swap',
+          },
+        },
         {
           tag: 'script',
           attrs: { type: 'application/ld+json' },
