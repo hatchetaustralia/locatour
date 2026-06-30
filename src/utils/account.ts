@@ -276,22 +276,61 @@ export async function fetchAccountState(): Promise<{
   }
 }
 
-/** Record a reached/unlocked hidden spot server-side so it restores on a new device. */
+/** Record a reached/unlocked hidden spot server-side so it restores on a new
+ *  device. Durable: the unlock goes through the outbox so a discovery made
+ *  offline survives a restart AND isn't pruned by the next server pull (the
+ *  resync keeps pending-outbox unlocks); flushOutbox does the actual POST. */
 export async function recordUnlock(locationId: string): Promise<void> {
-  const token = storage.getToken();
-  if (!token) return;
+  await storage.enqueueOutbox('unlock', { location_id: locationId });
+  void flushOutbox();
+}
+
+/**
+ * Drain the durable mutation outbox to the server. A 'profile' row is satisfied
+ * by one syncAccount() push (which clears the marker on success); each 'unlock'
+ * row POSTs the discovery and is removed on a confirmed write. Fail-soft — a row
+ * that can't send stays queued (attempt counter bumped) for the next flush.
+ * Called on app start, on return to foreground, and right after a local write.
+ * No-ops without a token.
+ */
+export async function flushOutbox(): Promise<void> {
   try {
-    await fetchWithFallback('/api/account/unlocks', {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ location_id: locationId }),
-    });
-  } catch {
-    // fire-and-forget — the next check-in also records the unlock server-side
+    const token = storage.getToken();
+    if (!token) return;
+    const rows = storage.getOutbox();
+    if (rows.length === 0) return;
+
+    // Profile: a single push covers every pending 'profile' row — syncAccount
+    // sends the current profile and clears the marker on a 2xx.
+    if (rows.some((r) => r.kind === 'profile')) {
+      await syncAccount();
+    }
+
+    for (const r of rows) {
+      if (r.kind !== 'unlock') continue;
+      try {
+        const payload = JSON.parse(r.payload) as { location_id?: string };
+        if (!payload.location_id) {
+          storage.removeOutbox(r.id);
+          continue;
+        }
+        const res = await fetchWithFallback('/api/account/unlocks', {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ location_id: payload.location_id }),
+        });
+        if (res && res.ok) storage.removeOutbox(r.id);
+        else storage.bumpOutboxAttempt(r.id, res ? `http ${res.status}` : 'offline');
+      } catch (e) {
+        storage.bumpOutboxAttempt(r.id, e instanceof Error ? e.message : 'error');
+      }
+    }
+  } catch (e) {
+    console.warn('[account] flushOutbox failed (soft)', e);
   }
 }
 
@@ -497,6 +536,9 @@ export async function syncAccount(): Promise<boolean> {
       storage.clearToken();
       return false;
     }
+    // Profile reached the server → it's no longer dirty, so the next resync may
+    // adopt the server profile again.
+    if (res.ok) storage.clearOutboxKind('profile');
     return res.ok;
   } catch (e) {
     console.warn('[account] syncAccount failed (soft)', e);

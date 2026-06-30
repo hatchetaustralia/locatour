@@ -15,7 +15,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { checkLevelingInvariants } from '@/utils/leveling';
-import { syncAccount, uploadPendingCheckIns, ensureHomeCoordinates } from '@/utils/account';
+import { syncAccount, uploadPendingCheckIns, ensureHomeCoordinates, flushOutbox } from '@/utils/account';
 // Side-effect import registers the background geofencing task + foreground
 // notification handler at module load (incl. the headless re-launch the OS uses
 // to deliver a geofence event while the app is closed, spec 08, Phase 2).
@@ -61,6 +61,8 @@ export default function RootLayout() {
   useEffect(() => {
     void syncAccount();
     void uploadPendingCheckIns();
+    // Drain the durable mutation outbox (offline profile edits + discoveries).
+    void flushOutbox();
     // Backfill base coordinates for profiles created before we captured them, so
     // the map can warm-start at the user's home (fail-soft; no-op if already set).
     void ensureHomeCoordinates();
@@ -76,7 +78,11 @@ export default function RootLayout() {
   useEffect(() => {
     void refreshGeofencesOnFocus();
     const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void refreshGeofencesOnFocus();
+      if (state === 'active') {
+        void refreshGeofencesOnFocus();
+        // Retry any queued mutations whenever the app returns to the foreground.
+        void flushOutbox();
+      }
     });
     return () => sub.remove();
   }, []);

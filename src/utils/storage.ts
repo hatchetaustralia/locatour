@@ -844,6 +844,23 @@ interface SQLiteQueueItem {
   photoExif?: string | null;
 }
 
+// A durable "outbox" mutation — a local write that must reach the server (a
+// profile edit, a discovery/unlock). Survives restarts and replays on the next
+// launch/foreground (flushOutbox). The presence of a pending row for a kind is
+// ALSO the dirty-flag the server pull checks, so a not-yet-synced local write is
+// never clobbered by the authoritative /account/me resync. (Check-ins keep their
+// own specialised queue — offline_queue — because they carry a multipart photo.)
+interface OutboxItem {
+  id: string;
+  kind: 'profile' | 'unlock';
+  // JSON payload. 'profile' is a bare marker ({}); the flusher reads the current
+  // user at send time (like syncAccount). 'unlock' carries { location_id }.
+  payload: string;
+  createdAt: string;
+  attempts: number;
+  lastError?: string | null;
+}
+
 // In-Memory Fallback State (e.g. for Web / Development)
 class StorageManager {
   private user: User | null = null;
@@ -856,6 +873,9 @@ class StorageManager {
   private achievementsFetched = false;
   private locations: ExploreLocation[] = INITIAL_LOCATIONS;
   private offlineQueue: SQLiteQueueItem[] = [];
+  // Durable mutation outbox (profile/unlock) — web/fallback mirror of the SQLite
+  // `outbox` table. See OutboxItem.
+  private outbox: OutboxItem[] = [];
   // Hidden/locked spots the user has UNLOCKED by physically reaching them (within
   // CHECK_IN_RADIUS_M). Once unlocked a spot stays on their map permanently, even
   // before they check in. Persisted as a JSON array of location ids.
@@ -888,6 +908,14 @@ class StorageManager {
         CREATE TABLE IF NOT EXISTS kv (
           key TEXT PRIMARY KEY NOT NULL,
           value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS outbox (
+          id TEXT PRIMARY KEY NOT NULL,
+          kind TEXT NOT NULL,
+          payload TEXT NOT NULL,
+          createdAt TEXT NOT NULL,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          lastError TEXT
         );
       `);
       // Lightweight, idempotent column migrations for the offline queue. Each
@@ -954,6 +982,9 @@ class StorageManager {
       if (storedUnlocked) this.unlocked = JSON.parse(storedUnlocked) || {};
       if (storedUnlockedLocs) this.unlockedLocationIds = new Set(JSON.parse(storedUnlockedLocs) || []);
       if (storedQueue) this.offlineQueue = JSON.parse(storedQueue);
+      // Web/fallback outbox mirror (native reads the SQLite `outbox` table directly).
+      const storedOutbox = this.readKey('locatour_outbox');
+      if (storedOutbox) this.outbox = JSON.parse(storedOutbox) || [];
 
       // Hydrate the last good API location result (if any) so an offline launch
       // shows real locations before getLocations() runs. Stays the bundled mock
@@ -1076,6 +1107,7 @@ class StorageManager {
     this.newAchievements = new Set();
     this.unlockedLocationIds = new Set();
     this.offlineQueue = [];
+    this.outbox = [];
     this.achievementsFetched = false;
     this.locationsFetched = false;
     this.locations = INITIAL_LOCATIONS;
@@ -1087,6 +1119,7 @@ class StorageManager {
       } else if (this.db) {
         this.db.runSync('DELETE FROM kv;');
         this.db.runSync('DELETE FROM offline_queue;');
+        this.db.runSync('DELETE FROM outbox;');
       }
     } catch (e) {
       console.warn('[storage] wipeAllData failed', e);
@@ -1155,6 +1188,10 @@ class StorageManager {
     // Keep unlocks backing a still-pending local check-in (the server doesn't
     // know about them yet).
     pendingLocal.forEach((c) => this.unlockedLocationIds.add(c.locationId));
+    // Also keep a freshly-discovered unlock that hasn't been pushed up yet (still
+    // pending in the outbox), so the authoritative pull doesn't prune it before
+    // flushOutbox records it server-side.
+    this.pendingUnlockLocationIds().forEach((id) => this.unlockedLocationIds.add(id));
     this.writeKey('locatour_checkins', JSON.stringify(this.checkIns));
     this.writeKey('locatour_unlocked_locations', JSON.stringify([...this.unlockedLocationIds]));
   }
@@ -1202,6 +1239,9 @@ class StorageManager {
       ...(homeCoordinates ? { homeCoordinates } : {}),
     };
     this.saveState();
+    // Durable + dirty: the resync won't adopt the server profile over this edit
+    // until it has been pushed (flushOutbox / syncAccount clears the marker).
+    await this.enqueueOutbox('profile');
     return this.user;
   }
 
@@ -1239,6 +1279,7 @@ class StorageManager {
       };
     }
     this.saveState();
+    await this.enqueueOutbox('profile');
     return this.user;
   }
 
@@ -1864,6 +1905,158 @@ class StorageManager {
         verifiedOffline: true
       }));
     }
+  }
+
+  // --- Durable mutation outbox (profile / unlock) ---
+  // Native: the SQLite `outbox` table is the source of truth. Web/fallback: the
+  // in-memory `this.outbox` mirrored to localStorage. The presence of a pending
+  // row is the dirty-flag the server pull consults so it never clobbers a local
+  // write that hasn't synced yet.
+  private get outboxOnDb(): boolean {
+    return !(Platform.OS === 'web' || !this.db);
+  }
+
+  private persistOutbox(): void {
+    try {
+      this.writeKey('locatour_outbox', JSON.stringify(this.outbox));
+    } catch {
+      // best-effort
+    }
+  }
+
+  /**
+   * Queue a mutation that must reach the server. COLLAPSES so the table can't
+   * grow unbounded: 'profile' keeps a single pending row (only the latest profile
+   * state matters — the flusher reads the live user at send time), 'unlock' keeps
+   * one row per location_id.
+   */
+  public async enqueueOutbox(kind: OutboxItem['kind'], payload: Record<string, any> = {}): Promise<void> {
+    const payloadJson = JSON.stringify(payload ?? {});
+    const unlockLoc = kind === 'unlock' ? String(payload?.location_id ?? '') : '';
+    const row: OutboxItem = {
+      id: 'ob_' + Math.random().toString(36).slice(2, 11),
+      kind,
+      payload: payloadJson,
+      createdAt: new Date().toISOString(),
+      attempts: 0,
+      lastError: null,
+    };
+    if (this.outboxOnDb) {
+      try {
+        if (kind === 'profile') {
+          this.db.runSync('DELETE FROM outbox WHERE kind = ?;', ['profile']);
+        } else if (kind === 'unlock') {
+          const rows = this.db.getAllSync('SELECT id, payload FROM outbox WHERE kind = ?;', ['unlock']) as
+            | { id: string; payload: string }[]
+            | undefined;
+          for (const r of rows ?? []) {
+            try {
+              if (JSON.parse(r.payload)?.location_id === unlockLoc) {
+                this.db.runSync('DELETE FROM outbox WHERE id = ?;', [r.id]);
+              }
+            } catch {
+              // skip unparseable row
+            }
+          }
+        }
+        this.db.runSync(
+          'INSERT INTO outbox (id, kind, payload, createdAt, attempts, lastError) VALUES (?, ?, ?, ?, 0, NULL);',
+          [row.id, row.kind, row.payload, row.createdAt],
+        );
+        return;
+      } catch (e) {
+        console.warn('[storage] enqueueOutbox SQLite failed, using memory', e);
+      }
+    }
+    this.outbox = this.outbox.filter((o) => {
+      if (kind === 'profile') return o.kind !== 'profile';
+      if (o.kind !== 'unlock') return true;
+      try {
+        return JSON.parse(o.payload)?.location_id !== unlockLoc;
+      } catch {
+        return true;
+      }
+    });
+    this.outbox.push(row);
+    this.persistOutbox();
+  }
+
+  /** All pending outbox rows, oldest first. */
+  public getOutbox(): OutboxItem[] {
+    if (this.outboxOnDb) {
+      try {
+        return this.db.getAllSync('SELECT * FROM outbox ORDER BY createdAt ASC;') as OutboxItem[];
+      } catch (e) {
+        console.warn('[storage] getOutbox SQLite read failed', e);
+        return this.outbox;
+      }
+    }
+    return this.outbox;
+  }
+
+  public removeOutbox(id: string): void {
+    if (this.outboxOnDb) {
+      try {
+        this.db.runSync('DELETE FROM outbox WHERE id = ?;', [id]);
+        return;
+      } catch {
+        // fall through to memory
+      }
+    }
+    this.outbox = this.outbox.filter((o) => o.id !== id);
+    this.persistOutbox();
+  }
+
+  /** Drop every pending row of a kind — used when a push of that kind succeeds. */
+  public clearOutboxKind(kind: OutboxItem['kind']): void {
+    if (this.outboxOnDb) {
+      try {
+        this.db.runSync('DELETE FROM outbox WHERE kind = ?;', [kind]);
+        return;
+      } catch {
+        // fall through
+      }
+    }
+    this.outbox = this.outbox.filter((o) => o.kind !== kind);
+    this.persistOutbox();
+  }
+
+  public bumpOutboxAttempt(id: string, error?: string): void {
+    if (this.outboxOnDb) {
+      try {
+        this.db.runSync('UPDATE outbox SET attempts = attempts + 1, lastError = ? WHERE id = ?;', [error ?? null, id]);
+        return;
+      } catch {
+        // fall through
+      }
+    }
+    const o = this.outbox.find((x) => x.id === id);
+    if (o) {
+      o.attempts += 1;
+      o.lastError = error ?? null;
+      this.persistOutbox();
+    }
+  }
+
+  /** Dirty-flag: is there a pending local mutation of this kind not yet synced? */
+  public hasPendingOutbox(kind: OutboxItem['kind']): boolean {
+    return this.getOutbox().some((o) => o.kind === kind);
+  }
+
+  /** location_ids of pending 'unlock' mutations, so the authoritative server pull
+   *  keeps a freshly-discovered spot that hasn't been pushed up yet. */
+  public pendingUnlockLocationIds(): string[] {
+    const ids: string[] = [];
+    for (const o of this.getOutbox()) {
+      if (o.kind !== 'unlock') continue;
+      try {
+        const lid = JSON.parse(o.payload)?.location_id;
+        if (lid) ids.push(String(lid));
+      } catch {
+        // skip
+      }
+    }
+    return ids;
   }
 
   // --- Account token (Sanctum) ---

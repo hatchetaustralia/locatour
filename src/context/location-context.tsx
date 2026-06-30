@@ -158,9 +158,13 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
         await storage.applyServerState(state.checkIns, state.unlockedIds);
         // Adopt the server's authoritative profile + stats too, so admin-side
         // edits (XP grants, username/avatar/home changes) land on next resync
-        // rather than only after a full re-sign-in. doFetch below re-reads the
-        // updated user from storage into context.
-        if (state.profile) await storage.applyServerProfile(state.profile);
+        // rather than only after a full re-sign-in. SKIP while a local profile
+        // edit is still pending in the outbox (dirty) — that un-synced edit wins
+        // until flushOutbox pushes it, so the pull never clobbers it. doFetch
+        // below re-reads the updated user from storage into context.
+        if (state.profile && !storage.hasPendingOutbox('profile')) {
+          await storage.applyServerProfile(state.profile);
+        }
       }
       // Force getLocations() to re-hit the server rather than return the stale
       // in-memory slice.
