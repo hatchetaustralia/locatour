@@ -685,7 +685,14 @@ export default function ExploreScreen() {
   const avatarHot = hiddenNearbyDist != null;
   // Use the native baked marker only on Android (where the View-child snapshot
   // bugs live). iOS/web keep the projected RN overlay, which is reliable there.
-  const useAvatarMarker = Platform.OS === 'android' && !!avatarImages && !!userLocation;
+  // Android ALWAYS renders the "you are here" avatar as a native Marker anchored
+  // to the fix — lock-step with pan/zoom, can't go white or be dropped like a
+  // View-child/remote-image marker, and no laggy projection. It shows the baked
+  // avatar bitmap once ready, else a plain solid puck, so the indicator is NEVER
+  // absent while we have a fix (the old two-path design left gaps during bake /
+  // projection / remount where neither path rendered → the disappearing avatar).
+  // The ONLY requirement is a GPS fix. iOS keeps the RN overlay below.
+  const useAvatarMarker = Platform.OS === 'android' && !!userLocation;
 
   useEffect(() => {
     // Reaching a hidden spot on the map unlocks it (persists on the map) AND
@@ -986,17 +993,37 @@ export default function ExploreScreen() {
                 avatar change (which bakes a new per-avatar file). A stable key with
                 tracksViewChanges={false} would keep the stale/blank bitmap. */}
             {useAvatarMarker && Marker && (
-              <Marker
-                key={avatarHot ? avatarImages!.hot : avatarImages!.cold}
-                coordinate={{
-                  latitude: userLocation!.coords.latitude,
-                  longitude: userLocation!.coords.longitude,
-                }}
-                image={{ uri: avatarHot ? avatarImages!.hot : avatarImages!.cold }}
-                anchor={{ x: 0.5, y: 0.5 }}
-                tracksViewChanges={false}
-                zIndex={999}
-              />
+              avatarImages ? (
+                <Marker
+                  key={avatarHot ? avatarImages.hot : avatarImages.cold}
+                  coordinate={{
+                    latitude: userLocation!.coords.latitude,
+                    longitude: userLocation!.coords.longitude,
+                  }}
+                  image={{ uri: avatarHot ? avatarImages.hot : avatarImages.cold }}
+                  anchor={{ x: 0.5, y: 0.5 }}
+                  tracksViewChanges={false}
+                  zIndex={999}
+                />
+              ) : (
+                // Avatar bitmap not baked yet (first load / re-bake) — show a plain
+                // solid puck so the indicator is NEVER absent. Solid-colour Views
+                // snapshot reliably; only async remote-image children flash white.
+                <Marker
+                  key="avatar-fallback-puck"
+                  coordinate={{
+                    latitude: userLocation!.coords.latitude,
+                    longitude: userLocation!.coords.longitude,
+                  }}
+                  anchor={{ x: 0.5, y: 0.5 }}
+                  tracksViewChanges
+                  zIndex={999}
+                >
+                  <View style={[styles.fallbackPuck, avatarHot && styles.fallbackPuckHot]}>
+                    <View style={styles.fallbackPuckDot} />
+                  </View>
+                </Marker>
+              )
             )}
 
             {/* Pending suggestion pin: while the "suggest a location" flow is open,
@@ -1964,6 +1991,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 0.4,
     color: Brand.bg,
+  },
+  // Plain solid "you are here" puck — the gap-free fallback shown as a native
+  // Marker child until the baked avatar bitmap is ready. Solid colours only (no
+  // async image) so the marker snapshot can't flash white.
+  fallbackPuck: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: 3,
+    borderColor: Brand.teal,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fallbackPuckHot: {
+    borderColor: Brand.purple,
+  },
+  fallbackPuckDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: Brand.teal,
   },
   sheetScroll: {
     flexShrink: 1,
