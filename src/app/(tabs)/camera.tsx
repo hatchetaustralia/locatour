@@ -946,13 +946,15 @@ export default function CameraScreen() {
         ) : (
           <View style={styles.fallback}>
             <Ionicons name="camera-outline" size={56} color="#9ca3af" />
-            <BrandText weight="bold" color="#fff" style={styles.fallbackTitle}>Camera not available</BrandText>
+            <BrandText weight="bold" color="#fff" style={styles.fallbackTitle}>
+              {isWeb || (permission && !permission.granted) ? 'Camera not available' : 'Preparing camera…'}
+            </BrandText>
             <BrandText weight="medium" color="#9ca3af" style={styles.fallbackText}>
               {isWeb
                 ? 'Live camera is limited here. Simulate a check-in to continue.'
                 : permission && !permission.granted
                   ? 'Camera permission is required to take a check-in photo.'
-                  : 'Preparing camera…'}
+                  : 'Hang tight — getting the camera ready.'}
             </BrandText>
             {!isWeb && permission && !permission.granted && (
               <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>

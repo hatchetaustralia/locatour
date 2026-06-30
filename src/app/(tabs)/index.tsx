@@ -467,6 +467,10 @@ export default function ExploreScreen() {
       if (initialLoadCompleteRef.current) {
         setMapRemounting(true);
         setMapInstanceKey((k) => k + 1);
+        // Use the masked reload window to pull a FRESH located slice from the server
+        // (forced past the 2s freshness guard) so spots within the user's radius are
+        // up to date by the time the new map paints.
+        void refresh({ force: true });
         coverTimer = setTimeout(() => setMapRemounting(false), 1800);
       }
       setPinsTracking(true);
@@ -475,7 +479,7 @@ export default function ExploreScreen() {
         if (coverTimer) clearTimeout(coverTimer);
         clearTimeout(pinTimer);
       };
-    }, []),
+    }, [refresh]),
   );
 
   // Centre the map on the user's base once we know it AND the map is mounted, so
@@ -789,6 +793,20 @@ export default function ExploreScreen() {
       isWithinVicinity(userCoords, loc.coordinates, getConfig().vicinityRadiusM * tierRadiusBoost(userLevel));
     return tierVisible && reachVisible;
   });
+
+  // Re-rasterise the pin markers whenever the visible set — or a pin's checked-in /
+  // gem state — changes. View-child markers freeze a half-painted, clipped bitmap if
+  // tracksViewChanges flips off before their content settles, which is what renders
+  // pins as blank colour blobs on a cold start after the camera. A fresh tracking
+  // pulse on each change (and once the first load completes) re-snapshots them.
+  const pinSignature = visibleLocations
+    .map((l) => `${l.id}:${getCheckInStatus(l.id) ? 1 : 0}:${(l.tier ?? 0) >= 4 ? 1 : 0}`)
+    .join('|');
+  useEffect(() => {
+    setPinsTracking(true);
+    const t = setTimeout(() => setPinsTracking(false), 1500);
+    return () => clearTimeout(t);
+  }, [pinSignature, initialLoadComplete]);
 
   // Is the open spot a trip beyond the local bubble? Drives a "Worth the trip"
   // note on the detail sheet so the explorer knows it's outside their area.
