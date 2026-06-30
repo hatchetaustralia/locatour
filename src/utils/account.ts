@@ -38,6 +38,18 @@ const UPLOAD_TIMEOUT_MS = 30000;
 // warn once per session rather than on every failed request.
 let blockedNotified = false;
 
+// Notified when the server REJECTS our token (401) so the app can force a
+// re-login instead of silently sitting on stale, un-syncable local data (the
+// zombie-session bug). Registered by the root layout; cleared on unmount.
+let sessionExpiredHandler: (() => void) | null = null;
+export function setSessionExpiredHandler(fn: (() => void) | null): void {
+  sessionExpiredHandler = fn;
+}
+function noteSessionExpired(): void {
+  storage.clearToken();
+  sessionExpiredHandler?.();
+}
+
 /** Whether the authed account has been flagged blocked by the server (403). */
 export function isAccountBlocked(): boolean {
   return blockedNotified;
@@ -257,7 +269,14 @@ export async function fetchAccountState(): Promise<{
       method: 'GET',
       headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
     });
-    if (!res || !res.ok) return null;
+    if (!res) return null;
+    // The server rejected the token → force a re-login (don't keep showing stale
+    // local data that can never sync).
+    if (res.status === 401) {
+      noteSessionExpired();
+      return null;
+    }
+    if (!res.ok) return null;
     const body = (await res.json()) as {
       user?: ServerAppUser;
       check_ins?: ServerCheckIn[];
@@ -533,7 +552,7 @@ export async function syncAccount(): Promise<boolean> {
     // app_user divorced from the Google identity. The user must sign in with
     // Google again, which re-mints a valid token against their real account.
     if (res.status === 401) {
-      storage.clearToken();
+      noteSessionExpired();
       return false;
     }
     // Profile reached the server → it's no longer dirty, so the next resync may

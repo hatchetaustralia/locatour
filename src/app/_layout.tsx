@@ -15,7 +15,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { checkLevelingInvariants } from '@/utils/leveling';
-import { syncAccount, uploadPendingCheckIns, ensureHomeCoordinates, flushOutbox } from '@/utils/account';
+import { syncAccount, uploadPendingCheckIns, ensureHomeCoordinates, flushOutbox, setSessionExpiredHandler } from '@/utils/account';
 // Side-effect import registers the background geofencing task + foreground
 // notification handler at module load (incl. the headless re-launch the OS uses
 // to deliver a geofence event while the app is closed, spec 08, Phase 2).
@@ -58,6 +58,15 @@ export default function RootLayout() {
   //     if the device has a user but no token yet),
   //  2. flush any check-ins that were queued while offline / on a prior failure.
   // Both are fail-soft inside account.ts, so a network error is a no-op here.
+  // If the server ever 401s our token, force a re-login instead of leaving the
+  // app in a zombie session (logged-in-looking but unable to sync, silently
+  // showing stale local data — the exact failure mode behind admin deletes not
+  // propagating). The token is already cleared at the source.
+  useEffect(() => {
+    setSessionExpiredHandler(() => router.replace('/auth/login'));
+    return () => setSessionExpiredHandler(null);
+  }, [router]);
+
   useEffect(() => {
     void syncAccount();
     void uploadPendingCheckIns();

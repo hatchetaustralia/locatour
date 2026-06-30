@@ -1207,7 +1207,16 @@ class StorageManager {
    */
   public async applyServerProfile(p: User): Promise<void> {
     if (!this.user) return;
-    const mergedXP = Math.max(this.user.stats.totalXP || 0, p.stats.totalXP || 0);
+    // total_xp is server-authoritative now (the backend derives it = sum of
+    // check-in points + admin bonus_xp). Adopt the server value directly so BOTH
+    // an admin grant (XP up) AND a revoke (XP down → level drops) land on the
+    // device. The ONE exception: while local check-ins are still queued for upload
+    // their points aren't on the server yet, so keep the higher local value until
+    // they sync (then a later pull adopts the now-correct server total).
+    const localXP = this.user.stats.totalXP || 0;
+    const serverXP = p.stats.totalXP || 0;
+    const hasUnsyncedEarnings = (await this.getQueuedCheckIns()).length > 0;
+    const nextXP = hasUnsyncedEarnings ? Math.max(localXP, serverXP) : serverXP;
     this.user = {
       ...this.user,
       displayName: p.displayName || this.user.displayName,
@@ -1220,9 +1229,11 @@ class StorageManager {
       interests: p.interests?.length ? p.interests : this.user.interests,
     };
     const stats = { ...this.user.stats };
-    stats.totalXP = mergedXP;
+    stats.totalXP = nextXP;
+    // Streak keeps the higher value (monotonic within a run; un-synced local
+    // increments aren't lost).
     stats.dayStreak = Math.max(this.user.stats.dayStreak || 0, p.stats.dayStreak || 0);
-    Object.assign(stats, deriveLevelStats(mergedXP));
+    Object.assign(stats, deriveLevelStats(nextXP));
     this.user.stats = stats;
     this.writeKey('locatour_user', JSON.stringify(this.user));
   }

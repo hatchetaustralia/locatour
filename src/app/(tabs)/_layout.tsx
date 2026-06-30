@@ -55,8 +55,11 @@ export default function TabsLayout() {
     );
   }
 
-  // Not signed in → LOGIN is the first thing (onboarding runs after sign-in).
-  if (!user) {
+  // Not signed in, OR a zombie session — a user is present but the Sanctum token
+  // was cleared after the server 401'd it (stale token). Either way → LOGIN, so
+  // re-authenticating mints a fresh token instead of sitting on stale, un-syncable
+  // local data (which silently no-op'd every resync).
+  if (!user || !storage.getToken()) {
     return <Redirect href="/auth/login" />;
   }
 
