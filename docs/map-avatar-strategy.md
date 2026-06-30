@@ -22,7 +22,7 @@ No single approach in `react-native-maps` satisfies all three. **That is the who
 | # | Approach | R1 smooth | R2 reliable | R3 custom | Outcome |
 |---|----------|:---------:|:-----------:|:---------:|---------|
 | 1 | View-child `<Marker>` (avatar `<Image>` inside a Marker) | ✓ | ✗ white on cold load, vanishes on tab switch | ✓ | **failed** |
-| 2 | Native `<Marker image>` of a baked PNG (Skia) | ✓ | ✗ goes **black** after the camera→map transition | ✓ | **failed** (latest; confirmed on-device via diagnostic 2026-06-30) |
+| 2 | Native `<Marker image>` of a baked PNG (Skia) | ✓ | ✗ **disappears** (renders nothing) after the camera→map transition | ✓ | **failed** (latest; confirmed on-device via diagnostic 2026-06-30 — all gates ✓, avatar absent) |
 | 3 | Projected RN overlay `<View>` (`pointForCoordinate` → absolute pos) | ✗ **lags** a few frames on pan | ✓ a View can't go black | ✓ | **current** — reliable but laggy (user dislikes) |
 | 4 | `showsUserLocation` (native blue dot) | ✓✓ | ✓✓ | ✗ blue dot, un-styleable on Android | not tried — bulletproof but no avatar |
 
