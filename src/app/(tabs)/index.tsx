@@ -198,6 +198,12 @@ export default function ExploreScreen() {
   // Drives the absolutely-positioned avatar overlay; null until the map projects it,
   // and reset to null while the user's coordinate is off the visible map.
   const [avatarScreenPos, setAvatarScreenPos] = useState<{ x: number; y: number } | null>(null);
+  // Location-pin markers go BLACK after the GPU-heavy camera→map transition
+  // (react-native-maps drops the view-child marker bitmap when the map's GL
+  // surface is restored). Forcing tracksViewChanges true briefly on focus makes
+  // them re-rasterise. True on mount + for ~1.6s after every focus, then false
+  // (permanent true would re-snapshot every frame → flicker + battery).
+  const [pinsTracking, setPinsTracking] = useState(true);
   // Live map heading (degrees) — drives the compass rose's north needle.
   const [mapHeading, setMapHeading] = useState(0);
   const [visitedLogs, setVisitedLogs] = useState<CheckIn[]>([]);
@@ -500,9 +506,14 @@ export default function ExploreScreen() {
       void projectAvatar();
       const t1 = setTimeout(() => void projectAvatar(), 150);
       const t2 = setTimeout(() => void projectAvatar(), 600);
+      // Re-rasterise the location pins (they go black after the camera), then
+      // stop tracking so we're not snapshotting every frame.
+      setPinsTracking(true);
+      const t3 = setTimeout(() => setPinsTracking(false), 1600);
       return () => {
         clearTimeout(t1);
         clearTimeout(t2);
+        clearTimeout(t3);
       };
     }, [projectAvatar]),
   );
@@ -1005,6 +1016,7 @@ export default function ExploreScreen() {
                 key={loc.id}
                 coordinate={loc.coordinates}
                 onPress={() => handleMarkerSelect(loc)}
+                tracksViewChanges={pinsTracking}
               >
                 {renderPinBadge(loc, selectedLoc?.id === loc.id)}
               </Marker>
