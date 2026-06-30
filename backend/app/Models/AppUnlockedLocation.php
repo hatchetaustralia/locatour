@@ -14,4 +14,14 @@ class AppUnlockedLocation extends Model
     {
         return $this->belongsTo(AppUser::class);
     }
+
+    /**
+     * The location this unlock refers to, matched on the app slug
+     * (location_id ↔ locations.slug, the same join AppCheckIn uses). May be null
+     * if the location has since been removed.
+     */
+    public function location(): BelongsTo
+    {
+        return $this->belongsTo(Location::class, 'location_id', 'slug');
+    }
 }

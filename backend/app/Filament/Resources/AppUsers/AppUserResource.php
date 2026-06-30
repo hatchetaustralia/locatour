@@ -6,6 +6,7 @@ use App\Filament\Resources\AppUsers\Pages\EditAppUser;
 use App\Filament\Resources\AppUsers\Pages\ListAppUsers;
 use App\Filament\Resources\AppUsers\Pages\ViewAppUser;
 use App\Filament\Resources\AppUsers\RelationManagers\CheckInsRelationManager;
+use App\Filament\Resources\AppUsers\RelationManagers\DiscoveriesRelationManager;
 use App\Filament\Resources\AppUsers\Schemas\AppUserForm;
 use App\Filament\Resources\AppUsers\Schemas\AppUserInfolist;
 use App\Filament\Resources\AppUsers\Tables\AppUsersTable;
@@ -83,6 +84,7 @@ class AppUserResource extends Resource
     {
         return [
             CheckInsRelationManager::class,
+            DiscoveriesRelationManager::class,
         ];
     }
 
