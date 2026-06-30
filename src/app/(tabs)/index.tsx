@@ -857,6 +857,17 @@ export default function ExploreScreen() {
         </View>
       ) : null}
 
+      {/* TEMP avatar diagnostic — read this when the puck/avatar is missing so we
+          know WHICH condition failed (loc = GPS fix, img = baked bitmap, mk = which
+          marker is being rendered). Remove once the vanish is pinned. */}
+      {Platform.OS !== 'web' && (
+        <View style={[styles.avatarDebug, { top: insets.top + 56 }]} pointerEvents="none">
+          <BrandText style={styles.avatarDebugText}>
+            {`av  loc=${userLocation ? '✓' : '✗'}  img=${avatarImages ? '✓' : '✗'}  mk=${useAvatarMarker ? (avatarImages ? 'baked' : 'puck') : 'none'}`}
+          </BrandText>
+        </View>
+      )}
+
       {/* Map View Section */}
       <View style={styles.mapContainer}>
         {Platform.OS === 'web' || !MapView ? (
@@ -2013,6 +2024,20 @@ const styles = StyleSheet.create({
     height: 16,
     borderRadius: 8,
     backgroundColor: Brand.teal,
+  },
+  avatarDebug: {
+    position: 'absolute',
+    left: 8,
+    zIndex: 200,
+    backgroundColor: 'rgba(0,0,0,0.62)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  avatarDebugText: {
+    color: '#fff',
+    fontSize: 11,
+    letterSpacing: 0.3,
   },
   sheetScroll: {
     flexShrink: 1,
