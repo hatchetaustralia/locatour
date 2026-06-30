@@ -31,7 +31,10 @@ import {
 
 import { Brand } from '@/constants/theme';
 
-export type ShutterMode = 'none' | 'warm' | 'ready';
+// 'gem' = you're in range to check in at a hidden gem: GREEN face (go!) wrapped
+// in the RAINBOW halo (this is a special, high-rarity find), so a discovered gem
+// keeps feeling special instead of looking like any other ready-to-check-in spot.
+export type ShutterMode = 'none' | 'warm' | 'ready' | 'gem';
 
 const SIZE = 144; // canvas — bigger than the button to give the big glow room
 const C = SIZE / 2; // centre
@@ -82,7 +85,7 @@ export function ShutterButton({ mode, onPress }: { mode: ShutterMode; onPress: (
               </Paint>
             }
           >
-            {mode === 'warm' ? (
+            {mode === 'warm' || mode === 'gem' ? (
               <Group origin={vec(C, C)} transform={spin}>
                 <Circle c={vec(C, C)} r={GLOW_R}>
                   <SweepGradient c={vec(C, C)} colors={RAINBOW} />

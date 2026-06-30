@@ -409,11 +409,18 @@ export default function CameraScreen() {
       : hiddenWarm
         ? hiddenDistanceM
         : null;
+  // The spot you're in range of: the tapped target ('in'), or a hidden spot you
+  // walked onto ('hidden'). A high-rarity one (Prized+, tier 4+) is a "gem", so
+  // the shutter glows rainbow even when ready — a gem check-in stays special.
+  const activeSpotId =
+    displayZoneStatus === 'hidden' && hiddenSpot ? hiddenSpot.id : targetLocationId;
+  const activeIsGem =
+    !!activeSpotId && (reachable.find((l) => l.id === activeSpotId)?.tier ?? 0) >= 4;
   const shutterMode: ShutterMode =
     flow !== 'capture'
       ? 'none'
       : displayZoneStatus === 'in' || displayZoneStatus === 'hidden'
-        ? 'ready'
+        ? (activeIsGem ? 'gem' : 'ready')
         : displayZoneStatus === 'warm'
           ? 'warm'
           : 'none';

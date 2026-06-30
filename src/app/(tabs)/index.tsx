@@ -31,7 +31,7 @@ import { SuggestLocationSheet } from '@/components/suggest-location-sheet';
 import { Brand, Spacing, stampBorder, BrandRadius } from '@/constants/theme';
 import { storage } from '@/utils/storage';
 import { submitSuggestion, fetchAnnouncement, recordUnlock } from '@/utils/account';
-import { unlockedTier, levelForTier } from '@/utils/leveling';
+import { unlockedTier, levelForTier, rarityForTier } from '@/utils/leveling';
 import { getConfig, tierRadiusBoost } from '@/utils/runtime-config';
 import { useLocationContext } from '@/context/location-context';
 import { formatDistance, openDirections, isWithinVicinity } from '@/utils/geo';
@@ -704,6 +704,9 @@ export default function ExploreScreen() {
   // locations get a gold XP badge; not-yet-visited show the category icon.
   const renderPinBadge = (loc: ExploreLocation, isSelected: boolean) => {
     const checkedIn = !!getCheckInStatus(loc.id);
+    // Hidden gem (Prized+, tier 4+): a distinct PURPLE diamond pin so a rare find
+    // never reads as an ordinary spot.
+    const gem = (loc.tier ?? 0) >= 4;
     return (
       <View style={styles.pinWrapper}>
         <View
@@ -711,13 +714,15 @@ export default function ExploreScreen() {
             styles.pinBubble,
             stampBorder,
             {
-              backgroundColor: checkedIn ? Brand.ink : getPinColor(loc.category),
+              backgroundColor: checkedIn ? Brand.ink : gem ? Brand.purple : getPinColor(loc.category),
               transform: [{ scale: isSelected ? 1.18 : 1 }],
             },
           ]}
         >
           {checkedIn ? (
             <Ionicons name="checkmark" size={16} color={Brand.bg} />
+          ) : gem ? (
+            <Ionicons name="diamond" size={14} color={Brand.bg} />
           ) : (
             <Ionicons name={getCategoryIcon(loc.category)} size={15} color={Brand.ink} />
           )}
@@ -736,6 +741,8 @@ export default function ExploreScreen() {
 
   const selectedCheckIns = selectedLoc ? getCheckInsForLocation(selectedLoc.id) : [];
   const selectedLatest = selectedLoc ? getCheckInStatus(selectedLoc.id) : null;
+  // A hidden gem (Prized+, tier 4+) — drives the rarity badge on the detail card.
+  const selectedIsGem = (selectedLoc?.tier ?? 0) >= 4;
   // 24h re-check-in cooldown (spec 06): null when checkable, else the Date it's
   // available again. Drives the disabled CHECK IN state on the detail sheet.
   const cooldownUntil = selectedLoc ? storage.nextCheckInAt(selectedLoc.id) : null;
@@ -1216,6 +1223,14 @@ export default function ExploreScreen() {
                 </BrandText>
                 {selectedLatest && <Ionicons name="checkmark-circle" size={20} color={Brand.purple} />}
               </View>
+              {selectedIsGem && (
+                <View style={styles.gemBadge}>
+                  <Ionicons name="diamond" size={13} color={Brand.bg} />
+                  <BrandText weight="bold" style={styles.gemBadgeText}>
+                    {rarityForTier(selectedLoc.tier)} · Hidden gem
+                  </BrandText>
+                </View>
+              )}
             </View>
 
             <ScrollView
@@ -1931,6 +1946,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: Spacing.two,
     alignSelf: 'stretch',
+  },
+  // Rarity "Hidden gem" pill under the title on the detail card — purple stamp so
+  // a rare find reads as special.
+  gemBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: 5,
+    marginTop: Spacing.two,
+    paddingVertical: 4,
+    paddingHorizontal: Spacing.three,
+    backgroundColor: Brand.purple,
+    borderRadius: BrandRadius.pill,
+  },
+  gemBadgeText: {
+    fontSize: 12,
+    letterSpacing: 0.4,
+    color: Brand.bg,
   },
   sheetScroll: {
     flexShrink: 1,
