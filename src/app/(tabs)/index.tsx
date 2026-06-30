@@ -491,6 +491,21 @@ export default function ExploreScreen() {
   useEffect(() => {
     void projectAvatar();
   }, [projectAvatar]);
+  // Re-project on FOCUS too: returning from the camera doesn't fire a region
+  // change, so avatarScreenPos could otherwise stay stale (or, after a remount,
+  // null) and the overlay wouldn't repin. A couple of staggered passes cover the
+  // map not being laid out on the very first focus frame.
+  useFocusEffect(
+    useCallback(() => {
+      void projectAvatar();
+      const t1 = setTimeout(() => void projectAvatar(), 150);
+      const t2 = setTimeout(() => void projectAvatar(), 600);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+      };
+    }, [projectAvatar]),
+  );
 
   // Centre the map on the user's base once we know it AND the map is mounted, so
   // a cold start that resolves home after first paint still seeds there. Skipped
@@ -685,14 +700,14 @@ export default function ExploreScreen() {
   const avatarHot = hiddenNearbyDist != null;
   // Use the native baked marker only on Android (where the View-child snapshot
   // bugs live). iOS/web keep the projected RN overlay, which is reliable there.
-  // Android ALWAYS renders the "you are here" avatar as a native Marker anchored
-  // to the fix — lock-step with pan/zoom, can't go white or be dropped like a
-  // View-child/remote-image marker, and no laggy projection. It shows the baked
-  // avatar bitmap once ready, else a plain solid puck, so the indicator is NEVER
-  // absent while we have a fix (the old two-path design left gaps during bake /
-  // projection / remount where neither path rendered → the disappearing avatar).
-  // The ONLY requirement is a GPS fix. iOS keeps the RN overlay below.
-  const useAvatarMarker = Platform.OS === 'android' && !!userLocation;
+  // The native <Marker image> renders smoothly BUT react-native-maps drops the
+  // marker bitmap to BLACK after the GPU-heavy camera→map transition — the
+  // recurring vanish (confirmed on-device 2026-06-30: the diagnostic read
+  // loc/img/mk all ✓ yet the marker went black). A plain RN overlay <View> CANNOT
+  // go black (no marker bitmap involved), so the avatar uses the overlay on every
+  // platform now, projected to screen pixels via projectAvatar. Trade: a touch of
+  // pan-lag for a "you are here" indicator that never disappears.
+  const useAvatarMarker = false;
 
   useEffect(() => {
     // Reaching a hidden spot on the map unlocks it (persists on the map) AND
@@ -863,7 +878,7 @@ export default function ExploreScreen() {
       {Platform.OS !== 'web' && (
         <View style={[styles.avatarDebug, { top: insets.top + 56 }]} pointerEvents="none">
           <BrandText style={styles.avatarDebugText}>
-            {`av  loc=${userLocation ? '✓' : '✗'}  img=${avatarImages ? '✓' : '✗'}  mk=${useAvatarMarker ? (avatarImages ? 'baked' : 'puck') : 'none'}`}
+            {`av  loc=${userLocation ? '✓' : '✗'}  pos=${avatarScreenPos ? '✓' : '✗'}  url=${userAvatar ? '✓' : '✗'}`}
           </BrandText>
         </View>
       )}
@@ -1003,39 +1018,9 @@ export default function ExploreScreen() {
                 whenever the bitmap changes — the hot/cold halo toggle AND a profile
                 avatar change (which bakes a new per-avatar file). A stable key with
                 tracksViewChanges={false} would keep the stale/blank bitmap. */}
-            {useAvatarMarker && Marker && (
-              avatarImages ? (
-                <Marker
-                  key={avatarHot ? avatarImages.hot : avatarImages.cold}
-                  coordinate={{
-                    latitude: userLocation!.coords.latitude,
-                    longitude: userLocation!.coords.longitude,
-                  }}
-                  image={{ uri: avatarHot ? avatarImages.hot : avatarImages.cold }}
-                  anchor={{ x: 0.5, y: 0.5 }}
-                  tracksViewChanges={false}
-                  zIndex={999}
-                />
-              ) : (
-                // Avatar bitmap not baked yet (first load / re-bake) — show a plain
-                // solid puck so the indicator is NEVER absent. Solid-colour Views
-                // snapshot reliably; only async remote-image children flash white.
-                <Marker
-                  key="avatar-fallback-puck"
-                  coordinate={{
-                    latitude: userLocation!.coords.latitude,
-                    longitude: userLocation!.coords.longitude,
-                  }}
-                  anchor={{ x: 0.5, y: 0.5 }}
-                  tracksViewChanges
-                  zIndex={999}
-                >
-                  <View style={[styles.fallbackPuck, avatarHot && styles.fallbackPuckHot]}>
-                    <View style={styles.fallbackPuckDot} />
-                  </View>
-                </Marker>
-              )
-            )}
+            {/* "You are here" is NOT a Marker — a Marker bitmap goes black after the
+                camera→map transition. It's a plain RN overlay rendered AFTER the
+                MapView (the avatarScreenPos block below), which can't go black. */}
 
             {/* Pending suggestion pin: while the "suggest a location" flow is open,
                 drop a temporary dashed ghost marker at the exact picked coordinate so
