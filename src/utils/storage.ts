@@ -1159,6 +1159,37 @@ class StorageManager {
     this.writeKey('locatour_unlocked_locations', JSON.stringify([...this.unlockedLocationIds]));
   }
 
+  /**
+   * Adopt the server's authoritative profile + stats during the live resync, so
+   * admin-side edits (XP grants, username / avatar / home-base / interests changes
+   * made in Filament) reach the device on the next /account/me pull instead of
+   * only after a full re-sign-in. XP merges as max(local, server) so neither an
+   * admin grant (server higher) nor freshly-earned-but-not-yet-synced local XP
+   * (local higher) is lost; level is re-derived from the result. The device +
+   * Google-photo identity (uid / createdAt / providerAvatarUrl) is preserved.
+   */
+  public async applyServerProfile(p: User): Promise<void> {
+    if (!this.user) return;
+    const mergedXP = Math.max(this.user.stats.totalXP || 0, p.stats.totalXP || 0);
+    this.user = {
+      ...this.user,
+      displayName: p.displayName || this.user.displayName,
+      username: p.username || this.user.username,
+      bio: p.bio ?? this.user.bio,
+      avatarUrl: p.avatarUrl || this.user.avatarUrl,
+      gender: p.gender || this.user.gender,
+      homeSuburb: p.homeSuburb || this.user.homeSuburb,
+      homeCoordinates: p.homeCoordinates ?? this.user.homeCoordinates,
+      interests: p.interests?.length ? p.interests : this.user.interests,
+    };
+    const stats = { ...this.user.stats };
+    stats.totalXP = mergedXP;
+    stats.dayStreak = Math.max(this.user.stats.dayStreak || 0, p.stats.dayStreak || 0);
+    Object.assign(stats, deriveLevelStats(mergedXP));
+    this.user.stats = stats;
+    this.writeKey('locatour_user', JSON.stringify(this.user));
+  }
+
   public async updateProfile(displayName: string, username: string, bio: string, avatarUrl: string, interests?: string[], homeCoordinates?: Coordinates): Promise<User | null> {
     if (!this.user) return null;
     this.user = {

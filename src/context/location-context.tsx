@@ -154,7 +154,14 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
       // lands immediately. doFetch below re-derives the visited/unlocked context
       // sets from the now-authoritative storage.
       const state = await fetchAccountState();
-      if (state) await storage.applyServerState(state.checkIns, state.unlockedIds);
+      if (state) {
+        await storage.applyServerState(state.checkIns, state.unlockedIds);
+        // Adopt the server's authoritative profile + stats too, so admin-side
+        // edits (XP grants, username/avatar/home changes) land on next resync
+        // rather than only after a full re-sign-in. doFetch below re-reads the
+        // updated user from storage into context.
+        if (state.profile) await storage.applyServerProfile(state.profile);
+      }
       // Force getLocations() to re-hit the server rather than return the stale
       // in-memory slice.
       storage.invalidateLocations();

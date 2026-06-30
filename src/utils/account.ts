@@ -244,7 +244,11 @@ function mapServerCheckIn(c: ServerCheckIn, userId: string): CheckIn {
  * the server, mapped to local shapes. Returns null on no-token / offline / error
  * — the caller should then just keep whatever local state it has. Never throws.
  */
-export async function fetchAccountState(): Promise<{ checkIns: CheckIn[]; unlockedIds: string[] } | null> {
+export async function fetchAccountState(): Promise<{
+  checkIns: CheckIn[];
+  unlockedIds: string[];
+  profile: User | null;
+} | null> {
   const token = storage.getToken();
   if (!token) return null;
   try {
@@ -255,12 +259,17 @@ export async function fetchAccountState(): Promise<{ checkIns: CheckIn[]; unlock
     });
     if (!res || !res.ok) return null;
     const body = (await res.json()) as {
+      user?: ServerAppUser;
       check_ins?: ServerCheckIn[];
       unlocked_location_ids?: string[];
     };
     return {
       checkIns: (body.check_ins ?? []).map((c) => mapServerCheckIn(c, uid)),
       unlockedIds: body.unlocked_location_ids ?? [],
+      // The server's authoritative profile + stats, so admin-side edits (XP
+      // grants, username/avatar/home changes) reach the device on the next
+      // resync instead of only after a full re-sign-in.
+      profile: body.user ? mapServerUser(body.user) : null,
     };
   } catch {
     return null;
