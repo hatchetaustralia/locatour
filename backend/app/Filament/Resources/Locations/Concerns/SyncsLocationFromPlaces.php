@@ -278,6 +278,75 @@ trait SyncsLocationFromPlaces
     }
 
     /**
+     * Prefill the form from a place chosen in the map picker's search (Places
+     * autocomplete → select). The picker hands over the WHOLE place payload in
+     * ONE Livewire call so every field lands atomically, server-side.
+     *
+     * This replaces the picker's previous approach of writing each field with
+     * its own JS `$wire.$set`: that flurry of ~15 rapid commits raced Livewire's
+     * commit/morph cycle and was silently dropped on a real click — the map
+     * moved to the place but the form stayed empty (and place_id was never
+     * stored, so "Sync from Google Places" then complained it had nothing to go
+     * on). A deliberate pick OVERWRITES the Google-sourced fields — the admin
+     * explicitly chose this place — but only for the keys the pick provided.
+     *
+     * Public so the picker's Alpine component can invoke it via $wire on both
+     * the Create and Edit pages (both use this trait).
+     *
+     * @param  array<string, mixed>  $place
+     */
+    public function prefillFromPlacePick(array $place): void
+    {
+        // String fields — set when the pick provided a non-empty value.
+        foreach ([
+            'name', 'address', 'description', 'place_id',
+            'directions_uri', 'website_uri', 'phone', 'plus_code',
+            'business_status', 'primary_type', 'primary_type_label', 'price_level',
+        ] as $key) {
+            if (filled($place[$key] ?? null)) {
+                $this->data[$key] = $place[$key];
+            }
+        }
+
+        foreach (['latitude', 'longitude'] as $key) {
+            if (isset($place[$key]) && is_numeric($place[$key])) {
+                $this->data[$key] = (float) $place[$key];
+            }
+        }
+
+        // Google rating/count are disabled-but-dehydrated, never admin-entered.
+        if (isset($place['google_rating']) && is_numeric($place['google_rating'])) {
+            $this->data['google_rating'] = $place['google_rating'];
+        }
+        if (isset($place['google_rating_count']) && is_numeric($place['google_rating_count'])) {
+            $this->data['google_rating_count'] = $place['google_rating_count'];
+        }
+
+        // Booleans: false is meaningful (Google says "no"), so set on any bool.
+        foreach (['dog_friendly', 'family_friendly'] as $key) {
+            if (isset($place[$key]) && is_bool($place[$key])) {
+                $this->data[$key] = $place[$key];
+            }
+        }
+
+        // CheckboxList arrays (accessibility / amenities) — set when non-empty.
+        foreach (['accessibility', 'amenities'] as $key) {
+            if (! empty($place[$key]) && is_array($place[$key])) {
+                $this->data[$key] = array_values($place[$key]);
+            }
+        }
+
+        if (! empty($place['viewport']) && is_array($place['viewport'])) {
+            $this->data['viewport'] = $place['viewport'];
+        }
+
+        // Opening hours group: { is_24_7: bool, notes: string }.
+        if (! empty($place['opening_hours']) && is_array($place['opening_hours'])) {
+            $this->data['opening_hours'] = $place['opening_hours'];
+        }
+    }
+
+    /**
      * Shape a LocationMeta row from a Places payload (column subset of the
      * sidecar). `synced_at` stamps the enrichment.
      *

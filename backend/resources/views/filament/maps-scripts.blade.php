@@ -361,19 +361,30 @@
         // meta (accessibility, parking, hours, dog/family) + public info (rating,
         // website, phone, price, directions, plus code, type). Not found → drag the
         // marker and fill manually.
-        Alpine.data('locationMapPicker', (config) => ({
+        Alpine.data('locationMapPicker', (config) => {
+        // The ROOT component's $wire, captured once in init(). The search
+        // dropdown's buttons live in an x-for, so their @click handlers run in a
+        // CHILD scope whose `this.$wire` magic is bound to the row element — and
+        // that row is removed (suggestions = []) the instant a place is picked,
+        // leaving a detached $wire whose commits never reach the server (the map
+        // still moves, but the form never fills). We keep the root $wire in this
+        // closure variable — NOT on `this` — because storing it in reactive
+        // Alpine data double-proxies it and strips its $get/$set methods.
+        let rootWire = null;
+        return {
             map: null, marker: null, circle: null, geocoder: null,
             placesLib: null, sessionToken: null, query: '', suggestions: [], searchTimer: null, searchError: '',
             async init() {
+                rootWire = this.$wire;
                 await window.__locatourLoadGoogleMaps(config.apiKey);
                 const { Map } = await google.maps.importLibrary('maps');
                 const { Marker } = await google.maps.importLibrary('marker');
                 const { Circle } = await google.maps.importLibrary('maps');
                 const { Geocoder } = await google.maps.importLibrary('geocoding');
 
-                const lat = this.num(this.$wire.$get(config.latPath), config.defaultLat);
-                const lng = this.num(this.$wire.$get(config.lngPath), config.defaultLng);
-                const radius = this.num(this.$wire.$get(config.radiusPath), 50);
+                const lat = this.num(rootWire.$get(config.latPath), config.defaultLat);
+                const lng = this.num(rootWire.$get(config.lngPath), config.defaultLng);
+                const radius = this.num(rootWire.$get(config.radiusPath), 50);
                 const center = { lat, lng };
 
                 this.geocoder = new Geocoder();
@@ -452,10 +463,16 @@
                 }
             },
             async pickSuggestion(item) {
+                // Read the prediction off `item` BEFORE clearing suggestions:
+                // setting this.suggestions = [] tears down the x-for row that
+                // owns `item`, so grab what we need from it first. (The form
+                // write itself goes through rootWire — the root-scoped $wire
+                // captured in init — which survives that teardown; see init.)
+                const prediction = item.prediction;
                 this.query = item.main;
                 this.suggestions = [];
                 try {
-                    const place = item.prediction.toPlace();
+                    const place = prediction.toPlace();
                     await place.fetchFields({ fields: this.placeFields() });
                     this.applyPlace(place);
                     // Start a fresh session after a completed selection (billing).
@@ -481,39 +498,52 @@
                 if (loc) {
                     this.map.panTo(loc); this.map.setZoom(15);
                     this.marker.setPosition(loc);
-                    this.writeLatLng(loc.lat(), loc.lng());
                 }
                 if (place.viewport) {
                     try { this.map.fitBounds(place.viewport); } catch (e) {}
-                    this.set(this.path('viewport'), this.boundsToBox(place.viewport));
                 }
-                this.setIf(this.path('name'), place.displayName);
-                this.setIf(config.addressPath, place.formattedAddress);
-                this.setIf(this.path('description'), place.editorialSummary);
-                this.setIf(this.path('place_id'), place.id);
-                this.setIf(this.path('directions_uri'), place.googleMapsURI);
-                this.setIf(this.path('website_uri'), place.websiteURI);
-                this.setIf(this.path('phone'), place.nationalPhoneNumber);
-                this.setIf(this.path('plus_code'), place.plusCode?.globalCode);
-                this.setIf(this.path('business_status'), place.businessStatus);
-                this.setIf(this.path('primary_type'), place.primaryType);
-                this.setIf(this.path('primary_type_label'), place.primaryTypeDisplayName);
-                this.setIf(this.path('price_level'), place.priceLevel);
-                if (typeof place.rating === 'number') this.set(this.path('google_rating'), place.rating);
-                if (typeof place.userRatingCount === 'number') this.set(this.path('google_rating_count'), place.userRatingCount);
-                if (typeof place.allowsDogs === 'boolean') this.set(this.path('dog_friendly'), place.allowsDogs);
-                if (typeof place.isGoodForChildren === 'boolean') this.set(this.path('family_friendly'), place.isGoodForChildren);
+                // Hand the WHOLE place to the page in ONE Livewire call (via the
+                // root-scoped rootWire) so every field lands atomically,
+                // server-side. See SyncsLocationFromPlaces::prefillFromPlacePick().
+                rootWire.prefillFromPlacePick(this.placeToPayload(place));
+            },
+            // Flatten a Places (New) Place into a plain JSON payload for the
+            // server-side prefill. Mirrors the form's field/enum shapes.
+            placeToPayload(place) {
+                const loc = place.location;
+                const payload = {
+                    name: place.displayName ?? null,
+                    address: place.formattedAddress ?? null,
+                    description: typeof place.editorialSummary === 'string' ? place.editorialSummary : null,
+                    place_id: place.id ?? null,
+                    latitude: loc ? Number(loc.lat().toFixed(7)) : null,
+                    longitude: loc ? Number(loc.lng().toFixed(7)) : null,
+                    directions_uri: place.googleMapsURI ?? null,
+                    website_uri: place.websiteURI ?? null,
+                    phone: place.nationalPhoneNumber ?? null,
+                    plus_code: place.plusCode?.globalCode ?? null,
+                    business_status: place.businessStatus ?? null,
+                    primary_type: place.primaryType ?? null,
+                    primary_type_label: place.primaryTypeDisplayName ?? null,
+                    // The form's select uses the enum without the PRICE_LEVEL_ prefix.
+                    price_level: typeof place.priceLevel === 'string' ? place.priceLevel.replace('PRICE_LEVEL_', '') : null,
+                    google_rating: typeof place.rating === 'number' ? place.rating : null,
+                    google_rating_count: typeof place.userRatingCount === 'number' ? place.userRatingCount : null,
+                    dog_friendly: typeof place.allowsDogs === 'boolean' ? place.allowsDogs : null,
+                    family_friendly: typeof place.isGoodForChildren === 'boolean' ? place.isGoodForChildren : null,
+                    viewport: place.viewport ? this.boundsToBox(place.viewport) : null,
+                };
 
                 const a = place.accessibilityOptions;
                 if (a) {
-                    // Array of the accessible aspects that are true (matches the
-                    // CheckboxList); a missing/false aspect is simply omitted.
+                    // The accessible aspects that are true (matches the CheckboxList);
+                    // a missing/false aspect is simply omitted.
                     const acc = [];
                     if (a.hasWheelchairAccessibleEntrance) acc.push('entrance');
                     if (a.hasWheelchairAccessibleParking) acc.push('parking');
                     if (a.hasWheelchairAccessibleRestroom) acc.push('restroom');
                     if (a.hasWheelchairAccessibleSeating) acc.push('seating');
-                    if (acc.length) this.set(this.path('accessibility'), acc);
+                    if (acc.length) payload.accessibility = acc;
                 }
 
                 const amenities = [];
@@ -523,12 +553,14 @@
                     amenities.push('parking');
                 }
                 if (place.hasRestroom === true) amenities.push('toilets');
-                if (amenities.length) this.set(this.path('amenities'), amenities);
+                if (amenities.length) payload.amenities = amenities;
 
                 const oh = place.regularOpeningHours;
                 if (oh && oh.weekdayDescriptions && oh.weekdayDescriptions.length) {
-                    this.set(this.path('opening_hours'), { is_24_7: false, notes: oh.weekdayDescriptions.join('\n') });
+                    payload.opening_hours = { is_24_7: false, notes: oh.weekdayDescriptions.join('\n') };
                 }
+
+                return payload;
             },
             boundsToBox(viewport) {
                 const ne = viewport.getNorthEast(), sw = viewport.getSouthWest();
@@ -544,32 +576,19 @@
                 if (!this.geocoder) return;
                 this.geocoder.geocode({ location: latLng }, (results, status) => {
                     if (status === 'OK' && results[0]) {
-                        this.$wire.$set(config.addressPath, results[0].formatted_address);
+                        rootWire.$set(config.addressPath, results[0].formatted_address);
                     }
                 });
             },
             writeLatLng(lat, lng) {
-                this.$wire.$set(config.latPath, Number(lat.toFixed(7)));
-                this.$wire.$set(config.lngPath, Number(lng.toFixed(7)));
-            },
-            // Build a qualified state path for a sibling field, e.g. data.website_uri.
-            path(field) {
-                return config.statePrefix ? `${config.statePrefix}.${field}` : field;
-            },
-            set(path, value) {
-                this.$wire.$set(path, value);
-            },
-            // Set only when the value is meaningful (skip null/undefined/'' — but
-            // booleans incl. false are meaningful and use set() directly).
-            setIf(path, value) {
-                if (value !== null && value !== undefined && value !== '') {
-                    this.$wire.$set(path, value);
-                }
+                rootWire.$set(config.latPath, Number(lat.toFixed(7)));
+                rootWire.$set(config.lngPath, Number(lng.toFixed(7)));
             },
             num(value, fallback) {
                 const n = parseFloat(value);
                 return Number.isFinite(n) ? n : fallback;
             },
-        }));
+        };
+        });
     });
 </script>
