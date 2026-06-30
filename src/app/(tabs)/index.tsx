@@ -663,6 +663,12 @@ export default function ExploreScreen() {
   const hiddenNearbyDist = nearestHidden?.warm ? hiddenDistanceM : null;
   const hiddenInReachId = hiddenInRange ? nearestHidden?.spot.id ?? null : null;
 
+  // Avatar marker bitmap: the rainbow-halo "hot" bake when a hidden gem is nearby,
+  // else the plain teal-ring "cold" bake. Keyed on the uri so the native marker
+  // re-registers when it swaps (cold↔hot) or the avatar is re-baked.
+  const avatarMarkerUri =
+    hiddenNearbyDist != null ? avatarImages?.hot ?? avatarImages?.cold : avatarImages?.cold;
+
   useEffect(() => {
     // Reaching a hidden spot on the map unlocks it (persists on the map) AND
     // opens its slide card right there — so the explorer can read about it and
@@ -952,22 +958,23 @@ export default function ExploreScreen() {
               </Marker>
             ))}
 
-            {/* "You are here" — a native <Marker image> of the Skia-baked avatar PNG
-                (cold = teal ring, no glow). The single bitmap is composited by the
-                native Google marker, so it tracks pan/zoom in lock-step (no overlay
-                lag). key = the baked file uri so the marker re-registers if the
-                avatar is re-baked (e.g. a profile-photo change → new per-avatar file).
-                It survives the camera because the whole MapView remounts on focus. */}
-            {userLocation && avatarImages?.cold && Marker && (
+            {/* "You are here" — a native <Marker image> of the Skia-baked avatar PNG.
+                Swaps the rainbow-halo "hot" bake in when a hidden gem is near, else the
+                plain teal-ring "cold" bake (avatarMarkerUri). The single bitmap is
+                composited by the native Google marker, so it tracks pan/zoom in
+                lock-step (no overlay lag). key = the uri so the marker re-registers on
+                a cold↔hot swap or a re-bake. It survives the camera because the whole
+                MapView remounts on focus. */}
+            {userLocation && avatarMarkerUri && Marker && (
               <Marker
-                key={avatarImages.cold}
+                key={avatarMarkerUri}
                 coordinate={{
                   latitude: userLocation.coords.latitude,
                   longitude: userLocation.coords.longitude,
                 }}
                 anchor={{ x: 0.5, y: 0.5 }}
                 tracksViewChanges={false}
-                image={{ uri: avatarImages.cold }}
+                image={{ uri: avatarMarkerUri }}
                 zIndex={999}
               />
             )}
