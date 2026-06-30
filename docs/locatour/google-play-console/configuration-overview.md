@@ -20,6 +20,7 @@ it carries over to the **Apple App Store** — Apple equivalents are noted inlin
 - **Default language:** English (US)
 - **App or game:** Game · **Free**
 - **Legal entity / jurisdiction:** Hatchet Pty Ltd / Western Australia
+- **D-U-N-S number:** `744044857` (Hatchet Pty Ltd) — **[Apple]** required for Organization enrolment; look up / confirm via Apple's own tool at https://developer.apple.com/enroll/duns-lookup/ (not D&B's US-only ZIP search).
 
 ## 2. Build & release
 - **Build:** `npx eas-cli build -p android --profile production` → AAB, `versionCode` auto-increments, all 4 ABIs (`EXPO_ANDROID_ABIS` env in `eas.json`), runtimeVersion `3a5735b1…` (fingerprint). Install size ~40 MB (Play splits per-device).
