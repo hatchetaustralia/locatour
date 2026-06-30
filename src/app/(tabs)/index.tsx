@@ -25,7 +25,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandText } from '@/components/brand';
 import { HiddenNearbyBar } from '@/components/hidden-nearby-bar';
-import { RainbowGlowMarker } from '@/components/rainbow-glow-marker';
+import { useUserAvatarMarker } from '@/components/user-avatar-marker';
 import { SuggestLocationSheet } from '@/components/suggest-location-sheet';
 import { Brand, Spacing, stampBorder, BrandRadius } from '@/constants/theme';
 import { storage } from '@/utils/storage';
@@ -184,19 +184,20 @@ export default function ExploreScreen() {
   // walked within range of. Dismissed-id ref re-arms only after you leave.
   const [arrivalSpot, setArrivalSpot] = useState<ExploreLocation | null>(null);
   const dismissedArrivalRef = useRef<string | null>(null);
-  // The "you are here" avatar is rendered as a plain React Native overlay <View>
-  // ON TOP of the MapView (a sibling drawn after it), NOT a react-native-maps
-  // Marker. It's positioned by projecting the user's coordinate to a screen pixel
-  // (see avatarScreenPos / projectAvatar). A normal View is never snapshotted to a
-  // bitmap the way a custom Marker child is, so the avatar can't go white on a cold
-  // map load or vanish after a tab switch — the two long-standing marker bugs. The
-  // only state is the failure fallback: if the remote image errors, show a person
-  // icon so the ring always shows something — never an empty ring.
-  const [avatarFailed, setAvatarFailed] = useState(false);
-  // Screen-pixel position of the user's coordinate, from mapRef.pointForCoordinate.
-  // Drives the absolutely-positioned avatar overlay; null until the map projects it,
-  // and reset to null while the user's coordinate is off the visible map.
-  const [avatarScreenPos, setAvatarScreenPos] = useState<{ x: number; y: number } | null>(null);
+  // "You are here" is now a native react-native-maps <Marker image={...}> of a
+  // Skia-baked avatar PNG (see useUserAvatarMarker). A single bitmap handed to the
+  // native Google marker tracks pan/zoom in lock-step (no JS-thread lag) and the
+  // old vanish-after-camera bug is handled by REMOUNTING the whole MapView on focus
+  // (mapInstanceKey) — the confirmed community fix for rn-maps dropping all markers
+  // when its GL surface is recreated after a GPU-heavy screen (issues #5595 / #5750
+  // / #5757; tracksViewChanges is unreliable on the new arch, #5728). The remount
+  // flashes, so an opaque cover (mapRemounting) masks it until the fresh map fires
+  // onMapLoaded.
+  const [mapInstanceKey, setMapInstanceKey] = useState(0);
+  const [mapRemounting, setMapRemounting] = useState(false);
+  // Baked avatar marker images (cold = teal ring, no glow). Null while baking / on
+  // failure — the marker just isn't drawn until ready (the loader masks the gap).
+  const avatarImages = useUserAvatarMarker(userAvatar);
   // Location-pin markers go BLACK after the GPU-heavy camera→map transition
   // (react-native-maps drops the view-child marker bitmap when the map's GL
   // surface is restored). Forcing tracksViewChanges true briefly on focus makes
@@ -260,9 +261,6 @@ export default function ExploreScreen() {
 
   const flatListRef = useRef<FlatList>(null);
   const mapRef = useRef<any>(null);
-  // Live pixel size of the MapView (from onLayout) — lets projectAvatar hide the
-  // avatar overlay once the user's coordinate projects off the visible map.
-  const mapSizeRef = useRef<{ width: number; height: number } | null>(null);
   // Guard so we only auto-center on the very first location fix.
   const didCenterRef = useRef(false);
   // Map-ready gating: a fresh GPS fix can resolve BEFORE the native map has laid
@@ -449,72 +447,35 @@ export default function ExploreScreen() {
     );
   }, [selectedLoc]);
 
-  // Reset the person-icon fallback whenever the avatar URL changes, so a fresh
-  // avatar gets a clean chance to load before we'd fall back to the icon. The
-  // overlay <Image> paints normally now (no marker bitmap snapshot), so there's no
-  // blank-ring hang to backstop — only a hard load error trips the fallback.
+  // Mirror initialLoadComplete into a ref so the focus effect (below) can read it
+  // without re-subscribing — we only remount the map on RE-focus, not first open.
+  const initialLoadCompleteRef = useRef(false);
   useEffect(() => {
-    setAvatarFailed(false);
-  }, [userAvatar]);
+    initialLoadCompleteRef.current = initialLoadComplete;
+  }, [initialLoadComplete]);
 
-  // Project the user's coordinate to a screen pixel so the avatar overlay can be
-  // positioned over the map. Because the overlay is a plain RN View (never a
-  // snapshotted marker bitmap), it can't go white or freeze — we just re-run this
-  // projection on every map ready / region / location / layout change. Guarded
-  // against unmount (the call is async) and a missing map/fix, and clears the
-  // overlay when the coordinate projects off the visible map.
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
-  const projectAvatar = useCallback(async () => {
-    const map = mapRef.current;
-    if (Platform.OS === 'web' || !map || !userLocation) return;
-    try {
-      const p = await map.pointForCoordinate({
-        latitude: userLocation.coords.latitude,
-        longitude: userLocation.coords.longitude,
-      });
-      if (!mountedRef.current || !p || typeof p.x !== 'number' || typeof p.y !== 'number') return;
-      // Hide the overlay once the user's coordinate is off the visible map. Allow a
-      // half-footprint (52px) margin so it can still peek in at the edge.
-      const size = mapSizeRef.current;
-      const M = 52;
-      const onScreen =
-        !size || (p.x >= -M && p.y >= -M && p.x <= size.width + M && p.y <= size.height + M);
-      setAvatarScreenPos(onScreen ? { x: p.x, y: p.y } : null);
-    } catch {
-      // pointForCoordinate can reject before the native map is laid out — ignore
-      // and let the next region/layout/location change reproject.
-    }
-  }, [userLocation]);
-  // Reproject whenever the user's coordinate changes (the map handlers below cover
-  // pan/zoom and first layout).
-  useEffect(() => {
-    void projectAvatar();
-  }, [projectAvatar]);
-  // Re-project on FOCUS too: returning from the camera doesn't fire a region
-  // change, so avatarScreenPos could otherwise stay stale (or, after a remount,
-  // null) and the overlay wouldn't repin. A couple of staggered passes cover the
-  // map not being laid out on the very first focus frame.
+  // On focus, REMOUNT the MapView (bump mapInstanceKey) so the native map gets a
+  // fresh GL surface and re-registers every marker — the confirmed fix for rn-maps
+  // dropping markers after the GPU-heavy camera (issues #5595 / #5750 / #5757). An
+  // opaque cover (mapRemounting) hides the reload flash until onMapLoaded fires; a
+  // timeout backstops it so the cover can never get stuck. Skipped on the very
+  // first focus (the initial loader already covers the first mount). Pins also need
+  // a brief tracksViewChanges pass to re-snapshot their view children on remount.
   useFocusEffect(
     useCallback(() => {
-      void projectAvatar();
-      const t1 = setTimeout(() => void projectAvatar(), 150);
-      const t2 = setTimeout(() => void projectAvatar(), 600);
-      // Re-rasterise the location pins (they go black after the camera), then
-      // stop tracking so we're not snapshotting every frame.
+      let coverTimer: ReturnType<typeof setTimeout> | null = null;
+      if (initialLoadCompleteRef.current) {
+        setMapRemounting(true);
+        setMapInstanceKey((k) => k + 1);
+        coverTimer = setTimeout(() => setMapRemounting(false), 1800);
+      }
       setPinsTracking(true);
-      const t3 = setTimeout(() => setPinsTracking(false), 1600);
+      const pinTimer = setTimeout(() => setPinsTracking(false), 1600);
       return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
-        clearTimeout(t3);
+        if (coverTimer) clearTimeout(coverTimer);
+        clearTimeout(pinTimer);
       };
-    }, [projectAvatar]),
+    }, []),
   );
 
   // Centre the map on the user's base once we know it AND the map is mounted, so
@@ -701,10 +662,6 @@ export default function ExploreScreen() {
   // reach (HIDDEN_RADIUS_M) → unlock it + open its card.
   const hiddenNearbyDist = nearestHidden?.warm ? hiddenDistanceM : null;
   const hiddenInReachId = hiddenInRange ? nearestHidden?.spot.id ?? null : null;
-
-  // "You are here" is a plain RN overlay <View> (projectAvatar → avatarScreenPos),
-  // NOT a map Marker: ANY Marker (image or view-child) goes black/blank after the
-  // GPU-heavy camera→map transition; a View can't. See the avatarScreenPos block.
 
   useEffect(() => {
     // Reaching a hidden spot on the map unlocks it (persists on the map) AND
@@ -905,15 +862,19 @@ export default function ExploreScreen() {
         ) : (
           // Native react-native-maps rendering
           <MapView
+            // Remounting on focus (key bump) gives the native map a fresh GL surface
+            // so it re-registers every marker after the camera — see the focus effect.
+            key={mapInstanceKey}
             ref={mapRef}
             style={styles.map}
             initialRegion={{
-              // Open at the user's base if we have it cached at mount; else a
-              // sensible default (GPS / the init seed refine it immediately).
-              latitude: initialHome?.latitude ?? -31.953,
-              longitude: initialHome?.longitude ?? 115.845,
-              latitudeDelta: 0.05,
-              longitudeDelta: 0.05,
+              // Mount already centred on the user when we know where they are, so a
+              // focus REMOUNT doesn't visibly jump behind the cover; else the cached
+              // home base; else a sensible default. GPS/onMapReady refine it.
+              latitude: userLocation?.coords.latitude ?? userCoords?.latitude ?? initialHome?.latitude ?? -31.953,
+              longitude: userLocation?.coords.longitude ?? userCoords?.longitude ?? initialHome?.longitude ?? 115.845,
+              latitudeDelta: userLocation ? 0.02 : 0.05,
+              longitudeDelta: userLocation ? 0.02 : 0.05,
             }}
             mapType={satellite ? 'hybrid' : 'standard'}
             customMapStyle={satellite ? SATELLITE_MAP_STYLE : LIGHT_MAP_STYLE}
@@ -928,19 +889,22 @@ export default function ExploreScreen() {
                   600
                 );
                 pendingCenterRef.current = null;
+              } else if (didCenterRef.current && userLocation && mapRef.current) {
+                // Focus REMOUNT: the fresh map mounts at initialRegion (already the
+                // user's position); snap exactly onto the live fix in case it moved.
+                mapRef.current.animateToRegion(
+                  {
+                    latitude: userLocation.coords.latitude,
+                    longitude: userLocation.coords.longitude,
+                    latitudeDelta: 0.02,
+                    longitudeDelta: 0.02,
+                  },
+                  0,
+                );
               }
-              // Place the avatar overlay as soon as the map can project a point.
-              void projectAvatar();
             }}
-            // Capture the map's pixel size so projectAvatar can hide the avatar
-            // overlay when the user projects off-screen, and project once on layout.
-            onLayout={(e: { nativeEvent: { layout: { width: number; height: number } } }) => {
-              mapSizeRef.current = {
-                width: e.nativeEvent.layout.width,
-                height: e.nativeEvent.layout.height,
-              };
-              void projectAvatar();
-            }}
+            // The fresh map has fully rendered — drop the opaque remount cover.
+            onMapLoaded={() => setMapRemounting(false)}
             // Native Google controls clash with the status bar / pill nav — use
             // our own avatar marker + recenter button instead.
             showsUserLocation={false}
@@ -957,21 +921,12 @@ export default function ExploreScreen() {
             onLongPress={(e: { nativeEvent: { coordinate: Coordinates } }) => {
               openSuggestSheet(e.nativeEvent.coordinate);
             }}
-            // Reproject the avatar overlay live during a pan/zoom — onRegionChange
-            // fires continuously through the gesture — so it tracks the user's
-            // coordinate smoothly instead of jumping only on settle.
-            onRegionChange={() => {
-              void projectAvatar();
-            }}
-            // Track the camera heading so our compass needle points to true north
-            // and we know whether the map is already north-up. Also reproject the
-            // avatar overlay once the region settles.
+            // Track the camera heading so the compass needle points to true north.
             onRegionChangeComplete={async () => {
               try {
                 const cam = await mapRef.current?.getCamera();
                 if (cam && typeof cam.heading === 'number') setMapHeading(cam.heading);
               } catch {}
-              void projectAvatar();
             }}
           >
             {/* Soft "your reach" bubble: the VICINITY_RADIUS_M radius around the
@@ -997,17 +952,25 @@ export default function ExploreScreen() {
               </Marker>
             ))}
 
-            {/* "You are here" — native Marker of a STATIC baked PNG (Android). A
-                single bitmap handed to the native Google Maps marker tracks pan/zoom
-                in lock-step and never goes white / is dropped on tab focus, unlike a
-                View-child Marker. The cold/hot variants swap the rainbow halo. The
-                key is the baked image URI itself, so the native marker REMOUNTS
-                whenever the bitmap changes — the hot/cold halo toggle AND a profile
-                avatar change (which bakes a new per-avatar file). A stable key with
-                tracksViewChanges={false} would keep the stale/blank bitmap. */}
-            {/* "You are here" is NOT a Marker — a Marker bitmap goes black after the
-                camera→map transition. It's a plain RN overlay rendered AFTER the
-                MapView (the avatarScreenPos block below), which can't go black. */}
+            {/* "You are here" — a native <Marker image> of the Skia-baked avatar PNG
+                (cold = teal ring, no glow). The single bitmap is composited by the
+                native Google marker, so it tracks pan/zoom in lock-step (no overlay
+                lag). key = the baked file uri so the marker re-registers if the
+                avatar is re-baked (e.g. a profile-photo change → new per-avatar file).
+                It survives the camera because the whole MapView remounts on focus. */}
+            {userLocation && avatarImages?.cold && Marker && (
+              <Marker
+                key={avatarImages.cold}
+                coordinate={{
+                  latitude: userLocation.coords.latitude,
+                  longitude: userLocation.coords.longitude,
+                }}
+                anchor={{ x: 0.5, y: 0.5 }}
+                tracksViewChanges={false}
+                image={{ uri: avatarImages.cold }}
+                zIndex={999}
+              />
+            )}
 
             {/* Pending suggestion pin: while the "suggest a location" flow is open,
                 drop a temporary dashed ghost marker at the exact picked coordinate so
@@ -1029,47 +992,7 @@ export default function ExploreScreen() {
               </Marker>
             )}
 
-            {/* NOTE: the "you are here" avatar is intentionally NOT a Marker here —
-                it's a plain RN overlay <View> rendered AFTER this MapView (below),
-                positioned via projectAvatar. See the avatarScreenPos overlay block. */}
           </MapView>
-        )}
-
-        {/* "You are here" — the user's avatar in a teal ring, rendered as a plain RN
-            overlay ON TOP of the MapView (a sibling drawn after it), positioned by
-            projecting the user's coordinate to a screen pixel (avatarScreenPos). A
-            pink rainbow glow appears around it while a hidden spot is nearby. Because
-            this is a normal View (never a snapshotted marker bitmap), it can't go
-            white on cold load or vanish after a tab switch; it reprojects on every
-            region change so it tracks pan/zoom, and hides when off the visible map.
-            pointerEvents="none" so map gestures pass straight through it. */}
-        {Platform.OS !== 'web' && MapView && userLocation && userAvatar && avatarScreenPos && (
-          <View
-            pointerEvents="none"
-            style={[
-              styles.userMarkerWrap,
-              {
-                position: 'absolute',
-                left: avatarScreenPos.x - 52,
-                top: avatarScreenPos.y - 52,
-              },
-            ]}
-          >
-            {/* Static rainbow halo (matches the camera shutter glow), shown only
-                while a hidden spot is near. A plain <Image> of a pre-baked PNG. */}
-            {hiddenNearbyDist != null && <RainbowGlowMarker />}
-            <View style={[styles.userMarkerRing, hiddenNearbyDist != null && styles.userMarkerRingHot]}>
-              {avatarFailed ? (
-                <Ionicons name="person" size={20} color={Brand.purple} />
-              ) : (
-                <Image
-                  source={{ uri: userAvatar }}
-                  style={styles.userMarkerAvatar}
-                  onError={() => setAvatarFailed(true)}
-                />
-              )}
-            </View>
-          </View>
         )}
 
         {/* Single open-app loader: one card with a two-step checklist (finding you
@@ -1097,6 +1020,23 @@ export default function ExploreScreen() {
                 )}
                 <BrandText weight="semibold" color={Brand.ink} style={styles.loadRowText}>
                   Loading nearby spots
+                </BrandText>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Opaque cover that masks the map's reload flash on a focus REMOUNT (every
+            return to the tab). Shown only after the first load (the initial loader
+            covers the first mount); cleared when the fresh map fires onMapLoaded, with
+            a timeout backstop in the focus effect so it can never stick. */}
+        {Platform.OS !== 'web' && initialLoadComplete && mapRemounting && (
+          <View style={styles.mapReloadCover}>
+            <View style={[styles.loadCard, stampBorder]}>
+              <View style={styles.loadRow}>
+                <ActivityIndicator size="small" color={Brand.ink} />
+                <BrandText weight="semibold" color={Brand.ink} style={styles.loadRowText}>
+                  Loading map…
                 </BrandText>
               </View>
             </View>
@@ -1749,39 +1689,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     letterSpacing: 0.65,
   },
-  // Live "you are here" avatar marker.
-  userMarkerRing: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  // Opaque cover over the whole map while it remounts on focus — masks the native
+  // reload flash. Above the map controls (zIndex 20), below the detail sheet.
+  mapReloadCover: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: Brand.bg,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Brand.surface,
-    borderWidth: 2,
-    borderColor: Brand.teal,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.25,
-    shadowRadius: 2,
-    elevation: 4,
-  },
-  userMarkerAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: Brand.surface,
-  },
-  // Wrapper gives the pink "hidden nearby" glow room around the avatar ring.
-  // Sized to fit the rainbow halo Image (104x104) so the marker bitmap isn't clipped.
-  userMarkerWrap: {
-    width: 104,
-    height: 104,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  userMarkerRingHot: {
-    // White ring around the rainbow halo — echoes the camera shutter button.
-    borderColor: '#fff',
+    zIndex: 26,
   },
   webMapBackground: {
     flex: 1,
