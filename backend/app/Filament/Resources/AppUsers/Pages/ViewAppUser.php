@@ -150,10 +150,13 @@ class ViewAppUser extends ViewRecord
                     $delta = (int) ($data['points'] ?? 0);
                     ['newXp' => $newXp, 'newLevel' => $newLevel] = $this->previewGrant($delta);
 
-                    $record->update([
-                        'total_xp' => $newXp,
-                        'current_level' => $newLevel,
-                    ]);
+                    // total_xp is derived (earned + bonus_xp), so a grant adjusts
+                    // bonus_xp — which survives the recompute that fires on every
+                    // check-in create/delete. recalcXp then re-derives total_xp +
+                    // level (== the previewed values, since total = earned + bonus).
+                    $record->bonus_xp = max(0, (int) $record->bonus_xp + $delta);
+                    $record->save();
+                    $record->recalcXp();
 
                     Notification::make()
                         ->title(sprintf('%s%s points', $delta >= 0 ? '+' : '', number_format($delta)))

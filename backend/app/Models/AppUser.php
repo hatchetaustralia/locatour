@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Support\Leveling;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Laravel\Sanctum\HasApiTokens;
 
@@ -75,6 +76,10 @@ class AppUser extends Authenticatable
         'home_change_attempts',
         'interests',
         'total_xp',
+        // Admin-granted XP, kept SEPARATE from earned XP. total_xp is derived =
+        // sum(check-in points) + bonus_xp (see recalcXp), so revoking a check-in
+        // removes its points while admin grants survive.
+        'bonus_xp',
         'current_level',
         'day_streak',
         'status',
@@ -102,6 +107,7 @@ class AppUser extends Authenticatable
         'home_change_count' => 'integer',
         'home_change_attempts' => 'integer',
         'total_xp' => 'integer',
+        'bonus_xp' => 'integer',
         'current_level' => 'integer',
         'day_streak' => 'integer',
         'last_login_at' => 'datetime',
@@ -116,6 +122,21 @@ class AppUser extends Authenticatable
     public function checkIns(): HasMany
     {
         return $this->hasMany(AppCheckIn::class);
+    }
+
+    /**
+     * Recompute the DERIVED XP + level from the source of truth: the sum of this
+     * user's check-in points plus admin-granted bonus_xp. Called whenever a
+     * check-in is created or deleted (so a revoke removes its points) and on
+     * profile sync (so the server, not the client, owns total_xp). saveQuietly to
+     * avoid re-entrant model events.
+     */
+    public function recalcXp(): void
+    {
+        $earned = (int) $this->checkIns()->sum('points_earned');
+        $this->total_xp = max(0, $earned + (int) $this->bonus_xp);
+        $this->current_level = Leveling::levelForXp($this->total_xp);
+        $this->saveQuietly();
     }
 
     public function unlockedLocations(): HasMany

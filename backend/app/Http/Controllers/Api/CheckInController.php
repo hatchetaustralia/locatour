@@ -74,8 +74,14 @@ class CheckInController extends Controller
         // sign-in / a new device (idempotent).
         $appUser->unlockedLocations()->firstOrCreate(['location_id' => $data['location_id']]);
 
+        // total_xp is derived (sum of check-in points + bonus_xp): recompute now
+        // so the new points are reflected server-side immediately.
+        $appUser->recalcXp();
+
         return response()->json([
             'check_in' => $checkIn,
+            'total_xp' => $appUser->total_xp,
+            'current_level' => $appUser->current_level,
         ], 201);
     }
 

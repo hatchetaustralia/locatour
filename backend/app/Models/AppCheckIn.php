@@ -67,6 +67,14 @@ class AppCheckIn extends Model
                     ->delete();
             }
         });
+
+        // total_xp is DERIVED (sum of check-in points + bonus_xp). After a
+        // check-in is removed (admin "Revoke", API destroy, account/cascade),
+        // recompute the owner so the revoke actually subtracts its points and
+        // their level drops. Runs after the row is gone, so the sum excludes it.
+        static::deleted(function (AppCheckIn $checkIn): void {
+            $checkIn->appUser?->recalcXp();
+        });
     }
 
     /** The app user who made this check-in. */

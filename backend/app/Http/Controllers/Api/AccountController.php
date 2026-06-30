@@ -115,21 +115,17 @@ class AccountController extends Controller
         // ONLY path that mutates it is baseLocation() below.
         unset($data['home_suburb'], $data['home_lat'], $data['home_lng']);
 
-        // XP reconciliation. Both the app (earning) and an admin (granting) can
-        // change XP, so neither may blindly clobber the other: keep the HIGHER of
-        // the app's reported total and the stored total. An admin "grant points"
-        // therefore survives a later app sync (server is higher), and the app's
-        // freshly-earned XP also survives (app is higher). Level is recomputed from
-        // the result via the shared OSRS curve so the stored level can't drift.
-        // NOTE: this response returns the reconciled user; the app should ADOPT
-        // user.total_xp/current_level so admin grants actually reach the device
-        // (the app currently ignores the body — see syncAccount in account.ts).
-        $stored = (int) $appUser->total_xp;
-        $reported = array_key_exists('total_xp', $data) ? (int) $data['total_xp'] : $stored;
-        $data['total_xp'] = max($stored, $reported);
-        $data['current_level'] = Leveling::levelForXp($data['total_xp']);
+        // total_xp is now SERVER-DERIVED (sum of check-in points + bonus_xp), so
+        // the client no longer dictates it. Dropping any client-sent XP/level here
+        // is what makes a revoke stick: a stale client can't re-inflate total_xp
+        // past a deletion (the old max(stored, reported) reconciliation did exactly
+        // that). Earned XP reaches the server via check-in uploads (which recalc),
+        // not via this endpoint. Recompute after the profile update so the
+        // response carries the authoritative value.
+        unset($data['total_xp'], $data['current_level']);
 
         $appUser->update($data);
+        $appUser->recalcXp();
 
         return response()->json([
             'user' => $appUser->fresh(),
