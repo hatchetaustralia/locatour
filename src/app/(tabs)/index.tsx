@@ -26,7 +26,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandText } from '@/components/brand';
 import { HiddenNearbyBar } from '@/components/hidden-nearby-bar';
 import { RainbowGlowMarker } from '@/components/rainbow-glow-marker';
-import { useUserAvatarMarker } from '@/components/user-avatar-marker';
 import { SuggestLocationSheet } from '@/components/suggest-location-sheet';
 import { Brand, Spacing, stampBorder, BrandRadius } from '@/constants/theme';
 import { storage } from '@/utils/storage';
@@ -703,22 +702,9 @@ export default function ExploreScreen() {
   const hiddenNearbyDist = nearestHidden?.warm ? hiddenDistanceM : null;
   const hiddenInReachId = hiddenInRange ? nearestHidden?.spot.id ?? null : null;
 
-  // Baked "you are here" avatar PNGs (cold + hot) for the native Marker path. On
-  // Android the avatar is a <Marker image={...} /> of this static bitmap — it
-  // tracks the map in lock-step and can't go white or vanish (unlike a View-child
-  // Marker). null while baking / on failure → we fall back to the RN overlay below.
-  const avatarImages = useUserAvatarMarker(userAvatar);
-  const avatarHot = hiddenNearbyDist != null;
-  // Use the native baked marker only on Android (where the View-child snapshot
-  // bugs live). iOS/web keep the projected RN overlay, which is reliable there.
-  // The native <Marker image> renders smoothly BUT react-native-maps drops the
-  // marker bitmap to BLACK after the GPU-heavy camera→map transition — the
-  // recurring vanish (confirmed on-device 2026-06-30: the diagnostic read
-  // loc/img/mk all ✓ yet the marker went black). A plain RN overlay <View> CANNOT
-  // go black (no marker bitmap involved), so the avatar uses the overlay on every
-  // platform now, projected to screen pixels via projectAvatar. Trade: a touch of
-  // pan-lag for a "you are here" indicator that never disappears.
-  const useAvatarMarker = false;
+  // "You are here" is a plain RN overlay <View> (projectAvatar → avatarScreenPos),
+  // NOT a map Marker: ANY Marker (image or view-child) goes black/blank after the
+  // GPU-heavy camera→map transition; a View can't. See the avatarScreenPos block.
 
   useEffect(() => {
     // Reaching a hidden spot on the map unlocks it (persists on the map) AND
@@ -882,17 +868,6 @@ export default function ExploreScreen() {
           </TouchableOpacity>
         </View>
       ) : null}
-
-      {/* TEMP avatar diagnostic — read this when the puck/avatar is missing so we
-          know WHICH condition failed (loc = GPS fix, img = baked bitmap, mk = which
-          marker is being rendered). Remove once the vanish is pinned. */}
-      {Platform.OS !== 'web' && (
-        <View style={[styles.avatarDebug, { top: insets.top + 56 }]} pointerEvents="none">
-          <BrandText style={styles.avatarDebugText}>
-            {`av  loc=${userLocation ? '✓' : '✗'}  pos=${avatarScreenPos ? '✓' : '✗'}  url=${userAvatar ? '✓' : '✗'}`}
-          </BrandText>
-        </View>
-      )}
 
       {/* Map View Section */}
       <View style={styles.mapContainer}>
@@ -1068,7 +1043,7 @@ export default function ExploreScreen() {
             white on cold load or vanish after a tab switch; it reprojects on every
             region change so it tracks pan/zoom, and hides when off the visible map.
             pointerEvents="none" so map gestures pass straight through it. */}
-        {Platform.OS !== 'web' && MapView && !useAvatarMarker && userLocation && userAvatar && avatarScreenPos && (
+        {Platform.OS !== 'web' && MapView && userLocation && userAvatar && avatarScreenPos && (
           <View
             pointerEvents="none"
             style={[
@@ -1999,42 +1974,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 0.4,
     color: Brand.bg,
-  },
-  // Plain solid "you are here" puck — the gap-free fallback shown as a native
-  // Marker child until the baked avatar bitmap is ready. Solid colours only (no
-  // async image) so the marker snapshot can't flash white.
-  fallbackPuck: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#fff',
-    borderWidth: 3,
-    borderColor: Brand.teal,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fallbackPuckHot: {
-    borderColor: Brand.purple,
-  },
-  fallbackPuckDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: Brand.teal,
-  },
-  avatarDebug: {
-    position: 'absolute',
-    left: 8,
-    zIndex: 200,
-    backgroundColor: 'rgba(0,0,0,0.62)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  avatarDebugText: {
-    color: '#fff',
-    fontSize: 11,
-    letterSpacing: 0.3,
   },
   sheetScroll: {
     flexShrink: 1,

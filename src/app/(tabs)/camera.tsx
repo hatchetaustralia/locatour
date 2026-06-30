@@ -180,6 +180,10 @@ export default function CameraScreen() {
   // The hidden spot the user is currently ON (within range) — drives the
   // "You've unlocked X" card. Captured when the zone goes 'hidden'.
   const [hiddenSpot, setHiddenSpot] = useState<{ id: string; name: string; image?: string } | null>(null);
+  // Tier of the spot whose zone you're currently in/on (checkable or hidden).
+  // Drives the 'gem' shutter glow when checking in at a high-rarity spot, even
+  // when the camera was opened from the tab (no tapped target). 0 = no spot.
+  const [activeTier, setActiveTier] = useState(0);
 
   const [flow, setFlow] = useState<FlowState>('capture');
   const [facing, setFacing] = useState<CameraType>('back');
@@ -322,11 +326,13 @@ export default function CameraScreen() {
 
           if (nearestCheckable && nearestCheckableDist <= cfg.checkInRadiusM) {
             setZone({ status: 'in', name: nearestCheckable.name });
+            setActiveTier(nearestCheckable.tier ?? 0);
             setHiddenDistance(null);
             currentHiddenIdRef.current = null;
             setHiddenSpot(null);
           } else if (nearestHidden && nearestHiddenDist <= cfg.hiddenRadiusM) {
             setZone({ status: 'hidden' });
+            setActiveTier(nearestHidden.tier ?? 0);
             setHiddenDistance(Math.round(nearestHiddenDist));
             // Physically reaching the spot UNLOCKS it (persists on the map). Fire
             // ONCE per spot — guard against the per-second GPS ticks.
@@ -342,11 +348,13 @@ export default function CameraScreen() {
             }
           } else if (nearestHidden && nearestHiddenDist <= cfg.warmRadiusM * tierRadiusBoost(level)) {
             setZone({ status: 'warm' });
+            setActiveTier(0);
             setHiddenDistance(Math.round(nearestHiddenDist));
             currentHiddenIdRef.current = null;
             setHiddenSpot(null);
           } else {
             setZone({ status: 'out' });
+            setActiveTier(0);
             setHiddenDistance(null);
             currentHiddenIdRef.current = null;
             setHiddenSpot(null);
@@ -409,13 +417,11 @@ export default function CameraScreen() {
       : hiddenWarm
         ? hiddenDistanceM
         : null;
-  // The spot you're in range of: the tapped target ('in'), or a hidden spot you
-  // walked onto ('hidden'). A high-rarity one (Prized+, tier 4+) is a "gem", so
-  // the shutter glows rainbow even when ready — a gem check-in stays special.
-  const activeSpotId =
-    displayZoneStatus === 'hidden' && hiddenSpot ? hiddenSpot.id : targetLocationId;
-  const activeIsGem =
-    !!activeSpotId && (reachable.find((l) => l.id === activeSpotId)?.tier ?? 0) >= 4;
+  // A high-rarity spot you're in/on (Prized+, tier 4+) is a "gem", so the shutter
+  // glows rainbow even when ready — a gem check-in stays special. activeTier comes
+  // from the zone detection, so it works whether you tapped CHECK IN on the spot
+  // or just walked into its zone with the camera opened from the tab.
+  const activeIsGem = activeTier >= 4;
   const shutterMode: ShutterMode =
     flow !== 'capture'
       ? 'none'
